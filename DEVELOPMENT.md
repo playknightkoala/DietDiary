@@ -92,6 +92,7 @@ docker compose up -d --build
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
 | PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
+| PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{food}` 調整該筆六大類份數（會員端標示「營養師調整份數」）|
 | GET / POST | `/api/pro/members/:id/comments?target=` | （dietitian/admin）查看／新增對會員紀錄的留言 |
 | DELETE | `/api/pro/members/:id/comments/:cid` | （dietitian/admin）刪除自己的留言 |
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|

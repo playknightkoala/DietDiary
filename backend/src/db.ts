@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS entries (
   photos TEXT NOT NULL DEFAULT '[]',
   eat_time TEXT NOT NULL DEFAULT '',
   food TEXT NOT NULL DEFAULT '{}',
+  food_edited_at INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_entries_user_date ON entries(user_id, date);
@@ -122,6 +123,10 @@ if (!entryCols.includes('photos')) {
 }
 if (!entryCols.includes('eat_time')) {
   db.exec(`ALTER TABLE entries ADD COLUMN eat_time TEXT NOT NULL DEFAULT ''`);
+}
+if (!entryCols.includes('food_edited_at')) {
+  // 營養師調整份數的時間戳（0＝未被調整）
+  db.exec(`ALTER TABLE entries ADD COLUMN food_edited_at INTEGER NOT NULL DEFAULT 0`);
 }
 
 // 喝水／運動／身體數據的紀錄時間

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, commentCreateSchema, goalsSchema, photoRatingSchema } from '../validation.js';
-import { commentTargetOwned, createComment, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos } from '../helpers.js';
+import { COMMENT_TARGET_RE, DATE_RE, commentCreateSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
+import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -65,6 +65,27 @@ proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
     ).run(entry.id, photo, rating, req.userId);
   }
   return res.json({ ratings: getPhotoRatings(entry.id) });
+});
+
+// 營養師調整會員某筆紀錄的六大類份數（會標記「營養師調整」，會員自行再改則移除標記）
+proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const entry = db
+    .prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?')
+    .get(req.params.eid, member.id) as { id: number } | undefined;
+  if (!entry) return res.status(404).json({ error: 'not found' });
+  const parsed = foodSchema.safeParse(req.body?.food);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  db.prepare('UPDATE entries SET food = ?, food_edited_at = ? WHERE id = ?').run(
+    JSON.stringify(parsed.data),
+    Date.now(),
+    entry.id
+  );
+  const row = db
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ?')
+    .get(entry.id) as EntryRow;
+  return res.json(entryToJsonWithRatings(row));
 });
 
 // 營養師對會員紀錄（飲食／喝水／運動）的留言

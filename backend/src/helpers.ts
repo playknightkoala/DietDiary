@@ -15,6 +15,7 @@ export interface EntryRow {
   photos: string;
   eat_time: string;
   food: string;
+  food_edited_at: number;
 }
 
 export interface DayRow {
@@ -59,7 +60,15 @@ export function unlinkPhoto(photoUrl: string) {
 }
 
 export function entryToJson(e: EntryRow) {
-  return { id: e.id, meal: e.meal, desc: e.desc, photos: parsePhotos(e.photos), eatTime: e.eat_time ?? '', food: parseFood(e.food) };
+  return {
+    id: e.id,
+    meal: e.meal,
+    desc: e.desc,
+    photos: parsePhotos(e.photos),
+    eatTime: e.eat_time ?? '',
+    food: parseFood(e.food),
+    foodEditedAt: e.food_edited_at ?? 0, // >0＝營養師調整過份數
+  };
 }
 
 export type PhotoRating = 'green' | 'yellow' | 'red';
@@ -147,7 +156,7 @@ export function getDayJson(userId: number, date: string) {
     .get(userId, date) as DayRow | undefined;
   const entries = (
     db
-      .prepare('SELECT id, meal, desc, photos, eat_time, food FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
+      .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
       .all(userId, date) as EntryRow[]
   ).map(entryToJsonWithRatings);
   return {

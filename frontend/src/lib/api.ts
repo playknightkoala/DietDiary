@@ -164,6 +164,11 @@ export const api = {
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
+  proEditFood: (memberId: number, entryId: number, food: Food) =>
+    request<Entry>(`/api/pro/members/${memberId}/entries/${entryId}/food`, {
+      method: 'PUT',
+      body: JSON.stringify({ food }),
+    }),
   proRatePhoto: (memberId: number, entryId: number, photo: string, rating: PhotoRating | null) =>
     request<{ ratings: Partial<Record<string, PhotoRating>> }>(`/api/pro/members/${memberId}/entries/${entryId}/photo-rating`, {
       method: 'PUT',

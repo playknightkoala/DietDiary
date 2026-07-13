@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../lib/api';
-import { MEALS, dstr, entryHasData, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
+import { MEALS, dstr, entryHasData, fmtCommentTime, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
 import { useStore } from '../store';
 import { CommentsThread } from './CommentsThread';
 import { PhotoRatingBadge } from './PhotoRatingBadge';
@@ -60,7 +60,15 @@ export function DayFeed() {
             title={m.name}
             time={e.eatTime}
             right={
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {e.foodEditedAt > 0 && (
+                  <span
+                    title={`營養師於 ${fmtCommentTime(e.foodEditedAt)} 調整過這筆的六大類份數`}
+                    style={{ fontSize: 11, fontWeight: 700, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 99, padding: '3px 9px' }}
+                  >
+                    營養師調整份數
+                  </span>
+                )}
                 <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
                 <button onClick={() => openLogFood(e.id)} className="hv-cream" style={{ border: '1px solid #DDD8CA', background: '#fff', color: '#4A5A4A', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '4px 12px', cursor: 'pointer' }}>
                   編輯

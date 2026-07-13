@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { BODY_DEFS, MEALS, WD_NAMES, addDays, dayFoodTotals, dstr, entryHasData, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst } from '../lib/domain';
+import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTotals, dstr, emptyFood, entryHasData, fmtCommentTime, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
+import { FoodFields } from '../components/FoodFields';
 import { PickerInput } from '../components/PickerInput';
-import type { CommentTarget, DayData, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
+import { CloseButton, ModalShell } from '../components/modals/ModalShell';
+import type { CommentTarget, DayData, Entry, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -83,6 +85,38 @@ export function DietitianScreen() {
       setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === entryId ? { ...en, ratings } : en)) } : d));
     } catch (e) {
       setError(e instanceof Error ? e.message : '評分失敗，請再試一次');
+    }
+  };
+
+  // 編輯會員某筆紀錄的六大類份數（會標記「營養師調整」）
+  const [foodEditing, setFoodEditing] = useState<Entry | null>(null);
+  const [foodStr, setFoodStr] = useState<Record<FoodKey, string>>({} as Record<FoodKey, string>);
+  const [savingFood, setSavingFood] = useState(false);
+
+  const openFoodEditor = (e: Entry) => {
+    const init = {} as Record<FoodKey, string>;
+    FOOD_KEYS.forEach((k) => (init[k] = e.food[k] ? String(e.food[k]) : ''));
+    setFoodStr(init);
+    setFoodEditing(e);
+  };
+
+  const draftFood = () => {
+    const f = emptyFood();
+    FOOD_KEYS.forEach((k) => (f[k] = clampPortion(foodStr[k] ?? '')));
+    return f;
+  };
+
+  const saveFood = async () => {
+    if (!foodEditing || memberId === '' || savingFood) return;
+    setSavingFood(true);
+    try {
+      const updated = await api.proEditFood(memberId, foodEditing.id, draftFood());
+      setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === updated.id ? updated : en)) } : d));
+      setFoodEditing(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '儲存份數失敗，請再試一次');
+    } finally {
+      setSavingFood(false);
     }
   };
 
@@ -293,11 +327,23 @@ export function DietitianScreen() {
                 const m = MEALS.find((mm) => mm.k === e.meal) || MEALS[0];
                 return (
                   <div key={e.id} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                       <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: m.color, fontWeight: 900 }}>{m.glyph}</div>
                       <span style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</span>
                       <span style={{ fontSize: 12, color: '#8A9284' }}>{e.eatTime || '未填時間'}</span>
                       <span style={{ fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 700, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
+                      {e.foodEditedAt > 0 && (
+                        <span title={`已於 ${fmtCommentTime(e.foodEditedAt)} 調整`} style={{ fontSize: 10.5, fontWeight: 700, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 99, padding: '2px 8px' }}>
+                          已調整份數
+                        </span>
+                      )}
+                      <span style={{ flex: 1 }} />
+                      <button
+                        onClick={() => openFoodEditor(e)}
+                        style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '3px 12px', cursor: 'pointer', fontWeight: 700, flex: 'none' }}
+                      >
+                        編輯份數
+                      </button>
                     </div>
                     {e.desc && <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6 }}>{e.desc}</div>}
                     {e.photos.length > 0 && (
@@ -341,6 +387,39 @@ export function DietitianScreen() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 編輯份數視窗 */}
+      {foodEditing && (
+        <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 17, fontWeight: 900 }}>
+              調整份數 — {(MEALS.find((mm) => mm.k === foodEditing.meal) || MEALS[0]).name}
+              <span style={{ fontSize: 12, fontWeight: 400, color: '#8A9284', marginLeft: 8 }}>{member?.username}</span>
+            </div>
+            <CloseButton onClick={() => setFoodEditing(null)} />
+          </div>
+          <div style={{ padding: '14px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ background: '#E5EBF1', borderRadius: 16, padding: '12px 16px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: '#5B8DB8' }}>調整後熱量</span>
+              <span style={{ fontFamily: 'Outfit', fontSize: 24, fontWeight: 800, color: '#2D3B2D' }}>
+                {kcalOfFood(draftFood())} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>kcal</span>
+              </span>
+            </div>
+            <div style={{ fontSize: 12.5, color: '#6B7565' }}>
+              儲存後會員端會標示「營養師調整份數」；會員若自行再修改，標示會移除。
+            </div>
+            <FoodFields
+              foodStr={foodStr}
+              onChange={(key, raw) => setFoodStr((s) => ({ ...s, [key]: raw }))}
+              onBlur={(key) => setFoodStr((s) => { const v = clampPortion(s[key] ?? ''); return { ...s, [key]: v ? String(v) : '' }; })}
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setFoodEditing(null)} className="hv-sand" style={{ flex: 1, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', fontSize: 15, fontWeight: 700, color: '#4A5A4A', cursor: 'pointer' }}>取消</button>
+              <button onClick={() => void saveFood()} disabled={savingFood} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: savingFood ? 0.7 : 1 }}>儲存份數</button>
+            </div>
+          </div>
+        </ModalShell>
       )}
     </div>
   );

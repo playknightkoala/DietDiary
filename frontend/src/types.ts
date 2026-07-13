@@ -21,6 +21,8 @@ export interface Entry {
   eatTime: string;
   commentCount: number;
   food: Food;
+  // 營養師調整份數的時間戳（Unix ms，0＝未被調整）
+  foodEditedAt: number;
 }
 
 // 留言對象：某筆飲食（entry:<id>）、某天的喝水（water:<date>）或運動（ex:<date>）

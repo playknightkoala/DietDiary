@@ -5,7 +5,7 @@ import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryToJsonWithRatings, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryToJsonWithRatings, parseFood, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -22,7 +22,7 @@ entriesRouter.use(requireAuth);
 
 function getOwnedEntry(userId: number, id: string | number) {
   return db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food FROM entries WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ? AND user_id = ?')
     .get(id, userId) as EntryRow | undefined;
 }
 
@@ -36,7 +36,14 @@ entriesRouter.patch('/:id', (req, res) => {
   const sets: string[] = [];
   const args: string[] = [];
   if (desc !== undefined) { sets.push('desc = ?'); args.push(desc); }
-  if (food !== undefined) { sets.push('food = ?'); args.push(JSON.stringify(food)); }
+  if (food !== undefined) {
+    sets.push('food = ?');
+    args.push(JSON.stringify(food));
+    // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留）
+    if (JSON.stringify(parseFood(entry.food)) !== JSON.stringify(food)) {
+      sets.push('food_edited_at = 0');
+    }
+  }
   if (date !== undefined) { sets.push('date = ?'); args.push(date); } // 改用餐日期＝把紀錄移到該天
   if (eatTime !== undefined) { sets.push('eat_time = ?'); args.push(eatTime); }
   if (photos !== undefined) {
