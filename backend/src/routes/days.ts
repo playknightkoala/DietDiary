@@ -30,17 +30,20 @@ daysRouter.patch('/:date', (req, res) => {
   if (!DATE_RE.test(date)) return res.status(400).json({ error: 'invalid date' });
   const parsed = dayPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { water, ex, body } = parsed.data;
+  const { water, waterTime, ex, exTime, body, bodyTime } = parsed.data;
 
   ensureDayRow(req.userId, date);
   const sets: string[] = [];
   const args: (string | number)[] = [];
   if (water !== undefined) { sets.push('water = ?'); args.push(water); }
+  if (waterTime !== undefined) { sets.push('water_time = ?'); args.push(waterTime); }
   if (ex) { sets.push('ex_min = ?', 'ex_desc = ?'); args.push(ex.min, ex.desc); }
+  if (exTime !== undefined) { sets.push('ex_time = ?'); args.push(exTime); }
   if (body) {
     sets.push('body_weight = ?', 'body_fat = ?', 'body_waist = ?', 'body_muscle = ?', 'body_fatkg = ?');
     args.push(body.weight, body.fat, body.waist, body.muscle, body.fatkg);
   }
+  if (bodyTime !== undefined) { sets.push('body_time = ?'); args.push(bodyTime); }
   if (sets.length) {
     db.prepare(`UPDATE days SET ${sets.join(', ')} WHERE user_id = ? AND date = ?`)
       .run(...args, req.userId, date);

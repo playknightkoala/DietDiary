@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
+import { nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
+import { PickerInput } from '../PickerInput';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function ExerciseModal() {
@@ -10,6 +12,7 @@ export function ExerciseModal() {
   const closeModal = useStore((s) => s.closeModal);
   const [min, setMin] = useState(day.ex.min);
   const [desc, setDesc] = useState(day.ex.desc);
+  const [time, setTime] = useState(day.exTime || nowHM());
   const closing = useRef(false);
 
   // 完成與 ✕ 皆儲存（原型輸入即存檔的等效行為）
@@ -17,7 +20,7 @@ export function ExerciseModal() {
     if (closing.current) return;
     closing.current = true;
     try {
-      await api.patchDay(selected, { ex: { min: min.trim(), desc } });
+      await api.patchDay(selected, { ex: { min: min.trim(), desc }, exTime: time });
       await refresh();
     } finally {
       closeModal();
@@ -29,6 +32,15 @@ export function ExerciseModal() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>記錄運動</div>
         <CloseButton onClick={() => void finish()} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={{ fontSize: 12.5, color: '#6B7565' }}>運動時刻</label>
+        <PickerInput
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          style={{ height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 16, outline: 'none', background: '#FBFAF6' }}
+        />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={{ fontSize: 12.5, color: '#6B7565' }}>運動時間（分鐘）</label>

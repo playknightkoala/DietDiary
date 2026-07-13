@@ -39,8 +39,11 @@ export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';
 
 export interface DayData {
   water: number;
+  waterTime: string; // 最後一次喝水紀錄時間 HH:MM，空字串＝未填
   ex: { min: string; desc: string };
+  exTime: string;
   body: Record<BodyKey, string>;
+  bodyTime: string;
   entries: Entry[];
   // 喝水／運動貼文的留言數
   commentCounts: { water: number; ex: number };

@@ -9,20 +9,31 @@ export function BodyCard() {
   const trendPoints = useStore((s) => s.trendPoints);
   const setTrendOpen = useStore((s) => s.setTrendOpen);
   const setTrendField = useStore((s) => s.setTrendField);
+  const setModal = useStore((s) => s.setModal);
 
   return (
     <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A7C59" strokeWidth="2" strokeLinecap="round"><path d="M12 3v18M5 8c2-2 12-2 14 0M5 16c2 2 12 2 14 0" /></svg>
           <div style={{ fontSize: 16, fontWeight: 900 }}>身體數據</div>
+          {day.bodyTime && <span style={{ fontSize: 11.5, color: '#8A9284' }}>{day.bodyTime} 測量</span>}
         </div>
-        <button
-          onClick={() => setTrendOpen(!trendOpen)}
-          style={{ border: '1.5px solid #DDD8CA', background: trendOpen ? '#4A7C59' : '#fff', color: trendOpen ? '#fff' : '#4A5A4A', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '5px 12px', cursor: 'pointer' }}
-        >
-          {trendOpen ? '返回數值' : '看趨勢'}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={() => setModal('logBody')}
+            className="hv-green"
+            style={{ border: 'none', background: '#4A7C59', color: '#fff', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '5px 14px', cursor: 'pointer' }}
+          >
+            ＋ 記錄
+          </button>
+          <button
+            onClick={() => setTrendOpen(!trendOpen)}
+            style={{ border: '1.5px solid #DDD8CA', background: trendOpen ? '#4A7C59' : '#fff', color: trendOpen ? '#fff' : '#4A5A4A', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '5px 12px', cursor: 'pointer' }}
+          >
+            {trendOpen ? '返回數值' : '看趨勢'}
+          </button>
+        </div>
       </div>
       {trendOpen ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

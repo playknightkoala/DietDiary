@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { DEFAULT_GOALS, DEFAULT_WATER, addDays, dstr } from '../lib/domain';
+import { PickerInput } from './PickerInput';
 import type { Goal, GoalInput, GoalKey } from '../types';
 
 export const GOAL_DEFS: { k: GoalKey; name: string }[] = [
@@ -112,11 +113,11 @@ export function GoalManager({ goals, memberView, onCreate, onUpdate, onDelete }:
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <label style={{ fontSize: 12, color: '#6B7565' }}>開始日期</label>
-            <input type="date" value={draft.start} onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))} style={dateInputStyle} />
+            <PickerInput type="date" value={draft.start} onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))} style={dateInputStyle} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <label style={{ fontSize: 12, color: '#6B7565' }}>結束日期</label>
-            <input type="date" value={draft.end} onChange={(e) => setDraft((d) => ({ ...d, end: e.target.value }))} style={dateInputStyle} />
+            <PickerInput type="date" value={draft.end} onChange={(e) => setDraft((d) => ({ ...d, end: e.target.value }))} style={dateInputStyle} />
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -52,9 +52,13 @@ export const dateSchema = z.string().regex(DATE_RE);
 
 const numText = z.string().max(20); // body/ex values stored as strings, '' = not set
 
+const hmOrEmpty = z.string().regex(TIME_RE).or(z.literal(''));
+
 export const dayPatchSchema = z.object({
   water: z.number().int().min(0).max(999999).optional(),
+  waterTime: hmOrEmpty.optional(),
   ex: z.object({ min: numText, desc: z.string().max(500) }).optional(),
+  exTime: hmOrEmpty.optional(),
   body: z
     .object({
       weight: numText,
@@ -64,6 +68,7 @@ export const dayPatchSchema = z.object({
       fatkg: numText,
     })
     .optional(),
+  bodyTime: hmOrEmpty.optional(),
 });
 
 export const entryCreateSchema = z.object({

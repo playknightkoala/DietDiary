@@ -117,8 +117,10 @@ export const api = {
     }),
 
   getDay: (date: string) => request<DayData>(`/api/days/${date}`),
-  patchDay: (date: string, patch: { water?: number; ex?: DayData['ex']; body?: DayData['body'] }) =>
-    request<DayData>(`/api/days/${date}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  patchDay: (
+    date: string,
+    patch: { water?: number; waterTime?: string; ex?: DayData['ex']; exTime?: string; body?: DayData['body']; bodyTime?: string }
+  ) => request<DayData>(`/api/days/${date}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   getMarks: (from: string, to: string) =>
     request<{ dates: string[] }>(`/api/days/marks?from=${from}&to=${to}`),
 

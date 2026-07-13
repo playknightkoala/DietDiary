@@ -74,7 +74,7 @@ docker compose up -d --build
 | POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
 | GET | `/api/auth/me` | 目前登入者 `{username, role, createdAt}` |
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
-| GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries）|
+| GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
 | GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
 | PATCH / DELETE | `/api/entries/:id` | 更新（desc / food / photos 子集合＝刪除照片 / eatTime / date＝移到別天）／刪除 |

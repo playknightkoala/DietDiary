@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { BODY_DEFS } from '../../lib/domain';
+import { BODY_DEFS, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { BodyKey } from '../../types';
+import { PickerInput } from '../PickerInput';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function BodyModal() {
@@ -13,13 +14,14 @@ export function BodyModal() {
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
   const [body, setBody] = useState<Record<BodyKey, string>>({ ...day.body });
+  const [time, setTime] = useState(day.bodyTime || nowHM());
   const closing = useRef(false);
 
   const finish = async () => {
     if (closing.current) return;
     closing.current = true;
     try {
-      await api.patchDay(selected, { body });
+      await api.patchDay(selected, { body, bodyTime: time });
       await refresh();
       if (trendOpen) await loadTrend();
     } finally {
@@ -32,6 +34,15 @@ export function BodyModal() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>記錄身體數據</div>
         <CloseButton onClick={() => void finish()} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <label style={{ fontSize: 12, color: '#6B7565' }}>測量時間</label>
+        <PickerInput
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          style={{ height: 44, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 12px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+        />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
         {BODY_DEFS.map((b) => (

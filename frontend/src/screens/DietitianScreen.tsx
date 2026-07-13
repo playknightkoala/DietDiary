@@ -5,6 +5,7 @@ import { BODY_DEFS, MEALS, WD_NAMES, addDays, dayFoodTotals, dstr, entryHasData,
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
+import { PickerInput } from '../components/PickerInput';
 import type { CommentTarget, DayData, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
@@ -150,7 +151,7 @@ export function DietitianScreen() {
         </select>
         <label style={{ fontSize: 13.5, fontWeight: 700, color: '#4A5A4A', marginLeft: 6 }}>日期</label>
         <button onClick={() => selectDate(addDays(date, -1))} className="hv-sand" style={{ width: 34, height: 40, border: '1.5px solid #DDD8CA', borderRadius: 10, background: '#fff', cursor: 'pointer', color: '#4A5A4A' }}>‹</button>
-        <input
+        <PickerInput
           type="date"
           value={date}
           onChange={(e) => { if (e.target.value) selectDate(e.target.value); }}
@@ -262,13 +263,13 @@ export function DietitianScreen() {
 
               {/* 喝水／運動／身體數據（喝水與運動可留言） */}
               <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#4A5A4A', lineHeight: 1.7 }}>
-                <div>喝水：{day?.water ?? 0} / {gInfo.water} ml</div>
+                <div>喝水：{day?.water ?? 0} / {gInfo.water} ml{day?.waterTime ? `（${day.waterTime}）` : ''}</div>
                 <CommentsThread key={`w-${memberId}-${date}`} {...commentProps(`water:${date}`, day?.commentCounts.water ?? 0)} />
-                <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}` : '未記錄'}</div>
+                <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}${day!.exTime ? `（${day!.exTime}）` : ''}` : '未記錄'}</div>
                 <CommentsThread key={`x-${memberId}-${date}`} {...commentProps(`ex:${date}`, day?.commentCounts.ex ?? 0)} />
                 <div>
                   身體數據：{bodyItems.length
-                    ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、')
+                    ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、') + (day!.bodyTime ? `（${day!.bodyTime}）` : '')
                     : '未記錄'}
                 </div>
               </div>

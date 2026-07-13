@@ -39,13 +39,16 @@ CREATE TABLE IF NOT EXISTS days (
   user_id INTEGER NOT NULL REFERENCES users(id),
   date TEXT NOT NULL,
   water INTEGER NOT NULL DEFAULT 0,
+  water_time TEXT NOT NULL DEFAULT '',
   ex_min TEXT NOT NULL DEFAULT '',
   ex_desc TEXT NOT NULL DEFAULT '',
+  ex_time TEXT NOT NULL DEFAULT '',
   body_weight TEXT NOT NULL DEFAULT '',
   body_fat TEXT NOT NULL DEFAULT '',
   body_waist TEXT NOT NULL DEFAULT '',
   body_muscle TEXT NOT NULL DEFAULT '',
   body_fatkg TEXT NOT NULL DEFAULT '',
+  body_time TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (user_id, date)
 );
 
@@ -119,6 +122,14 @@ if (!entryCols.includes('photos')) {
 }
 if (!entryCols.includes('eat_time')) {
   db.exec(`ALTER TABLE entries ADD COLUMN eat_time TEXT NOT NULL DEFAULT ''`);
+}
+
+// 喝水／運動／身體數據的紀錄時間
+const dayCols = (db.pragma('table_info(days)') as { name: string }[]).map((c) => c.name);
+for (const col of ['water_time', 'ex_time', 'body_time']) {
+  if (!dayCols.includes(col)) {
+    db.exec(`ALTER TABLE days ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+  }
 }
 const legacyPhotos = db
   .prepare(`SELECT id, photo FROM entries WHERE photo != '' AND photos = '[]'`)

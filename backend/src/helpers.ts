@@ -19,13 +19,16 @@ export interface EntryRow {
 
 export interface DayRow {
   water: number;
+  water_time: string;
   ex_min: string;
   ex_desc: string;
+  ex_time: string;
   body_weight: string;
   body_fat: string;
   body_waist: string;
   body_muscle: string;
   body_fatkg: string;
+  body_time: string;
 }
 
 export function emptyFood(): Food {
@@ -153,7 +156,9 @@ export function getDayJson(userId: number, date: string) {
       ex: countComments(`ex:${date}`, userId),
     },
     water: row?.water ?? 0,
+    waterTime: row?.water_time ?? '',
     ex: { min: row?.ex_min ?? '', desc: row?.ex_desc ?? '' },
+    exTime: row?.ex_time ?? '',
     body: {
       weight: row?.body_weight ?? '',
       fat: row?.body_fat ?? '',
@@ -161,6 +166,7 @@ export function getDayJson(userId: number, date: string) {
       muscle: row?.body_muscle ?? '',
       fatkg: row?.body_fatkg ?? '',
     },
+    bodyTime: row?.body_time ?? '',
     entries,
   };
 }

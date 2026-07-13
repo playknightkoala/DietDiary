@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import { goalsFor } from '../../lib/domain';
+import { goalsFor, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
+import { PickerInput } from '../PickerInput';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function WaterModal() {
@@ -11,6 +12,7 @@ export function WaterModal() {
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
   const [input, setInput] = useState('');
+  const [time, setTime] = useState(nowHM());
 
   const { water: waterGoal } = goalsFor(selected, goals);
 
@@ -18,13 +20,13 @@ export function WaterModal() {
     let n = parseFloat(input);
     if (isNaN(n) || n <= 0) return;
     n = Math.min(9999, Math.round(n));
-    await api.patchDay(selected, { water: day.water + n });
+    await api.patchDay(selected, { water: day.water + n, waterTime: time });
     setInput('');
     await refresh();
   };
 
   const resetWater = async () => {
-    await api.patchDay(selected, { water: 0 });
+    await api.patchDay(selected, { water: 0, waterTime: '' });
     await refresh();
   };
 
@@ -39,6 +41,15 @@ export function WaterModal() {
         <span style={{ fontFamily: 'Outfit', fontSize: 24, fontWeight: 800, color: '#2D3B2D' }}>
           {day.water} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>/ {waterGoal} ml</span>
         </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={{ fontSize: 12.5, color: '#6B7565' }}>喝水時間</label>
+        <PickerInput
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          style={{ height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 16, outline: 'none', background: '#FBFAF6' }}
+        />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={{ fontSize: 12.5, color: '#6B7565' }}>本次喝水量（ml，正數自行輸入）</label>

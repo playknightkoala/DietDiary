@@ -5,6 +5,7 @@ import { FOOD_KEYS, MEALS, clampPortion, emptyFood, entryHasData, kcalOfFood } f
 import { useStore } from '../../store';
 import type { Food, FoodKey } from '../../types';
 import { PhotoRatingBadge } from '../PhotoRatingBadge';
+import { PickerInput } from '../PickerInput';
 import { CloseButton, ModalShell } from './ModalShell';
 
 interface InputGroup {
@@ -149,13 +150,13 @@ export function LogFoodModal() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <label style={{ fontSize: 12.5, color: '#6B7565' }}>用餐時間（改日期會把這筆紀錄移到該天）</label>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input
+            <PickerInput
               type="date"
               value={eatDate}
               onChange={(e) => setEatDate(e.target.value)}
               style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
             />
-            <input
+            <PickerInput
               type="time"
               value={eatTime}
               onChange={(e) => setEatTime(e.target.value)}

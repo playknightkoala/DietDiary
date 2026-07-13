@@ -50,8 +50,11 @@ export function emptyFood(): Food {
 export function emptyDay(): DayData {
   return {
     water: 0,
+    waterTime: '',
     ex: { min: '', desc: '' },
+    exTime: '',
     body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '' },
+    bodyTime: '',
     entries: [],
     commentCounts: { water: 0, ex: 0 },
   };
