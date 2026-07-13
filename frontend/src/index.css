@@ -1,0 +1,16 @@
+html, body { margin:0; padding:0; background:#F4F1EA; font-family:'Noto Sans TC', sans-serif; color:#2D3B2D; }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+a { color:#4A7C59; } a:hover { color:#3A6347; }
+input, textarea, select, button { font-family:'Noto Sans TC', sans-serif; }
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
+::-webkit-scrollbar { width:6px; height:6px; } ::-webkit-scrollbar-thumb { background:#C9C2B2; border-radius:3px; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(14px);} to { opacity:1; transform:translateY(0);} }
+@keyframes popIn { from { opacity:0; transform:scale(.96);} to { opacity:1; transform:scale(1);} }
+
+/* style-hover equivalents from the prototype */
+.hv-green:hover { background:#3A6347 !important; }
+.hv-cream:hover { background:#EDF2E6 !important; }
+.hv-sand:hover { background:#F4F1EA !important; }
+.hv-blue:hover { background:#4A7CA5 !important; }
+.hv-red-tint:hover { background:#F5E3DB !important; }
+.hv-arrow:hover { color:#4A7C59 !important; }

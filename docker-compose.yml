@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-please-change-this-secret}
+      # Gmail SMTP：SMTP_USER 填 Gmail、SMTP_PASS 填應用程式密碼（非登入密碼）
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      # 收審核通知信的管理員信箱
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      # 對外網址（開通連結、開通完成信會用到）
+      - APP_URL=${APP_URL:-http://localhost:8080}
+    volumes:
+      - ./docker-data/db:/app/data
+      - ./docker-data/uploads:/app/uploads
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

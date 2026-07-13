@@ -1,0 +1,16 @@
+# 環境變數（含 SMTP 密碼等敏感資訊，範本見 .env.example）
+.env
+backend/.env
+
+# 相依套件與建置產物
+node_modules/
+dist/
+
+# 資料庫與上傳檔案（含使用者資料）
+backend/data/
+backend/uploads/
+docker-data/
+
+# 系統與編輯器
+.DS_Store
+*.log

@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#F4F1EA; font-family:'Noto Sans TC', sans-serif; color:#2D3B2D; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  a { color:#4A7C59; } a:hover { color:#3A6347; }
+  input, textarea, select, button { font-family:'Noto Sans TC', sans-serif; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
+  ::-webkit-scrollbar { width:6px; height:6px; } ::-webkit-scrollbar-thumb { background:#C9C2B2; border-radius:3px; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(14px);} to { opacity:1; transform:translateY(0);} }
+  @keyframes popIn { from { opacity:0; transform:scale(.96);} to { opacity:1; transform:scale(1);} }
+</style>
+</helmet>
+
+<!-- ══════════ 登入畫面 ══════════ -->
+<sc-if value="{{ showLogin }}" hint-placeholder-val="{{ true }}">
+<div data-screen-label="登入" style="min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg, #EDF2E6 0%, #F4F1EA 55%, #E8EEE0 100%); padding:24px;">
+  <div style="width:100%; max-width:400px; display:flex; flex-direction:column; gap:28px; animation:fadeUp .5s ease both;">
+    <div style="display:flex; flex-direction:column; align-items:center; gap:12px;">
+      <div style="width:72px; height:72px; border-radius:22px; background:#4A7C59; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(74,124,89,.3);">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c4.5 0 8-3.5 8-9V5l-8-2-8 2v7c0 5.5 3.5 9 8 9z"></path><path d="M9 11.5c1-1.5 5-1.5 6 0"></path><path d="M12 7v4"></path></svg>
+      </div>
+      <div style="font-family:'Outfit'; font-size:30px; font-weight:800; letter-spacing:-.5px; color:#2D3B2D;">均衡日記</div>
+      <div style="font-size:14px; color:#6B7565;">六大類飲食・運動・身體數據，一天一頁</div>
+    </div>
+    <div style="background:#FFFFFF; border-radius:20px; padding:28px 24px; box-shadow:0 12px 40px rgba(45,59,45,.08); display:flex; flex-direction:column; gap:16px;">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label style="font-size:13px; font-weight:700; color:#4A5A4A;">帳號</label>
+        <input type="text" placeholder="you@example.com" style="height:48px; border:1.5px solid #DDD8CA; border-radius:12px; padding:0 14px; font-size:15px; outline:none; background:#FBFAF6;" />
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label style="font-size:13px; font-weight:700; color:#4A5A4A;">密碼</label>
+        <input type="password" placeholder="••••••••" style="height:48px; border:1.5px solid #DDD8CA; border-radius:12px; padding:0 14px; font-size:15px; outline:none; background:#FBFAF6;" />
+      </div>
+      <button onClick="{{ doLogin }}" style="height:50px; border:none; border-radius:14px; background:#4A7C59; color:#fff; font-size:16px; font-weight:700; cursor:pointer; margin-top:4px; box-shadow:0 6px 16px rgba(74,124,89,.28);" style-hover="background:#3A6347;">登入</button>
+      <div style="display:flex; justify-content:space-between; font-size:13px;">
+        <a href="#" onClick="{{ doLogin }}" style="text-decoration:none;">忘記密碼？</a>
+        <a href="#" onClick="{{ doLogin }}" style="text-decoration:none; font-weight:700;">註冊新帳號</a>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 主畫面 ══════════ -->
+<sc-if value="{{ showMain }}" hint-placeholder-val="{{ false }}">
+<div style="min-height:100vh; max-width:1100px; margin:0 auto; padding:0 0 110px; display:flex; flex-direction:column;">
+
+  <!-- 頂欄 -->
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px 8px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:34px; height:34px; border-radius:11px; background:#4A7C59; display:flex; align-items:center; justify-content:center;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" stroke-width="2" stroke-linecap="round"><path d="M12 21c4.5 0 8-3.5 8-9V5l-8-2-8 2v7c0 5.5 3.5 9 8 9z"></path></svg>
+      </div>
+      <div style="font-family:'Outfit'; font-size:19px; font-weight:800; color:#2D3B2D;">均衡日記</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button onClick="{{ openCalendar }}" title="月曆" style="width:38px; height:38px; border:1.5px solid #DDD8CA; border-radius:12px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:#EDF2E6;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"></rect><path d="M8 2v4M16 2v4M3 9h18"></path></svg>
+      </button>
+      <button onClick="{{ openGoals }}" title="目標設定" style="width:38px; height:38px; border:1.5px solid #DDD8CA; border-radius:12px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:#EDF2E6;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1.2" fill="#4A5A4A"></circle></svg>
+      </button>
+      <button onClick="{{ openGuide }}" title="份數指南" style="width:38px; height:38px; border:1.5px solid #DDD8CA; border-radius:12px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:#EDF2E6;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" stroke-width="2" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z"></path><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-2.5"></path></svg>
+      </button>
+      <button onClick="{{ doLogout }}" title="登出" style="width:38px; height:38px; border:1.5px solid #DDD8CA; border-radius:12px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:#EDF2E6;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 週曆列 -->
+  <div style="padding:8px 12px 0; display:flex; align-items:center; gap:4px;">
+    <button onClick="{{ prevWeek }}" style="width:34px; height:58px; flex:none; border:none; background:transparent; cursor:pointer; color:#8A9284; display:flex; align-items:center; justify-content:center;" style-hover="color:#4A7C59;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"></path></svg>
+    </button>
+    <div style="flex:1; display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
+      <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7">
+        <button onClick="{{ d.select }}" style="border:none; cursor:pointer; border-radius:14px; padding:8px 2px; display:flex; flex-direction:column; align-items:center; gap:3px; background:{{ d.bg }}; color:{{ d.fg }}; box-shadow:{{ d.shadow }};">
+          <span style="font-size:11px; opacity:.75;">{{ d.wd }}</span>
+          <span style="font-family:'Outfit'; font-size:17px; font-weight:700;">{{ d.num }}</span>
+          <span style="width:5px; height:5px; border-radius:50%; background:{{ d.dot }};"></span>
+        </button>
+      </sc-for>
+    </div>
+    <button onClick="{{ nextWeek }}" style="width:34px; height:58px; flex:none; border:none; background:transparent; cursor:pointer; color:#8A9284; display:flex; align-items:center; justify-content:center;" style-hover="color:#4A7C59;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg>
+    </button>
+  </div>
+  <div style="text-align:center; padding:8px 0 2px; font-size:13px; color:#6B7565; display:flex; align-items:center; justify-content:center; gap:10px;">
+    <span style="font-weight:700;">{{ selectedLabel }}</span>
+    <sc-if value="{{ notToday }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ goToday }}" style="border:1px solid #4A7C59; color:#4A7C59; background:transparent; border-radius:99px; font-size:12px; padding:2px 10px; cursor:pointer;" style-hover="background:#EDF2E6;">回到今天</button>
+    </sc-if>
+  </div>
+
+  <!-- 內容（總覽） -->
+  <div style="display:grid; gap:16px; padding:12px 16px 0; grid-template-columns:{{ gridCols }};">
+
+    <!-- 左欄 -->
+    <div style="display:flex; flex-direction:column; gap:16px; min-width:0;">
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div style="background:#4A7C59; color:#F4F1EA; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:4px;">
+          <div style="font-size:13px; opacity:.85;">今日攝取熱量</div>
+          <div style="display:flex; align-items:baseline; gap:5px;">
+            <span style="font-family:'Outfit'; font-size:34px; font-weight:800;">{{ totalKcal }}</span>
+            <span style="font-size:14px; opacity:.8;">kcal</span>
+          </div>
+          <div style="font-size:12px; opacity:.75;">依各餐份數自動累計</div>
+        </div>
+        <div style="background:#FFFFFF; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:8px; border:1.5px solid #E4DFD2;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:13px; color:#6B7565;">喝水</div>
+            <div style="font-size:12px; color:{{ waterColor }}; font-weight:700;">{{ waterText }}</div>
+          </div>
+          <div style="height:10px; border-radius:99px; background:#E9EFF4; overflow:hidden;">
+            <div style="height:100%; border-radius:99px; background:#5B8DB8; width:{{ waterPct }}; transition:width .3s;"></div>
+          </div>
+          <div style="font-size:12px; color:#8A9284;">目標 {{ waterGoal }} ml</div>
+        </div>
+      </div>
+
+      <!-- 六大類總覽 -->
+      <div style="background:#FFFFFF; border-radius:20px; border:1.5px solid #E4DFD2; padding:18px; display:flex; flex-direction:column; gap:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:16px; font-weight:900;">六大類飲食份數</div>
+          <div style="font-size:12px; color:#6B7565;">目標：{{ goalSource }}</div>
+        </div>
+        <sc-for list="{{ foodRows }}" as="f" hint-placeholder-count="6">
+          <div style="display:flex; flex-direction:column; gap:7px; padding:8px 0 2px; border-top:1px solid #F0EDE3;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div style="width:32px; height:32px; flex:none; border-radius:10px; background:{{ f.tint }}; display:flex; align-items:center; justify-content:center; font-size:15px; color:{{ f.color }}; font-weight:900;">{{ f.glyph }}</div>
+              <div style="flex:1; min-width:0; display:flex; align-items:baseline; gap:8px;">
+                <span style="font-size:14px; font-weight:700;">{{ f.name }}</span>
+                <span style="font-size:12px; color:#8A9284;">{{ f.detail }}</span>
+              </div>
+              <div style="font-size:13.5px; color:{{ f.valColor }}; font-weight:{{ f.valWeight }};">{{ f.total }} / {{ f.goal }} 份</div>
+            </div>
+            <div style="height:7px; border-radius:99px; background:#F0EDE3; overflow:hidden;">
+              <div style="height:100%; border-radius:99px; background:{{ f.barColor }}; width:{{ f.pct }}; transition:width .3s;"></div>
+            </div>
+          </div>
+        </sc-for>
+        <div style="font-size:11.5px; color:#8A9284;">紅字表示超過目標 20% 以上。點右下「＋」記錄。</div>
+        <button onClick="{{ openMeals }}" style="height:44px; border:1.5px solid #4A7C59; border-radius:13px; background:#fff; color:#4A7C59; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;" style-hover="background:#EDF2E6;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+          查看今日飲食
+        </button>
+      </div>
+    </div>
+
+    <!-- 右欄 -->
+    <div style="display:flex; flex-direction:column; gap:16px; min-width:0;">
+
+      <div style="background:#FFFFFF; border-radius:20px; border:1.5px solid #E4DFD2; padding:18px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C77B4A" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M4 10l6-6M14 20l6-6M3 7l4-4M17 21l4-4"></path></svg>
+          <div style="font-size:16px; font-weight:900;">今日運動</div>
+        </div>
+        <div style="font-size:14px; color:#4A5A4A; line-height:1.6;">{{ exSummary }}</div>
+      </div>
+
+      <div style="background:#FFFFFF; border-radius:20px; border:1.5px solid #E4DFD2; padding:18px; display:flex; flex-direction:column; gap:12px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A7C59" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M5 8c2-2 12-2 14 0M5 16c2 2 12 2 14 0"></path></svg>
+            <div style="font-size:16px; font-weight:900;">身體數據</div>
+          </div>
+          <button onClick="{{ toggleTrend }}" style="border:1.5px solid #DDD8CA; background:{{ trendBtnBg }}; color:{{ trendBtnFg }}; border-radius:99px; font-size:12px; font-weight:700; padding:5px 12px; cursor:pointer;">{{ trendBtnLabel }}</button>
+        </div>
+        <sc-if value="{{ showTrendChart }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <sc-for list="{{ trendTabs }}" as="t" hint-placeholder-count="5">
+                <button onClick="{{ t.select }}" style="border:none; border-radius:99px; font-size:12px; font-weight:700; padding:5px 11px; cursor:pointer; background:{{ t.bg }}; color:{{ t.fg }};">{{ t.name }}</button>
+              </sc-for>
+            </div>
+            <div style="background:#FBFAF6; border:1px solid #EEEAE0; border-radius:14px; padding:10px;">{{ trendChart }}</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ showTrendChartNot }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px;">
+            <sc-for list="{{ bodySummary }}" as="b" hint-placeholder-count="5">
+              <div style="background:#FBFAF6; border:1px solid #EEEAE0; border-radius:14px; padding:10px 12px; display:flex; flex-direction:column; gap:2px;">
+                <div style="font-size:11.5px; color:#8A9284;">{{ b.name }}</div>
+                <div style="display:flex; align-items:baseline; gap:3px;">
+                  <span style="font-family:'Outfit'; font-size:19px; font-weight:700; color:#2D3B2D;">{{ b.val }}</span>
+                  <span style="font-size:11px; color:#8A9284;">{{ b.unit }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button onClick="{{ openAdd }}" data-screen-label="新增紀錄按鈕" style="position:fixed; right:22px; bottom:26px; width:60px; height:60px; border:none; border-radius:20px; background:#4A7C59; color:#fff; cursor:pointer; box-shadow:0 10px 28px rgba(74,124,89,.42); display:flex; align-items:center; justify-content:center; z-index:40;" style-hover="background:#3A6347;">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+  </button>
+</div>
+</sc-if>
+
+<!-- ══════════ 新增選單 ══════════ -->
+<sc-if value="{{ showAdd }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:flex-end; justify-content:center; padding:0;">
+  <div data-screen-label="新增選單" style="background:#fff; border-radius:24px 24px 0 0; padding:20px 20px 30px; width:100%; max-width:480px; animation:fadeUp .25s ease both; display:flex; flex-direction:column; gap:12px;">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="width:34px;"></div>
+      <div style="font-size:16px; font-weight:900;">記錄什麼？</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:10px;">
+      <sc-for list="{{ addOptions }}" as="o" hint-placeholder-count="4">
+        <button onClick="{{ o.select }}" style="border:1.5px solid #E4DFD2; border-radius:18px; background:#FBFAF6; padding:18px 12px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:8px;" style-hover="background:#EDF2E6;">
+          <div style="width:44px; height:44px; border-radius:14px; background:{{ o.tint }}; display:flex; align-items:center; justify-content:center; font-size:20px; color:{{ o.color }}; font-weight:900;">{{ o.glyph }}</div>
+          <div style="font-size:14px; font-weight:700; color:#2D3B2D;">{{ o.name }}</div>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 今日餐次總覽 ══════════ -->
+<sc-if value="{{ showMeals }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px;">
+  <div data-screen-label="今日飲食" style="background:#fff; border-radius:22px; width:100%; max-width:480px; max-height:88vh; overflow:auto; animation:popIn .25s ease both; padding:20px; display:flex; flex-direction:column; gap:10px; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">今日飲食</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <sc-if value="{{ noEntries }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:20px 10px; text-align:center; color:#8A9284; font-size:13.5px;">今天還沒有飲食紀錄，點右下「＋」新增。</div>
+    </sc-if>
+    <sc-for list="{{ entrySummaries }}" as="m" hint-placeholder-count="3">
+      <button onClick="{{ m.open }}" style="border:none; background:#FBFAF6; border:1px solid #EEEAE0; border-radius:16px; padding:12px; cursor:pointer; display:flex; align-items:center; gap:12px; text-align:left; width:100%;" style-hover="background:#EDF2E6;">
+        <sc-if value="{{ m.hasPhoto }}" hint-placeholder-val="{{ false }}">
+          <div role="img" aria-label="{{ m.name }}" style="width:52px; height:52px; flex:none; border-radius:12px; background-color:#F0EDE3; background-size:cover; background-position:center; background-image:url('{{ m.photo }}');"></div>
+        </sc-if>
+        <sc-if value="{{ m.noPhoto }}" hint-placeholder-val="{{ true }}">
+          <div style="width:52px; height:52px; flex:none; border-radius:12px; background:{{ m.tint }}; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:900; color:{{ m.color }};">{{ m.glyph }}</div>
+        </sc-if>
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:baseline; gap:8px;">
+            <span style="font-size:14.5px; font-weight:700;">{{ m.name }}</span>
+            <span style="font-family:'Outfit'; font-size:14px; font-weight:700; color:#4A7C59;">{{ m.kcal }} kcal</span>
+          </div>
+          <div style="font-size:12.5px; color:#8A9284; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ m.desc }}</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9C2B2" stroke-width="2.4" stroke-linecap="round" style="flex:none;"><path d="M9 6l6 6-6 6"></path></svg>
+      </button>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 記錄飲食（依餐次） ══════════ -->
+<sc-if value="{{ showLogFood }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px;">
+  <div data-screen-label="記錄飲食" style="background:#fff; border-radius:22px; width:100%; max-width:520px; max-height:90vh; overflow:hidden; animation:popIn .25s ease both; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="padding:18px 20px 0; display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">記錄{{ curMealName }}</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="padding:14px 20px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:14px;">
+      <!-- 這餐熱量 -->
+      <div style="background:#EDF2E6; border-radius:16px; padding:12px 16px; display:flex; align-items:baseline; justify-content:space-between;">
+        <span style="font-size:13.5px; font-weight:700; color:#4A7C59;">{{ curMealName }}熱量</span>
+        <span style="font-family:'Outfit'; font-size:24px; font-weight:800; color:#2D3B2D;">{{ curMealKcal }} <span style="font-size:13px; font-weight:500; color:#8A9284;">kcal</span></span>
+      </div>
+      <!-- 照片 + 敘述 -->
+      <div style="display:flex; gap:12px;">
+        <div style="flex:none; display:flex; flex-direction:column; gap:6px;">
+          <sc-if value="{{ curMealHasPhoto }}" hint-placeholder-val="{{ false }}">
+            <div role="img" aria-label="餐點照片" style="width:88px; height:88px; border-radius:14px; border:1.5px solid #E4DFD2; background-color:#F0EDE3; background-size:cover; background-position:center; background-image:url('{{ curMealPhoto }}');"></div>
+            <button onClick="{{ removePhoto }}" style="border:none; background:transparent; color:#C0564A; font-size:12px; font-weight:700; cursor:pointer;">移除照片</button>
+          </sc-if>
+          <sc-if value="{{ curMealNoPhoto }}" hint-placeholder-val="{{ true }}">
+            <label style="width:88px; height:88px; border:1.5px dashed #C9C2B2; border-radius:14px; background:#FBFAF6; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; cursor:pointer; color:#8A9284;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="6" width="18" height="14" rx="3"></rect><circle cx="12" cy="13" r="3.5"></circle><path d="M9 6l1.2-2h3.6L15 6"></path></svg>
+              <span style="font-size:11px;">上傳照片</span>
+              <input type="file" accept="image/*" onChange="{{ uploadPhoto }}" style="display:none;" />
+            </label>
+          </sc-if>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:5px; min-width:0;">
+          <label style="font-size:12.5px; color:#6B7565;">這餐吃了什麼？</label>
+          <textarea rows="3" placeholder="例：滷雞腿便當，飯只吃一半⋯" value="{{ curMealDesc }}" onChange="{{ setMealDesc }}" style="flex:1; border:1.5px solid #DDD8CA; border-radius:12px; padding:10px 12px; font-size:14.5px; outline:none; background:#FBFAF6; resize:none;"></textarea>
+        </div>
+      </div>
+      <!-- 份數輸入 -->
+      <div style="font-size:12.5px; color:#6B7565;">輸入這餐的六大類份數（0.1 ～ 99）。</div>
+      <sc-for list="{{ foodInputs }}" as="f" hint-placeholder-count="6">
+        <div style="display:flex; flex-direction:column; gap:8px; border-top:1px solid #F0EDE3; padding-top:10px;">
+          <div style="display:flex; align-items:center; gap:9px;">
+            <div style="width:30px; height:30px; flex:none; border-radius:9px; background:{{ f.tint }}; display:flex; align-items:center; justify-content:center; font-size:14px; color:{{ f.color }}; font-weight:900;">{{ f.glyph }}</div>
+            <span style="font-size:14px; font-weight:700;">{{ f.name }}</span>
+            <span style="font-size:12px; color:#8A9284;">{{ f.note }}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:8px;">
+            <sc-for list="{{ f.fields }}" as="s" hint-placeholder-count="2">
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size:11.5px; color:#8A9284;">{{ s.label }}</label>
+                <input type="number" min="0" max="99" step="0.1" placeholder="0" value="{{ s.val }}" onChange="{{ s.set }}" style="height:42px; border:1.5px solid #DDD8CA; border-radius:11px; padding:0 10px; font-size:15px; outline:none; background:#FBFAF6; width:100%; text-align:center;" />
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <button onClick="{{ closeModals }}" style="height:48px; flex:none; border:none; border-radius:13px; background:#4A7C59; color:#fff; font-size:15px; font-weight:700; cursor:pointer;" style-hover="background:#3A6347;">完成</button>
+      <button onClick="{{ deleteEntry }}" style="height:40px; flex:none; border:none; border-radius:13px; background:transparent; color:#C0564A; font-size:13.5px; font-weight:700; cursor:pointer;" style-hover="background:#F5E3DB;">刪除這筆紀錄</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 記錄喝水 ══════════ -->
+<sc-if value="{{ showLogWater }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px;">
+  <div data-screen-label="記錄喝水" style="background:#fff; border-radius:22px; width:100%; max-width:400px; animation:popIn .25s ease both; padding:20px; display:flex; flex-direction:column; gap:14px; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">記錄喝水</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="background:#F0F5FA; border-radius:16px; padding:14px 16px; display:flex; align-items:baseline; justify-content:space-between;">
+      <span style="font-size:13px; color:#5B8DB8; font-weight:700;">今日累計</span>
+      <span style="font-family:'Outfit'; font-size:24px; font-weight:800; color:#2D3B2D;">{{ waterTotalNum }} <span style="font-size:13px; font-weight:500; color:#8A9284;">/ {{ waterGoal }} ml</span></span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:5px;">
+      <label style="font-size:12.5px; color:#6B7565;">本次喝水量（ml，正數自行輸入）</label>
+      <div style="display:flex; gap:8px;">
+        <input type="number" min="1" max="9999" step="1" placeholder="例：350" value="{{ waterInput }}" onChange="{{ setWaterInput }}" style="flex:1; height:46px; border:1.5px solid #DDD8CA; border-radius:12px; padding:0 12px; font-size:16px; outline:none; background:#FBFAF6; min-width:0;" />
+        <button onClick="{{ addWater }}" style="flex:none; height:46px; padding:0 20px; border:none; border-radius:12px; background:#5B8DB8; color:#fff; font-size:15px; font-weight:700; cursor:pointer;" style-hover="background:#4A7CA5;">加入</button>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:#8A9284;">
+      <span>輸入錯了？</span>
+      <button onClick="{{ resetWater }}" style="border:none; background:transparent; color:#C0564A; font-size:12.5px; font-weight:700; cursor:pointer;">歸零重記</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 記錄運動 ══════════ -->
+<sc-if value="{{ showLogEx }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px;">
+  <div data-screen-label="記錄運動" style="background:#fff; border-radius:22px; width:100%; max-width:400px; animation:popIn .25s ease both; padding:20px; display:flex; flex-direction:column; gap:14px; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">記錄運動</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:5px;">
+      <label style="font-size:12.5px; color:#6B7565;">運動時間（分鐘）</label>
+      <input type="number" min="0" max="1440" step="1" placeholder="例：30" value="{{ exMinutes }}" onChange="{{ setExMinutes }}" style="height:46px; border:1.5px solid #DDD8CA; border-radius:12px; padding:0 12px; font-size:16px; outline:none; background:#FBFAF6;" />
+    </div>
+    <div style="display:flex; flex-direction:column; gap:5px;">
+      <label style="font-size:12.5px; color:#6B7565;">運動描述</label>
+      <textarea rows="3" placeholder="例：慢跑 5 公里、瑜珈、重訓⋯" value="{{ exDesc }}" onChange="{{ setExDesc }}" style="border:1.5px solid #DDD8CA; border-radius:12px; padding:10px 12px; font-size:15px; outline:none; background:#FBFAF6; resize:none;"></textarea>
+    </div>
+    <button onClick="{{ closeModals }}" style="height:48px; border:none; border-radius:13px; background:#4A7C59; color:#fff; font-size:15px; font-weight:700; cursor:pointer;" style-hover="background:#3A6347;">完成</button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 記錄身體數據 ══════════ -->
+<sc-if value="{{ showLogBody }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px;">
+  <div data-screen-label="記錄身體數據" style="background:#fff; border-radius:22px; width:100%; max-width:420px; animation:popIn .25s ease both; padding:20px; display:flex; flex-direction:column; gap:14px; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">記錄身體數據</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:10px;">
+      <sc-for list="{{ bodyFields }}" as="b" hint-placeholder-count="5">
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <label style="font-size:12px; color:#6B7565;">{{ b.name }}（{{ b.unit }}）</label>
+          <input type="number" step="0.1" min="0" value="{{ b.val }}" onChange="{{ b.set }}" placeholder="—" style="height:44px; border:1.5px solid #DDD8CA; border-radius:11px; padding:0 12px; font-size:15px; outline:none; background:#FBFAF6; width:100%;" />
+        </div>
+      </sc-for>
+    </div>
+    <button onClick="{{ closeModals }}" style="height:48px; border:none; border-radius:13px; background:#4A7C59; color:#fff; font-size:15px; font-weight:700; cursor:pointer;" style-hover="background:#3A6347;">完成</button>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 月曆彈窗 ══════════ -->
+<sc-if value="{{ showCalendar }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px;">
+  <div data-screen-label="月曆" style="background:#fff; border-radius:22px; padding:20px; width:100%; max-width:380px; animation:popIn .25s ease both; box-shadow:0 24px 60px rgba(45,59,45,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <button onClick="{{ calPrevMonth }}" style="width:34px; height:34px; border:1.5px solid #DDD8CA; border-radius:10px; background:#fff; cursor:pointer; color:#4A5A4A;" style-hover="background:#F4F1EA;">‹</button>
+      <div style="font-family:'Outfit'; font-size:17px; font-weight:700;">{{ calTitle }}</div>
+      <div style="display:flex; gap:6px;">
+        <button onClick="{{ calNextMonth }}" style="width:34px; height:34px; border:1.5px solid #DDD8CA; border-radius:10px; background:#fff; cursor:pointer; color:#4A5A4A;" style-hover="background:#F4F1EA;">›</button>
+        <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:14px; color:#4A5A4A;">✕</button>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:6px;">
+      <sc-for list="{{ wdNames }}" as="w" hint-placeholder-count="7">
+        <div style="text-align:center; font-size:12px; color:#8A9284; font-weight:700;">{{ w }}</div>
+      </sc-for>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:4px;">
+      <sc-for list="{{ calCells }}" as="c" hint-placeholder-count="35">
+        <button onClick="{{ c.select }}" disabled="{{ c.empty }}" style="height:42px; border:none; border-radius:11px; cursor:pointer; background:{{ c.bg }}; color:{{ c.fg }}; font-family:'Outfit'; font-size:14px; font-weight:600; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
+          <span>{{ c.num }}</span>
+          <span style="width:4px; height:4px; border-radius:50%; background:{{ c.dot }};"></span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 目標設定彈窗 ══════════ -->
+<sc-if value="{{ showGoals }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px;">
+  <div data-screen-label="目標設定" style="background:#fff; border-radius:22px; padding:22px; width:100%; max-width:420px; max-height:86vh; overflow:auto; animation:popIn .25s ease both; box-shadow:0 24px 60px rgba(45,59,45,.25); display:flex; flex-direction:column; gap:14px;">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">階段目標</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="font-size:12.5px; color:#6B7565;">設定一段日期區間的每日目標；未設定的日期使用預設（蛋豆魚肉 7、蔬菜 3、全穀雜糧 10、油脂堅果 3、水果 2、乳品 2 份，喝水 2000ml）。</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <label style="font-size:12px; color:#6B7565;">開始日期</label>
+        <input type="date" value="{{ goalStart }}" onChange="{{ setGoalStart }}" style="height:42px; border:1.5px solid #DDD8CA; border-radius:11px; padding:0 10px; font-size:14px; outline:none; background:#FBFAF6;" />
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <label style="font-size:12px; color:#6B7565;">結束日期</label>
+        <input type="date" value="{{ goalEnd }}" onChange="{{ setGoalEnd }}" style="height:42px; border:1.5px solid #DDD8CA; border-radius:11px; padding:0 10px; font-size:14px; outline:none; background:#FBFAF6;" />
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <sc-for list="{{ goalFields }}" as="g" hint-placeholder-count="7">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span style="font-size:14px; font-weight:700;">{{ g.name }} <span style="font-size:12px; color:#8A9284; font-weight:400;">{{ g.unit }}</span></span>
+          <input type="number" step="{{ g.step }}" min="0" value="{{ g.val }}" onChange="{{ g.set }}" style="width:100px; height:40px; border:1.5px solid #DDD8CA; border-radius:11px; padding:0 10px; font-size:15px; outline:none; background:#FBFAF6; text-align:center;" />
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button onClick="{{ closeModals }}" style="flex:1; height:46px; border:1.5px solid #DDD8CA; border-radius:13px; background:#fff; font-size:15px; font-weight:700; color:#4A5A4A; cursor:pointer;" style-hover="background:#F4F1EA;">取消</button>
+      <button onClick="{{ saveGoals }}" style="flex:2; height:46px; border:none; border-radius:13px; background:#4A7C59; color:#fff; font-size:15px; font-weight:700; cursor:pointer;" style-hover="background:#3A6347;">儲存目標</button>
+    </div>
+    <sc-if value="{{ hasSavedGoals }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:12.5px; color:#6B7565; border-top:1px solid #F0EDE3; padding-top:10px; display:flex; justify-content:space-between; align-items:center;">
+        <span>目前目標區間：{{ savedGoalRange }}</span>
+        <button onClick="{{ clearGoals }}" style="border:none; background:transparent; color:#C0564A; font-size:12.5px; font-weight:700; cursor:pointer;">清除</button>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+
+<!-- ══════════ 食物份數指南彈窗 ══════════ -->
+<sc-if value="{{ showGuide }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed; inset:0; background:rgba(45,59,45,.4); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px;">
+  <div data-screen-label="份數指南" style="background:#F4F1EA; border-radius:22px; width:100%; max-width:560px; max-height:88vh; overflow:hidden; animation:popIn .25s ease both; box-shadow:0 24px 60px rgba(45,59,45,.25); display:flex; flex-direction:column;">
+    <div style="padding:18px 20px 12px; background:#fff; border-bottom:1.5px solid #E4DFD2; display:flex; align-items:center; justify-content:space-between;">
+      <div style="font-size:17px; font-weight:900;">食物份數指南</div>
+      <button onClick="{{ closeModals }}" style="width:34px; height:34px; border:none; border-radius:10px; background:#F4F1EA; cursor:pointer; font-size:16px; color:#4A5A4A;">✕</button>
+    </div>
+    <div style="padding:10px 14px; background:#fff; display:flex; gap:6px; overflow-x:auto; border-bottom:1.5px solid #E4DFD2;">
+      <sc-for list="{{ guideTabs }}" as="t" hint-placeholder-count="6">
+        <button onClick="{{ t.select }}" style="flex:none; border:none; border-radius:99px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; background:{{ t.bg }}; color:{{ t.fg }};">{{ t.name }}</button>
+      </sc-for>
+    </div>
+    <div style="padding:16px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:14px;">
+      <sc-for list="{{ guideSections }}" as="sec" hint-placeholder-count="2">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:14px; font-weight:900; color:{{ guideColor }};">{{ sec.title }}</div>
+          <sc-if value="{{ sec.isList }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="5">
+                <div style="display:flex; gap:10px; background:#fff; border:1px solid #EEEAE0; border-radius:12px; padding:9px 12px; font-size:13.5px;">
+                  <span style="flex:none; font-weight:800; color:{{ guideColor }}; min-width:64px;">{{ it.qty }}</span>
+                  <span style="color:#4A5A4A;">{{ it.desc }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ sec.isText }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:13.5px; color:#4A5A4A; line-height:1.7; background:#fff; border:1px solid #EEEAE0; border-radius:12px; padding:12px 14px;">{{ sec.text }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: &quot;100%&quot;, &quot;height&quot;: 900}, &quot;desktopTwoCol&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;版面&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const saved = this.load();
+    this.state = {
+      loggedIn: saved.loggedIn || false,
+      selected: this.dstr(new Date()),
+      weekAnchor: this.dstr(new Date()),
+      modal: null,
+      calMonth: null,
+      guideTab: 0,
+      editingId: null,
+      trendOpen: false,
+      trendField: 'weight',
+      waterInput: '',
+      days: saved.days || {},
+      goals: saved.goals || null,
+      goalDraft: null,
+    };
+  }
+
+  load() { try { return JSON.parse(localStorage.getItem('diet-diary-v1')) || {}; } catch(e) { return {}; } }
+  persist() {
+    try {
+      localStorage.setItem('diet-diary-v1', JSON.stringify({
+        loggedIn: this.state.loggedIn, days: this.state.days, goals: this.state.goals,
+      }));
+    } catch(e) { /* storage full (photos) — keep in-memory */ }
+  }
+  setP(patch) { this.setState(patch, () => this.persist()); }
+
+  dstr(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  dparse(s) { const p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
+  addDays(s, n) { const d = this.dparse(s); d.setDate(d.getDate()+n); return this.dstr(d); }
+
+  static MEALS = [
+    { k:'breakfast', name:'早餐', glyph:'早', tint:'#F1E8D2', color:'#A8842E' },
+    { k:'lunch', name:'午餐', glyph:'午', tint:'#E3EBD9', color:'#4A7C59' },
+    { k:'dinner', name:'晚餐', glyph:'晚', tint:'#E5EBF1', color:'#5B8DB8' },
+    { k:'night', name:'宵夜', glyph:'宵', tint:'#F5E3DB', color:'#C0564A' },
+    { k:'snack', name:'點心', glyph:'點', tint:'#F6E5E9', color:'#B5537A' },
+  ];
+
+  emptyFood() { return { meatLow:0, meatMed:0, meatHigh:0, meatXHigh:0, veg:0, grain:0, oil:0, fruit:0, milkSkim:0, milkLow:0, milkFull:0 }; }
+  emptyDay() {
+    return { water: 0, ex: { min: '', desc: '' },
+      body: { weight:'', fat:'', waist:'', muscle:'', fatkg:'' }, entries: [] };
+  }
+  entryHasData(e) { return !!(e.desc || e.photo || Object.values(e.food).some(v => v > 0)); }
+  day(key) {
+    const d = this.state.days[key];
+    if (!d) return this.emptyDay();
+    if (!d.entries) { // migrate legacy shapes
+      const nd = this.emptyDay();
+      nd.water = d.water || 0; nd.ex = d.ex || nd.ex; nd.body = d.body || nd.body;
+      if (d.meals) {
+        Component.MEALS.forEach(m => {
+          const md = d.meals[m.k];
+          if (md && (md.desc || md.photo || Object.values(md.food || {}).some(v => v > 0))) {
+            nd.entries.push({ id: key + '-' + m.k, meal: m.k, desc: md.desc || '', photo: md.photo || '', food: { ...this.emptyFood(), ...md.food } });
+          }
+        });
+      } else if (d.food) {
+        nd.entries.push({ id: key + '-legacy', meal: 'lunch', desc: '', photo: '', food: { ...this.emptyFood(), ...d.food } });
+      }
+      return nd;
+    }
+    return d;
+  }
+  updDay(key, fn) {
+    const days = { ...this.state.days };
+    const d = JSON.parse(JSON.stringify(this.day(key)));
+    fn(d);
+    days[key] = d;
+    this.setP({ days });
+  }
+  pruneEmptyEntries(key) {
+    const d = this.state.days[key];
+    if (!d || !d.entries) return;
+    if (d.entries.some(e => !this.entryHasData(e))) {
+      this.updDay(key, dd => dd.entries = dd.entries.filter(e => this.entryHasData(e)));
+    }
+  }
+  dayFoodTotals(key) {
+    const d = this.day(key);
+    const tot = this.emptyFood();
+    d.entries.forEach(e => {
+      Object.keys(tot).forEach(k => tot[k] += (e.food[k] || 0));
+    });
+    return tot;
+  }
+  hasData(key) {
+    const d = this.state.days[key];
+    if (!d) return false;
+    const dd = this.day(key);
+    const anyEntry = dd.entries.some(e => this.entryHasData(e));
+    return dd.water > 0 || anyEntry || (dd.ex.min && +dd.ex.min > 0) || !!dd.ex.desc || Object.values(dd.body).some(v => v !== '');
+  }
+
+  static KCAL = { meatLow:55, meatMed:75, meatHigh:120, meatXHigh:135, veg:25, grain:70, oil:45, fruit:60, milkSkim:80, milkLow:120, milkFull:150 };
+  static DEFAULT_GOALS = { meat:7, veg:3, grain:10, oil:3, fruit:2, milk:2 };
+  static DEFAULT_WATER = 2000;
+
+  round1(n) { return Math.round(n * 10) / 10; }
+  clampPortion(v) {
+    if (v === '' || v === null) return 0;
+    let n = parseFloat(v);
+    if (isNaN(n) || n < 0) n = 0;
+    if (n > 99) n = 99;
+    return this.round1(n);
+  }
+  kcalOfFood(f) {
+    const K = Component.KCAL;
+    return Math.round(Object.keys(K).reduce((a,k) => a + (f[k]||0)*K[k], 0));
+  }
+
+  goalsFor(key) {
+    const g = this.state.goals;
+    if (g && g.start && g.end && key >= g.start && key <= g.end) {
+      return { vals: g.vals, water: g.water || Component.DEFAULT_WATER, custom: true };
+    }
+    return { vals: Component.DEFAULT_GOALS, water: Component.DEFAULT_WATER, custom: false };
+  }
+
+  handlePhotoFile(file) {
+    if (!file) return;
+    const sel = this.state.selected, id = this.state.editingId;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 640;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        this.updDay(sel, dd => { const e = dd.entries.find(en => en.id === id); if (e) e.photo = dataUrl; });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  renderVals() {
+    const S = this.state;
+    const sel = S.selected;
+    const d = this.day(sel);
+    const todayStr = this.dstr(new Date());
+
+    // ── week strip ──
+    const anchor = this.dparse(S.weekAnchor);
+    const monday = new Date(anchor); monday.setDate(anchor.getDate() - ((anchor.getDay()+6)%7));
+    const wdN = ['一','二','三','四','五','六','日'];
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(monday); dd.setDate(monday.getDate()+i);
+      const key = this.dstr(dd);
+      const isSel = key === sel, isToday = key === todayStr;
+      weekDays.push({
+        wd: wdN[i], num: dd.getDate(),
+        bg: isSel ? '#4A7C59' : '#FFFFFF',
+        fg: isSel ? '#F4F1EA' : (isToday ? '#4A7C59' : '#4A5A4A'),
+        shadow: isSel ? '0 6px 14px rgba(74,124,89,.3)' : 'none',
+        dot: this.hasData(key) ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent',
+        select: () => this.setState({ selected: key }),
+      });
+    }
+
+    const selD = this.dparse(sel);
+    const selectedLabel = selD.getFullYear() + ' 年 ' + (selD.getMonth()+1) + ' 月 ' + selD.getDate() + ' 日（週' + wdN[(selD.getDay()+6)%7] + '）' + (sel === todayStr ? '・今天' : '');
+
+    const dayTot = this.dayFoodTotals(sel);
+    const totalKcal = this.kcalOfFood(dayTot);
+
+    const gInfo = this.goalsFor(sel);
+    const G = gInfo.vals;
+    const waterGoal = gInfo.water;
+
+    // ── entry summaries (只顯示有紀錄的) ──
+    const mealOrder = {}; Component.MEALS.forEach((m, i) => mealOrder[m.k] = i);
+    const entrySummaries = d.entries
+      .filter(e => this.entryHasData(e))
+      .slice()
+      .sort((a, b) => (mealOrder[a.meal] - mealOrder[b.meal]))
+      .map(e => {
+        const m = Component.MEALS.find(mm => mm.k === e.meal) || Component.MEALS[0];
+        return {
+          name: m.name, glyph: m.glyph, tint: m.tint, color: m.color,
+          kcal: this.kcalOfFood(e.food),
+          desc: e.desc || '（無敘述）',
+          photo: e.photo, hasPhoto: !!e.photo, noPhoto: !e.photo,
+          open: () => this.setState({ modal: 'logFood', editingId: e.id }),
+        };
+      });
+    const hasEntries = entrySummaries.length > 0;
+
+    // ── six-category summary rows ──
+    const K = Component.KCAL;
+    const mkRow = (cfg) => {
+      const total = this.round1(cfg.total);
+      const goal = G[cfg.gkey];
+      const over = goal > 0 && total > goal * 1.2;
+      return {
+        name: cfg.name, glyph: cfg.glyph, tint: cfg.tint, color: cfg.color,
+        detail: cfg.detail, total, goal,
+        valColor: over ? '#C0564A' : '#2D3B2D',
+        valWeight: over ? 900 : 700,
+        barColor: over ? '#C0564A' : cfg.color,
+        pct: Math.min(100, goal > 0 ? total/goal*100 : 0) + '%',
+      };
+    };
+    const kcalOf = keys => Math.round(keys.reduce((a,k) => a + dayTot[k]*K[k], 0));
+    const foodRows = [
+      mkRow({ name:'蛋豆魚肉', glyph:'蛋', tint:'#F5E3DB', color:'#C0564A', gkey:'meat', total: dayTot.meatLow+dayTot.meatMed+dayTot.meatHigh+dayTot.meatXHigh, detail: kcalOf(['meatLow','meatMed','meatHigh','meatXHigh']) + ' kcal' }),
+      mkRow({ name:'蔬菜', glyph:'蔬', tint:'#E3EBD9', color:'#4A7C59', gkey:'veg', total: dayTot.veg, detail: kcalOf(['veg']) + ' kcal' }),
+      mkRow({ name:'全穀雜糧', glyph:'穀', tint:'#F1E8D2', color:'#A8842E', gkey:'grain', total: dayTot.grain, detail: kcalOf(['grain']) + ' kcal' }),
+      mkRow({ name:'油脂堅果', glyph:'油', tint:'#F3E7D8', color:'#C77B4A', gkey:'oil', total: dayTot.oil, detail: kcalOf(['oil']) + ' kcal' }),
+      mkRow({ name:'水果', glyph:'果', tint:'#F6E5E9', color:'#B5537A', gkey:'fruit', total: dayTot.fruit, detail: kcalOf(['fruit']) + ' kcal' }),
+      mkRow({ name:'乳品', glyph:'乳', tint:'#E5EBF1', color:'#5B8DB8', gkey:'milk', total: dayTot.milkSkim+dayTot.milkLow+dayTot.milkFull, detail: kcalOf(['milkSkim','milkLow','milkFull']) + ' kcal' }),
+    ];
+
+    // ── food modal (單筆紀錄) ──
+    const curEntry = d.entries.find(e => e.id === S.editingId) || null;
+    const md = curEntry || { desc:'', photo:'', food: this.emptyFood(), meal: 'breakfast' };
+    const mealDef = Component.MEALS.find(m => m.k === md.meal) || Component.MEALS[0];
+    const updEntry = fn => this.updDay(sel, dd => { const e = dd.entries.find(en => en.id === S.editingId); if (e) fn(e); });
+    const mkField = (key, label) => ({
+      label, val: md.food[key] || '',
+      set: e => { const v = this.clampPortion(e.target.value); updEntry(en => en.food[key] = v); },
+    });
+    const foodInputs = [
+      { name:'蛋豆魚肉', glyph:'蛋', tint:'#F5E3DB', color:'#C0564A', note:'55–135 卡/份',
+        fields: [mkField('meatLow','低脂（55卡）'), mkField('meatMed','中脂（75卡）'), mkField('meatHigh','高脂（120卡）'), mkField('meatXHigh','超高脂（135卡）')] },
+      { name:'蔬菜', glyph:'蔬', tint:'#E3EBD9', color:'#4A7C59', note:'25 卡/份', fields: [mkField('veg','份數')] },
+      { name:'全穀雜糧', glyph:'穀', tint:'#F1E8D2', color:'#A8842E', note:'70 卡/份', fields: [mkField('grain','份數')] },
+      { name:'油脂堅果', glyph:'油', tint:'#F3E7D8', color:'#C77B4A', note:'45 卡/份', fields: [mkField('oil','份數')] },
+      { name:'水果', glyph:'果', tint:'#F6E5E9', color:'#B5537A', note:'60 卡/份', fields: [mkField('fruit','份數')] },
+      { name:'乳品', glyph:'乳', tint:'#E5EBF1', color:'#5B8DB8', note:'80–150 卡/份',
+        fields: [mkField('milkSkim','脫脂（80卡）'), mkField('milkLow','低脂（120卡）'), mkField('milkFull','全脂（150卡）')] },
+    ];
+
+    // ── water ──
+    const waterOver = d.water > waterGoal * 1.2;
+    const waterPct = Math.min(100, d.water / waterGoal * 100) + '%';
+
+    // ── add options ──
+    const addOptions = [
+      ...Component.MEALS.map(m => ({
+        name: m.name, glyph: m.glyph, tint: m.tint, color: m.color,
+        select: () => {
+          const id = sel + '-' + m.k + '-' + Date.now();
+          this.updDay(sel, dd => dd.entries.push({ id, meal: m.k, desc:'', photo:'', food: this.emptyFood() }));
+          this.setState({ modal:'logFood', editingId: id });
+        },
+      })),
+      { name:'喝水', glyph:'水', tint:'#E5EBF1', color:'#5B8DB8', select: () => this.setState({ modal:'logWater', waterInput:'' }) },
+      { name:'運動', glyph:'動', tint:'#F3E7D8', color:'#C77B4A', select: () => this.setState({ modal:'logEx' }) },
+      { name:'身體數據', glyph:'體', tint:'#F5E3DB', color:'#C0564A', select: () => this.setState({ modal:'logBody' }) },
+    ];
+
+    // ── exercise & body ──
+    const hasEx = (d.ex.min && +d.ex.min > 0) || d.ex.desc;
+    const exSummary = hasEx
+      ? ((d.ex.min ? d.ex.min + ' 分鐘' : '') + (d.ex.min && d.ex.desc ? '・' : '') + (d.ex.desc || ''))
+      : '尚未記錄，點右下「＋」新增。';
+
+    const bodyDefs = [
+      { k:'weight', name:'體重', unit:'kg' }, { k:'fat', name:'體脂率', unit:'%' },
+      { k:'waist', name:'腰圍', unit:'cm' }, { k:'muscle', name:'肌肉重', unit:'kg' },
+      { k:'fatkg', name:'體脂重', unit:'kg' },
+    ];
+    const bodyFields = bodyDefs.map(b => ({
+      name: b.name, unit: b.unit, val: d.body[b.k],
+      set: e => { const v = e.target.value; this.updDay(sel, dd => dd.body[b.k] = v); },
+    }));
+    const bodySummary = bodyDefs.map(b => ({
+      name: b.name, unit: b.unit, val: d.body[b.k] !== '' ? d.body[b.k] : '—',
+    }));
+
+    const trendTabs = bodyDefs.map(b => ({
+      name: b.name,
+      bg: S.trendField === b.k ? '#4A7C59' : '#F0EDE3',
+      fg: S.trendField === b.k ? '#fff' : '#4A5A4A',
+      select: () => this.setState({ trendField: b.k }),
+    }));
+
+    // ── calendar ──
+    const cm = S.calMonth || { y: selD.getFullYear(), m: selD.getMonth() };
+    const calTitle = cm.y + ' 年 ' + (cm.m+1) + ' 月';
+    const first = new Date(cm.y, cm.m, 1);
+    const lead = (first.getDay()+6)%7;
+    const dim = new Date(cm.y, cm.m+1, 0).getDate();
+    const calCells = [];
+    for (let i = 0; i < lead; i++) calCells.push({ num:'', empty:true, bg:'transparent', fg:'transparent', dot:'transparent', select:null });
+    for (let n = 1; n <= dim; n++) {
+      const key = this.dstr(new Date(cm.y, cm.m, n));
+      const isSel = key === sel, isToday = key === todayStr;
+      calCells.push({
+        num: n, empty: false,
+        bg: isSel ? '#4A7C59' : (isToday ? '#EDF2E6' : '#FBFAF6'),
+        fg: isSel ? '#fff' : (isToday ? '#4A7C59' : '#4A5A4A'),
+        dot: this.hasData(key) ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent',
+        select: () => this.setState({ selected: key, weekAnchor: key, modal: null, calMonth: null }),
+      });
+    }
+
+    // ── goals modal ──
+    const draft = S.goalDraft || {};
+    const goalDefs = [
+      { k:'meat', name:'蛋豆魚肉', unit:'份', step:0.5 }, { k:'veg', name:'蔬菜', unit:'份', step:0.5 },
+      { k:'grain', name:'全穀雜糧', unit:'份', step:0.5 }, { k:'oil', name:'油脂堅果', unit:'份', step:0.5 },
+      { k:'fruit', name:'水果', unit:'份', step:0.5 }, { k:'milk', name:'乳品', unit:'份', step:0.5 },
+    ];
+    const goalFields = goalDefs.map(g => ({
+      name: g.name, unit: g.unit, step: g.step,
+      val: draft.vals ? draft.vals[g.k] : '',
+      set: e => { const v = e.target.value; this.setState(s => ({ goalDraft: { ...s.goalDraft, vals: { ...s.goalDraft.vals, [g.k]: v } } })); },
+    }));
+    goalFields.push({
+      name: '喝水', unit: 'ml', step: 50,
+      val: draft.water !== undefined ? draft.water : '',
+      set: e => { const v = e.target.value; this.setState(s => ({ goalDraft: { ...s.goalDraft, water: v } })); },
+    });
+
+    // ── guide ──
+    const guide = this.guideData();
+    const gTab = guide[S.guideTab];
+    const guideTabs = guide.map((g, i) => ({
+      name: g.name,
+      bg: i === S.guideTab ? g.color : '#F0EDE3',
+      fg: i === S.guideTab ? '#fff' : '#4A5A4A',
+      select: () => this.setState({ guideTab: i }),
+    }));
+    const guideSections = gTab.sections.map(s => ({
+      title: s.title, isList: !!s.items, isText: !s.items,
+      items: s.items || [], text: s.text || '',
+    }));
+
+    return {
+      showLogin: !S.loggedIn,
+      showMain: S.loggedIn,
+      doLogin: e => { if (e && e.preventDefault) e.preventDefault(); this.setP({ loggedIn: true }); },
+      doLogout: () => this.setP({ loggedIn: false }),
+      closeModals: () => this.setState({ modal: null, calMonth: null, goalDraft: null, editingId: null }, () => this.pruneEmptyEntries(sel)),
+
+      gridCols: (this.props.desktopTwoCol ?? true) ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
+
+      weekDays, selectedLabel,
+      notToday: sel !== todayStr,
+      goToday: () => this.setState({ selected: todayStr, weekAnchor: todayStr }),
+      prevWeek: () => this.setState(s => ({ weekAnchor: this.addDays(s.weekAnchor, -7) })),
+      nextWeek: () => this.setState(s => ({ weekAnchor: this.addDays(s.weekAnchor, 7) })),
+
+      totalKcal,
+      waterGoal,
+      waterText: d.water + ' / ' + waterGoal + ' ml',
+      waterColor: waterOver ? '#C0564A' : '#5B8DB8',
+      waterPct,
+      waterTotalNum: d.water,
+      waterInput: S.waterInput,
+      setWaterInput: e => this.setState({ waterInput: e.target.value }),
+      addWater: () => {
+        let n = parseFloat(this.state.waterInput);
+        if (isNaN(n) || n <= 0) return;
+        n = Math.min(9999, Math.round(n));
+        this.updDay(sel, dd => dd.water += n);
+        this.setState({ waterInput: '' });
+      },
+      resetWater: () => this.updDay(sel, dd => dd.water = 0),
+
+      entrySummaries, hasEntries,
+      noEntries: !hasEntries,
+      foodRows, foodInputs,
+      goalSource: gInfo.custom ? '自訂區間' : '預設',
+
+      // food modal
+      curMealName: mealDef.name,
+      curMealKcal: this.kcalOfFood(md.food),
+      curMealDesc: md.desc,
+      curMealPhoto: md.photo,
+      curMealHasPhoto: !!md.photo,
+      curMealNoPhoto: !md.photo,
+      setMealDesc: e => { const v = e.target.value; updEntry(en => en.desc = v); },
+      uploadPhoto: e => { const file = e.target.files && e.target.files[0]; e.target.value = ''; this.handlePhotoFile(file); },
+      removePhoto: () => updEntry(en => en.photo = ''),
+      deleteEntry: () => {
+        const id = S.editingId;
+        this.updDay(sel, dd => dd.entries = dd.entries.filter(en => en.id !== id));
+        this.setState({ modal: null, editingId: null });
+      },
+
+      // add menu
+      showAdd: S.modal === 'add',
+      showMeals: S.modal === 'meals',
+      openMeals: () => this.setState({ modal: 'meals' }),
+      openAdd: () => this.setState({ modal: 'add' }),
+      addOptions,
+      showLogFood: S.modal === 'logFood' && !!curEntry,
+      showLogWater: S.modal === 'logWater',
+      showLogEx: S.modal === 'logEx',
+      showLogBody: S.modal === 'logBody',
+
+      exSummary,
+      exMinutes: d.ex.min, exDesc: d.ex.desc,
+      setExMinutes: e => { const v = e.target.value; this.updDay(sel, dd => dd.ex.min = v); },
+      setExDesc: e => { const v = e.target.value; this.updDay(sel, dd => dd.ex.desc = v); },
+
+      bodyFields, bodySummary,
+      showTrendChart: S.trendOpen,
+      showTrendChartNot: !S.trendOpen,
+      trendBtnLabel: S.trendOpen ? '返回數值' : '看趨勢',
+      trendBtnBg: S.trendOpen ? '#4A7C59' : '#fff',
+      trendBtnFg: S.trendOpen ? '#fff' : '#4A5A4A',
+      toggleTrend: () => this.setState(s => ({ trendOpen: !s.trendOpen })),
+      trendTabs,
+      trendChart: this.buildTrendChart(),
+
+      showCalendar: S.modal === 'calendar',
+      showGoals: S.modal === 'goals',
+      showGuide: S.modal === 'guide',
+      openCalendar: () => this.setState({ modal: 'calendar', calMonth: { y: selD.getFullYear(), m: selD.getMonth() } }),
+      openGoals: () => {
+        const g = S.goals;
+        this.setState({ modal: 'goals', goalDraft: g
+          ? JSON.parse(JSON.stringify(g))
+          : { start: todayStr, end: this.addDays(todayStr, 27), vals: { ...Component.DEFAULT_GOALS }, water: Component.DEFAULT_WATER } });
+      },
+      openGuide: () => this.setState({ modal: 'guide' }),
+
+      calTitle, calCells, wdNames: wdN,
+      calPrevMonth: () => this.setState({ calMonth: cm.m === 0 ? { y: cm.y-1, m: 11 } : { y: cm.y, m: cm.m-1 } }),
+      calNextMonth: () => this.setState({ calMonth: cm.m === 11 ? { y: cm.y+1, m: 0 } : { y: cm.y, m: cm.m+1 } }),
+
+      goalStart: draft.start || '', goalEnd: draft.end || '',
+      setGoalStart: e => { const v = e.target.value; this.setState(s => ({ goalDraft: { ...s.goalDraft, start: v } })); },
+      setGoalEnd: e => { const v = e.target.value; this.setState(s => ({ goalDraft: { ...s.goalDraft, end: v } })); },
+      goalFields,
+      saveGoals: () => {
+        const gd = this.state.goalDraft;
+        const vals = {};
+        Object.keys(Component.DEFAULT_GOALS).forEach(k => vals[k] = Math.max(0, parseFloat(gd.vals[k]) || 0));
+        const water = Math.max(0, Math.round(parseFloat(gd.water))) || Component.DEFAULT_WATER;
+        this.setP({ goals: { start: gd.start, end: gd.end, vals, water } });
+        this.setState({ modal: null, goalDraft: null });
+      },
+      clearGoals: () => { this.setP({ goals: null }); this.setState({ modal: null, goalDraft: null }); },
+      hasSavedGoals: !!S.goals,
+      savedGoalRange: S.goals ? S.goals.start + ' ～ ' + S.goals.end : '',
+
+      guideTabs, guideSections,
+      guideColor: gTab.color,
+    };
+  }
+
+  buildTrendChart() {
+    const S = this.state;
+    const fieldNames = { weight:'體重 kg', fat:'體脂率 %', waist:'腰圍 cm', muscle:'肌肉重 kg', fatkg:'體脂重 kg' };
+    const pts = Object.keys(S.days)
+      .filter(k => S.days[k].body && S.days[k].body[S.trendField] !== '')
+      .sort()
+      .slice(-30)
+      .map(k => ({ k, v: parseFloat(S.days[k].body[S.trendField]) }))
+      .filter(p => !isNaN(p.v));
+    const h = React.createElement;
+    if (pts.length < 2) {
+      return h('div', { style: { padding: '24px 10px', textAlign: 'center', color: '#8A9284', fontSize: 13 } },
+        '至少需要兩天的「' + fieldNames[S.trendField] + '」紀錄才能顯示趨勢。');
+    }
+    const W = 320, H = 140, pad = 24;
+    const vs = pts.map(p => p.v);
+    const min = Math.min(...vs), max = Math.max(...vs);
+    const range = (max - min) || 1;
+    const x = i => pad + i * (W - pad * 2) / (pts.length - 1);
+    const y = v => H - pad - (v - min) / range * (H - pad * 2);
+    const path = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(p.v).toFixed(1)).join(' ');
+    return h('svg', { viewBox: '0 0 ' + W + ' ' + H, style: { width: '100%', display: 'block' } },
+      h('path', { d: path + ' L' + x(pts.length-1).toFixed(1) + ',' + (H-pad) + ' L' + pad + ',' + (H-pad) + ' Z', fill: 'rgba(74,124,89,.12)' }),
+      h('path', { d: path, fill: 'none', stroke: '#4A7C59', strokeWidth: 2.5, strokeLinecap: 'round' }),
+      ...pts.map((p, i) => h('circle', { key: i, cx: x(i), cy: y(p.v), r: 3.2, fill: '#4A7C59' })),
+      h('text', { x: pad, y: 12, fontSize: 10, fill: '#8A9284' }, max.toFixed(1)),
+      h('text', { x: pad, y: H - 8, fontSize: 10, fill: '#8A9284' }, min.toFixed(1)),
+      h('text', { x: W - pad, y: H - 8, fontSize: 10, fill: '#8A9284', textAnchor: 'end' }, pts[pts.length-1].k.slice(5)),
+    );
+  }
+
+  guideData() {
+    return [
+      { name:'蛋豆魚肉', color:'#C0564A', sections:[
+        { title:'低脂（55 卡/份）一份舉例', items:[
+          { qty:'1/4掌', desc:'里肌肉（可食生重35g、熟重30g）' },
+          { qty:'1/2支', desc:'小雞腿（可食生重40g）' },
+          { qty:'1/3片', desc:'雞胸肉（可食生重30g）' },
+          { qty:'2湯匙', desc:'鮪魚罐頭（可食生重30g）' },
+          { qty:'10~15個', desc:'蛤蠣（大）（生重160g）' },
+          { qty:'190ml', desc:'無糖豆漿' },
+          { qty:'1/3掌', desc:'花枝（可食生重40g）' },
+          { qty:'3湯匙', desc:'蚵仔（可食生重65g）' },
+          { qty:'5湯匙', desc:'吻仔魚（可食生重80g）' },
+          { qty:'4尾', desc:'劍蝦（可食生重35g）' },
+          { qty:'2顆', desc:'蛋白（可食生重60g）' },
+          { qty:'2片', desc:'火腿（45g，+5g碳水化合物）' },
+          { qty:'2/3片', desc:'濕豆包（可食生重30g）' },
+        ]},
+        { title:'中脂（75 卡/份）一份舉例', items:[
+          { qty:'1/4掌', desc:'豬、牛肉（可食生重35g、熟重30g）' },
+          { qty:'1顆', desc:'蛋（可食生重55g）' },
+          { qty:'2個', desc:'三角油豆腐（可食生重55g）' },
+          { qty:'1/2盒', desc:'嫩豆腐（可食生重140g）' },
+          { qty:'2塊', desc:'五香豆干（可食生重35g）' },
+          { qty:'1/5輪片', desc:'鮭魚（可食生重35g）' },
+          { qty:'1/3掌', desc:'比目魚（可食生重50g）' },
+        ]},
+        { title:'高脂（120 卡/份）一份舉例', items:[
+          { qty:'4個', desc:'雞心（可食生重45g）' },
+          { qty:'1/6條', desc:'百頁豆腐（可食生重70g）' },
+          { qty:'1/2條', desc:'秋刀魚（可食生重35g）' },
+          { qty:'1/3條', desc:'鯖魚（可食生重35g）' },
+        ]},
+        { title:'超高脂（135 卡/份）一份舉例', items:[
+          { qty:'1/4掌', desc:'豬蹄膀（可食生重40g）' },
+          { qty:'1/4掌', desc:'梅花肉（可食生重35g）' },
+          { qty:'1/4掌', desc:'牛腩（可食生重40g）' },
+          { qty:'100g', desc:'豬大腸（可食生重）' },
+          { qty:'1條', desc:'熱狗（可食生重50g）' },
+          { qty:'1條', desc:'香腸（可食生重40g）' },
+        ]},
+        { title:'什麼是豆魚蛋肉類', text:'營養學上將豆魚蛋肉類分成低脂、中脂、高脂與超高脂 4 種，每份熱量不同：低脂含 3g 脂肪（55 大卡）、中脂含 5g 脂肪加 7g 蛋白質（75 大卡）、高脂含 10g 脂肪加 7g 蛋白質（120 大卡）、超高脂含超過 10g 脂肪（超過 135 大卡）。豆魚蛋肉類主要提供蛋白質，一天建議吃 3-8 份。一個掌心大小的肉片約 2-3 份，1 顆蛋等於 1 份，市售 480ml 紙盒豆漿約 2.5 份。建議一餐不要吃超過一個掌心大的肉喔！' },
+      ]},
+      { name:'蔬菜', color:'#4A7C59', sections:[
+        { title:'一份（可食部分 100g）舉例', items:[
+          { qty:'1/2碗', desc:'葉菜類' },
+          { qty:'1碗', desc:'筍類、蘿蔔' },
+          { qty:'1碗', desc:'菇類、瓜類' },
+          { qty:'1顆', desc:'大番茄' },
+        ]},
+        { title:'什麼是蔬菜類', text:'蔬菜最重要的就是提供膳食纖維，膳食纖維每天最少要 25 克，然而國人平均攝取量只有 16 克。缺乏膳食纖維容易增加罹患腸胃道疾病、高血脂及高血膽固醇的風險，也不容易瘦！因此蔬菜一天 3-5 份較為剛好，每餐最好都要吃到 1 份蔬菜才健康喔！' },
+      ]},
+      { name:'全穀雜糧', color:'#A8842E', sections:[
+        { title:'常見早餐一份舉例', items:[
+          { qty:'1片', desc:'薄吐司（30g）' },
+          { qty:'1/2片', desc:'一般吐司（30g）、蛋餅皮（30g）' },
+          { qty:'1塊', desc:'蘿蔔糕（50g）' },
+          { qty:'1/2個', desc:'漢堡麵包（25g）、油條' },
+          { qty:'1/4個', desc:'饅頭、燒餅' },
+          { qty:'3湯匙', desc:'燕麥片' },
+          { qty:'2湯匙', desc:'穀物粉' },
+          { qty:'1個', desc:'小餐包' },
+          { qty:'3片', desc:'蘇打餅乾' },
+          { qty:'1/5個', desc:'飯糰' },
+          { qty:'1/3個', desc:'貝果' },
+        ]},
+        { title:'常見午晚餐一份舉例', items:[
+          { qty:'1/4碗', desc:'飯（40g）' },
+          { qty:'1/2碗', desc:'稀飯（125g）、麵（60g）' },
+          { qty:'2湯匙', desc:'綠豆、紅豆（25g）、小湯圓' },
+          { qty:'6公分', desc:'玉米（可食重量85g）' },
+          { qty:'2張', desc:'薄春捲皮（30g）' },
+          { qty:'1/2碗', desc:'冬粉、米粉、地瓜（55g）、芋頭（55g）、山藥（80g）、南瓜（85g）、馬鈴薯（90g）、蓮藕（100g）、義大利麵（20g）' },
+          { qty:'3張', desc:'水餃皮（30g）' },
+          { qty:'5張', desc:'餛飩皮（小）（40g）' },
+          { qty:'2指長寬', desc:'米血' },
+          { qty:'1片', desc:'甜不辣' },
+        ]},
+        { title:'什麼是全穀雜糧類', text:'常見的飯、麵、馬鈴薯等主食類歸類在全穀雜糧類中。一天建議量是 1.5~4 碗飯，一個拳頭大小的飯約等於一碗！當便當配菜出現地瓜、玉米、南瓜，或吃地瓜、燕麥飯時，記得飯吃少一點——它們都是全穀雜糧類，才不會額外造成負擔！' },
+      ]},
+      { name:'油脂堅果', color:'#C77B4A', sections:[
+        { title:'一份舉例', items:[
+          { qty:'1茶匙', desc:'油（可食量5g）、美乃滋（10g）' },
+          { qty:'5粒', desc:'腰果、杏仁果（可食量10g）' },
+          { qty:'15粒', desc:'開心果（可食量10g）' },
+          { qty:'2粒', desc:'核桃（可食量7g）' },
+          { qty:'1/4顆', desc:'酪梨（可食量40g）' },
+          { qty:'1片', desc:'培根（可食量15g）' },
+        ]},
+        { title:'什麼是油脂類', text:'油脂類除了常見的植物油、動物油，還包含加工過的醬料，像是奶油、沙拉醬、花生醬，以及培根，需留意攝取。一天攝取量建議 3-7 茶匙，一個食指指節的大小就是一茶匙。堅果種子類每天建議攝取 1 份，相當於一個大拇指。' },
+      ]},
+      { name:'水果', color:'#B5537A', sections:[
+        { title:'一份舉例', items:[
+          { qty:'1個', desc:'橘子（可食量150g）、蘋果（130g）' },
+          { qty:'1/2根', desc:'香蕉（可食量70g）' },
+          { qty:'1/2個', desc:'香瓜（165g）、楊桃（170g）' },
+          { qty:'10粒', desc:'葡萄（可食量85g）' },
+          { qty:'23粒', desc:'番茄（可食量220g）' },
+        ]},
+        { title:'什麼是水果類', text:'水果切塊裝碗 8 分滿，也是一個拳頭大，一天吃 2-4 份剛剛好！提醒你水果吃的比喝的健康，盡量避免選擇現榨果汁，很容易不小心攝取過多的水果和糖份，過濾後也少了蔬果的纖維喔！世界衛生組織把果汁和一般的糖視為同樣的分類，喝多了也會造成糖尿病風險。' },
+      ]},
+      { name:'乳品', color:'#5B8DB8', sections:[
+        { title:'一份舉例', items:[
+          { qty:'240ml', desc:'鮮奶、保久乳、優酪乳' },
+          { qty:'210克', desc:'優格' },
+          { qty:'3湯匙', desc:'奶粉（25g）' },
+          { qty:'2片', desc:'起士（45g）' },
+        ]},
+        { title:'什麼是乳品類', text:'一天 1.5~2 杯（1 杯為 240 毫升，大約一個拳頭大），1 盒市售紙盒包裝（480 毫升）的鮮乳差不多就可以滿足一天所需的乳品類囉！熱量依脂肪含量不同：脫脂 80 卡、低脂 120 卡、全脂 150 卡。' },
+      ]},
+    ];
+  }
+}
+</script>
+</body>
+</html>
