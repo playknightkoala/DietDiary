@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { useStore } from '../store';
 import type { AdminUser, Role } from '../types';
 
-const ROLE_NAMES: Record<Role, string> = { member: '一般會員', dietitian: '營養師', admin: '管理者' };
+const ROLE_NAMES: Record<Role, string> = { member: '一般會員', citizen: '駒駒國民', dietitian: '營養師', admin: '管理者' };
 
 const backBtnStyle: CSSProperties = {
   height: 38, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff',

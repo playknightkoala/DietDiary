@@ -8,7 +8,7 @@ const inputStyle: CSSProperties = {
   fontSize: 14.5, outline: 'none', background: '#FBFAF6', width: '100%',
 };
 
-const ROLE_NAMES = { member: '一般會員', dietitian: '營養師', admin: '管理者' } as const;
+const ROLE_NAMES = { member: '一般會員', citizen: '駒駒國民', dietitian: '營養師', admin: '管理者' } as const;
 
 export function AccountModal() {
   const username = useStore((s) => s.username);

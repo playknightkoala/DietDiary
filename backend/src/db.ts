@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active')),
-  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','dietitian','admin')),
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','citizen','dietitian','admin')),
   approval_token TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -109,7 +109,34 @@ if (!userCols.includes('approval_token')) {
   db.exec(`ALTER TABLE users ADD COLUMN approval_token TEXT`);
 }
 if (!userCols.includes('role')) {
-  db.exec(`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','dietitian','admin'))`);
+  db.exec(`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','citizen','dietitian','admin'))`);
+}
+
+// 舊資料表的 role CHECK 不含 citizen（駒駒國民）：SQLite 無法改約束，須重建資料表搬移資料
+const usersSql = (
+  db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'`).get() as { sql: string }
+).sql;
+if (!usersSql.includes('citizen')) {
+  db.pragma('foreign_keys = OFF');
+  const rebuild = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active')),
+        role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','citizen','dietitian','admin')),
+        approval_token TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users_new (id, username, password_hash, status, role, approval_token, created_at)
+        SELECT id, username, password_hash, status, role, approval_token, created_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+    `);
+  });
+  rebuild();
+  db.pragma('foreign_keys = ON');
 }
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {

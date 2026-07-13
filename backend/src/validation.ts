@@ -106,7 +106,7 @@ export const changePasswordSchema = z
   })
   .refine((d) => d.newPassword === d.confirmPassword, { message: '兩次輸入的密碼不一致' });
 
-export const ROLES = ['member', 'dietitian', 'admin'] as const;
+export const ROLES = ['member', 'citizen', 'dietitian', 'admin'] as const;
 
 // 營養師替單張照片評分；rating 為 null 表示清除評分
 export const photoRatingSchema = z.object({

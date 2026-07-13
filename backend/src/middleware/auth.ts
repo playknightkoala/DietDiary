@@ -4,7 +4,8 @@ import { db } from '../db.js';
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'dietdiary-dev-secret-change-me';
 
-export type Role = 'member' | 'dietitian' | 'admin';
+// citizen（駒駒國民）：權限與 member 完全相同，僅名稱不同
+export type Role = 'member' | 'citizen' | 'dietitian' | 'admin';
 
 declare module 'express-serve-static-core' {
   interface Request {
