@@ -37,9 +37,15 @@ docker compose up -d --build
 - `backend`：資料持久化於 `./docker-data/db`（SQLite）與 `./docker-data/uploads`（照片）
 - 停止：`docker compose down`（資料保留在 docker-data/）
 
-## 寄信與帳號審核
+## 帳號、角色與開通
 
-註冊流程：填 Email（即帳號）＋密碼＋確認密碼（未填齊前圖形驗證碼鎖定）→ 輸入圖形驗證碼並按「確認」（svg-captcha 產生、不分大小寫、5 分鐘有效、答錯作廢換新圖）→ 驗證成功才出現「Email 認證碼」欄位 → 按「寄送認證碼」收 6 位數認證碼（10 分鐘有效、60 秒可重寄、錯 5 次作廢）→ 送出註冊 → 帳號建立為 `pending`，系統寄信給管理員 → 管理員點信中連結開通 → 使用者收到開通通知信後即可登入。既有帳號在升級時自動視為已開通。
+角色分三種：`member`（一般會員）、`dietitian`（營養師）、`admin`（管理者）。
+
+- **註冊**：填 Email（即帳號）＋密碼＋確認密碼（未填齊前圖形驗證碼鎖定）→ 輸入圖形驗證碼並按「確認」（svg-captcha 產生、不分大小寫、5 分鐘有效、答錯作廢換新圖）→ 驗證成功才出現「Email 認證碼」欄位 → 按「寄送認證碼」收 6 位數認證碼（10 分鐘有效、60 秒可重寄、錯 5 次作廢）→ 送出註冊 → 帳號建立為 `pending`。既有帳號在升級時自動視為已開通。
+- **開通**：由管理者在「管理者後台」按「開通」（不再寄開通連結信）；開通時若有設定 SMTP 會寄通知信給使用者。後台也可調整角色、停用或刪除會員（連同其所有紀錄與照片）。
+- **初始管理員**：`ADMIN_EMAIL` 環境變數對應的帳號會在啟動／註冊／登入時自動升為管理者並開通。
+- **會員中心**：右上角人像圖示可查看帳號並變更密碼。
+- **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。
 
 防濫用：nginx 對 `/api/auth/` 做 per-IP 限流（5 req/s、burst 10，超過回 429），設定在 `frontend/nginx.conf`。
 
@@ -52,8 +58,8 @@ docker compose up -d --build
 | `SMTP_USER` | Gmail 帳號（寄件者）|
 | `SMTP_PASS` | Gmail「應用程式密碼」（Google 帳戶 → 安全性 → 兩步驟驗證 → 應用程式密碼；不是登入密碼）|
 | `SMTP_FROM` | 寄件者顯示信箱，預設同 `SMTP_USER` |
-| `ADMIN_EMAIL` | 收「新帳號待審核」通知信的管理員信箱 |
-| `APP_URL` | 對外網址（開通連結的網域），預設 `http://localhost:8080` |
+| `ADMIN_EMAIL` | 此信箱對應的帳號自動成為管理者（後台初始管理員）|
+| `APP_URL` | 對外網址（開通完成通知信的連結），預設 `http://localhost:8080` |
 
 未設定 `SMTP_USER`/`SMTP_PASS` 時無法寄認證碼，也就無法註冊新帳號（既有帳號登入不受影響）。
 
@@ -64,15 +70,26 @@ docker compose up -d --build
 | GET | `/api/auth/captcha` | → `{id, svg}` 圖形驗證碼 |
 | POST | `/api/auth/verify-captcha` | `{captchaId, captchaAnswer}` → 確認圖形驗證碼 |
 | POST | `/api/auth/send-code` | `{email, captchaId(已驗證)}` → 寄送註冊認證碼 |
-| POST | `/api/auth/register` | `{username(email), password, confirmPassword, code}` → `{pending, message}`（待審核）|
-| GET | `/api/auth/approve/:token` | 管理員開通連結（信件內附）|
-| POST | `/api/auth/login` | `{username, password, remember?}` → `{token}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
+| POST | `/api/auth/register` | `{username(email), password, confirmPassword, code}` → `{pending, message}`（待管理者開通）|
+| POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
+| GET | `/api/auth/me` | 目前登入者 `{username, role, createdAt}` |
+| POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries）|
-| GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆圓點）|
+| GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal}` |
-| PATCH / DELETE | `/api/entries/:id` | 更新（desc/food/photo:''）／刪除 |
-| POST | `/api/entries/:id/photo` | multipart 上傳照片（前端已壓縮 640px JPEG）|
-| GET / PUT / DELETE | `/api/goals` | 階段目標 |
+| PATCH / DELETE | `/api/entries/:id` | 更新（desc / food / photos 子集合＝刪除照片）／刪除 |
+| POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 6 張，前端已壓縮 640px JPEG）|
+| GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
+| PUT / DELETE | `/api/goals/:id` | 編輯／刪除單組目標（營養師設定的目標會員不可改）|
 | GET | `/api/body-trend?field=weight&limit=30` | 身體數據趨勢 |
+| GET | `/api/admin/users` | （admin）會員清單 |
+| POST | `/api/admin/users/:id/approve` | （admin）開通帳號 |
+| PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |
+| DELETE | `/api/admin/users/:id` | （admin）刪除會員與其所有資料 |
+| GET | `/api/pro/members` | （dietitian/admin）會員清單 |
+| GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
+| GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
+| GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
+| PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
 
 熱量計算與超標（>目標×1.2 轉紅）規則依 README domain rules，由前端 `src/lib/domain.ts` 以常數表計算；後端僅存份數。

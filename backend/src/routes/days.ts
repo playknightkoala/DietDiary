@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { DATE_RE, dayPatchSchema, entryCreateSchema } from '../validation.js';
-import { getDayJson, ensureDayRow, entryHasData, entryToJson, type DayRow, type EntryRow } from '../helpers.js';
+import { getDayJson, ensureDayRow, getMarkedDates, entryToJson, type EntryRow } from '../helpers.js';
 
 export const daysRouter = Router();
 daysRouter.use(requireAuth);
@@ -16,22 +16,7 @@ daysRouter.get('/marks', (req, res) => {
   const dayMs = new Date(to).getTime() - new Date(from).getTime();
   if (dayMs < 0 || dayMs > 62 * 86400000) return res.status(400).json({ error: 'range too large' });
 
-  const dates = new Set<string>();
-  const dayRows = db
-    .prepare('SELECT * FROM days WHERE user_id = ? AND date >= ? AND date <= ?')
-    .all(req.userId, from, to) as (DayRow & { date: string })[];
-  for (const r of dayRows) {
-    const hasBody = [r.body_weight, r.body_fat, r.body_waist, r.body_muscle, r.body_fatkg].some((v) => v !== '');
-    const hasEx = (r.ex_min && +r.ex_min > 0) || !!r.ex_desc;
-    if (r.water > 0 || hasEx || hasBody) dates.add(r.date);
-  }
-  const entryRows = db
-    .prepare('SELECT date, desc, photo, food FROM entries WHERE user_id = ? AND date >= ? AND date <= ?')
-    .all(req.userId, from, to) as (EntryRow & { date: string })[];
-  for (const r of entryRows) {
-    if (!dates.has(r.date) && entryHasData(entryToJson(r))) dates.add(r.date);
-  }
-  return res.json({ dates: [...dates].sort() });
+  return res.json({ dates: getMarkedDates(req.userId, from, to) });
 });
 
 daysRouter.get('/:date', (req, res) => {
@@ -72,7 +57,7 @@ daysRouter.post('/:date/entries', (req, res) => {
     .prepare("INSERT INTO entries (user_id, date, meal, food) VALUES (?, ?, ?, '{}')")
     .run(req.userId, date, parsed.data.meal);
   const row = db
-    .prepare('SELECT id, meal, desc, photo, food FROM entries WHERE id = ?')
+    .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE id = ?')
     .get(Number(info.lastInsertRowid)) as EntryRow;
   return res.status(201).json(entryToJson(row));
 });

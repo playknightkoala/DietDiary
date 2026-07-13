@@ -1,7 +1,8 @@
-import type { DayData, Entry, Food, Goals, MealKey, TrendPoint } from '../types';
+import type { AdminUser, DayData, Entry, Food, Goal, GoalInput, MealKey, MemberInfo, Role, TrendPoint } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
+const ROLE_KEY = 'diet-role';
 const REMEMBER_ACCOUNT_KEY = 'diet-remember-account';
 
 export function getToken(): string | null {
@@ -12,19 +13,31 @@ export function getUsername(): string | null {
   return sessionStorage.getItem(USER_KEY) ?? localStorage.getItem(USER_KEY);
 }
 
+export function getRole(): Role {
+  const r = sessionStorage.getItem(ROLE_KEY) ?? localStorage.getItem(ROLE_KEY);
+  return r === 'admin' || r === 'dietitian' ? r : 'member';
+}
+
 // persist=true（自動登入）存 localStorage 跨瀏覽器工作階段；否則存 sessionStorage 關閉即登出
-export function saveAuth(token: string, username: string, persist: boolean) {
+export function saveAuth(token: string, username: string, role: Role, persist: boolean) {
   clearAuth();
   const store = persist ? localStorage : sessionStorage;
   store.setItem(TOKEN_KEY, token);
   store.setItem(USER_KEY, username);
+  store.setItem(ROLE_KEY, role);
+}
+
+export function saveRole(role: Role) {
+  const store = localStorage.getItem(TOKEN_KEY) ? localStorage : sessionStorage;
+  store.setItem(ROLE_KEY, role);
 }
 
 export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(USER_KEY);
+  for (const store of [localStorage, sessionStorage]) {
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(USER_KEY);
+    store.removeItem(ROLE_KEY);
+  }
 }
 
 export function getRememberedAccount(): string {
@@ -92,9 +105,15 @@ export const api = {
       body: JSON.stringify({ username, password, confirmPassword, code }),
     }),
   login: (username: string, password: string, remember: boolean) =>
-    request<{ token: string; username: string }>('/api/auth/login', {
+    request<{ token: string; username: string; role: Role }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password, remember }),
+    }),
+  me: () => request<{ username: string; role: Role; createdAt: string }>('/api/auth/me'),
+  changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) =>
+    request<{ ok: true }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
     }),
 
   getDay: (date: string) => request<DayData>(`/api/days/${date}`),
@@ -105,20 +124,42 @@ export const api = {
 
   createEntry: (date: string, meal: MealKey) =>
     request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal }) }),
-  patchEntry: (id: number, patch: { desc?: string; food?: Food; photo?: '' }) =>
+  patchEntry: (id: number, patch: { desc?: string; food?: Food; photos?: string[] }) =>
     request<Entry>(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, { method: 'DELETE' }),
-  uploadPhoto: (id: number, blob: Blob) => {
+  uploadPhotos: (id: number, blobs: Blob[]) => {
     const form = new FormData();
-    form.append('photo', blob, 'photo.jpg');
-    return request<{ photo: string }>(`/api/entries/${id}/photo`, { method: 'POST', body: form });
+    blobs.forEach((b, i) => form.append('photos', b, `photo-${i}.jpg`));
+    return request<{ photos: string[] }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
 
-  getGoals: () => request<Goals | null>('/api/goals'),
-  putGoals: (goals: Goals) =>
-    request<Goals>('/api/goals', { method: 'PUT', body: JSON.stringify(goals) }),
-  deleteGoals: () => request<void>('/api/goals', { method: 'DELETE' }),
+  getGoals: () => request<Goal[]>('/api/goals'),
+  createGoal: (goal: GoalInput) =>
+    request<Goal>('/api/goals', { method: 'POST', body: JSON.stringify(goal) }),
+  updateGoal: (id: number, goal: GoalInput) =>
+    request<Goal>(`/api/goals/${id}`, { method: 'PUT', body: JSON.stringify(goal) }),
+  deleteGoal: (id: number) => request<void>(`/api/goals/${id}`, { method: 'DELETE' }),
 
   getTrend: (field: string, limit = 30) =>
     request<{ points: TrendPoint[] }>(`/api/body-trend?field=${field}&limit=${limit}`),
+
+  // 管理者後台
+  adminUsers: () => request<AdminUser[]>('/api/admin/users'),
+  adminApprove: (id: number) => request<AdminUser>(`/api/admin/users/${id}/approve`, { method: 'POST' }),
+  adminPatchUser: (id: number, patch: { role?: Role; status?: 'pending' | 'active' }) =>
+    request<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
+
+  // 營養師
+  proMembers: () => request<MemberInfo[]>('/api/pro/members'),
+  proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
+  proMarks: (memberId: number, from: string, to: string) =>
+    request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
+  proGoals: (memberId: number) => request<Goal[]>(`/api/pro/members/${memberId}/goals`),
+  proCreateGoal: (memberId: number, goal: GoalInput) =>
+    request<Goal>(`/api/pro/members/${memberId}/goals`, { method: 'POST', body: JSON.stringify(goal) }),
+  proUpdateGoal: (memberId: number, goalId: number, goal: GoalInput) =>
+    request<Goal>(`/api/pro/members/${memberId}/goals/${goalId}`, { method: 'PUT', body: JSON.stringify(goal) }),
+  proDeleteGoal: (memberId: number, goalId: number) =>
+    request<void>(`/api/pro/members/${memberId}/goals/${goalId}`, { method: 'DELETE' }),
 };

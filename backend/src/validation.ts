@@ -68,10 +68,28 @@ export const entryCreateSchema = z.object({
   meal: z.enum(MEAL_KEYS),
 });
 
+export const MAX_PHOTOS = 6;
+
 export const entryPatchSchema = z.object({
   desc: z.string().max(2000).optional(),
   food: foodSchema.optional(),
-  photo: z.literal('').optional(), // only '' allowed via PATCH (= remove); uploads go through /photo
+  // PATCH 只能「保留既有照片的子集合」（刪除用）；新增照片走 /photos 上傳
+  photos: z.array(z.string().max(300)).max(MAX_PHOTOS).optional(),
+});
+
+export const changePasswordSchema = z
+  .object({
+    oldPassword: z.string().min(1).max(200),
+    newPassword: z.string().min(6).max(200),
+    confirmPassword: z.string().min(6).max(200),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, { message: '兩次輸入的密碼不一致' });
+
+export const ROLES = ['member', 'dietitian', 'admin'] as const;
+
+export const adminPatchUserSchema = z.object({
+  role: z.enum(ROLES).optional(),
+  status: z.enum(['pending', 'active']).optional(),
 });
 
 export const goalsSchema = z.object({

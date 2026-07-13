@@ -151,7 +151,7 @@ export function LoginScreen() {
       if (mode === 'login') {
         const res = await api.login(account, password, autoLogin);
         setRememberedAccount(rememberAccount ? account : null);
-        loginSuccess(res.token, res.username, autoLogin);
+        loginSuccess(res.token, res.username, res.role, autoLogin);
       } else {
         const res = await api.register(account, password, confirmPassword, code.trim());
         switchMode('login');

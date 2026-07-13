@@ -4,15 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { entryPatchSchema } from '../validation.js';
-import { entryToJson, type EntryRow } from '../helpers.js';
+import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
+import { UPLOAD_DIR, entryToJson, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
 
-export const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+export { UPLOAD_DIR };
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024, files: MAX_PHOTOS },
   fileFilter: (_req, file, cb) => {
     cb(null, file.mimetype === 'image/jpeg');
   },
@@ -21,16 +20,10 @@ const upload = multer({
 export const entriesRouter = Router();
 entriesRouter.use(requireAuth);
 
-function getOwnedEntry(userId: number, id: string) {
+function getOwnedEntry(userId: number, id: string | number) {
   return db
-    .prepare('SELECT id, meal, desc, photo, food FROM entries WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE id = ? AND user_id = ?')
     .get(id, userId) as EntryRow | undefined;
-}
-
-function unlinkPhoto(photoUrl: string) {
-  if (!photoUrl.startsWith('/uploads/')) return;
-  const file = path.join(UPLOAD_DIR, path.basename(photoUrl));
-  fs.unlink(file, () => {});
 }
 
 entriesRouter.patch('/:id', (req, res) => {
@@ -38,16 +31,19 @@ entriesRouter.patch('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   const parsed = entryPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { desc, food, photo } = parsed.data;
+  const { desc, food, photos } = parsed.data;
 
   const sets: string[] = [];
   const args: string[] = [];
   if (desc !== undefined) { sets.push('desc = ?'); args.push(desc); }
   if (food !== undefined) { sets.push('food = ?'); args.push(JSON.stringify(food)); }
-  if (photo !== undefined) {
-    if (entry.photo) unlinkPhoto(entry.photo);
-    sets.push('photo = ?');
-    args.push('');
+  if (photos !== undefined) {
+    // 只允許保留既有照片的子集合（= 刪除部分照片），被移除的檔案順手清掉
+    const current = parsePhotos(entry.photos);
+    const keep = current.filter((p) => photos.includes(p));
+    current.filter((p) => !keep.includes(p)).forEach(unlinkPhoto);
+    sets.push('photos = ?');
+    args.push(JSON.stringify(keep));
   }
   if (sets.length) {
     db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
@@ -58,20 +54,28 @@ entriesRouter.patch('/:id', (req, res) => {
 entriesRouter.delete('/:id', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
-  if (entry.photo) unlinkPhoto(entry.photo);
+  parsePhotos(entry.photos).forEach(unlinkPhoto);
   db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
   return res.status(204).end();
 });
 
-entriesRouter.post('/:id/photo', upload.single('photo'), (req, res) => {
+// 一次可上傳多張（合計上限 MAX_PHOTOS 張／筆）
+entriesRouter.post('/:id/photos', upload.array('photos', MAX_PHOTOS), (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
-  if (!req.file) return res.status(400).json({ error: 'photo file required (jpeg)' });
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  if (!files.length) return res.status(400).json({ error: 'photo files required (jpeg)' });
 
-  if (entry.photo) unlinkPhoto(entry.photo);
-  const filename = `e${entry.id}-${Date.now()}.jpg`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, filename), req.file.buffer);
-  const url = `/uploads/${filename}`;
-  db.prepare('UPDATE entries SET photo = ? WHERE id = ?').run(url, entry.id);
-  return res.json({ photo: url });
+  const current = parsePhotos(entry.photos);
+  if (current.length + files.length > MAX_PHOTOS) {
+    return res.status(400).json({ error: `每筆紀錄最多 ${MAX_PHOTOS} 張照片` });
+  }
+  const urls = files.map((file, i) => {
+    const filename = `e${entry.id}-${Date.now()}-${i}.jpg`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), file.buffer);
+    return `/uploads/${filename}`;
+  });
+  const photos = [...current, ...urls];
+  db.prepare('UPDATE entries SET photos = ? WHERE id = ?').run(JSON.stringify(photos), entry.id);
+  return res.json({ photos });
 });

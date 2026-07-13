@@ -12,6 +12,7 @@ import { BodyModal } from '../components/modals/BodyModal';
 import { CalendarModal } from '../components/modals/CalendarModal';
 import { GoalsModal } from '../components/modals/GoalsModal';
 import { GuideModal } from '../components/modals/GuideModal';
+import { AccountModal } from '../components/modals/AccountModal';
 
 export function MainScreen() {
   const modal = useStore((s) => s.modal);
@@ -51,6 +52,7 @@ export function MainScreen() {
       {modal === 'calendar' && <CalendarModal />}
       {modal === 'goals' && <GoalsModal />}
       {modal === 'guide' && <GuideModal />}
+      {modal === 'account' && <AccountModal />}
     </div>
   );
 }

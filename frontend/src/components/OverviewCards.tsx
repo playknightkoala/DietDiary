@@ -69,7 +69,9 @@ export function FoodGroupsCard() {
     <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 16, fontWeight: 900 }}>六大類飲食份數</div>
-        <div style={{ fontSize: 12, color: '#6B7565' }}>目標：{gInfo.custom ? '自訂區間' : '預設'}</div>
+        <div style={{ fontSize: 12, color: gInfo.setBy === 'dietitian' ? '#5B8DB8' : '#6B7565', fontWeight: gInfo.setBy === 'dietitian' ? 700 : 400 }}>
+          目標：{gInfo.setBy === 'dietitian' ? '營養師設定' : gInfo.custom ? '自訂區間' : '預設'}
+        </div>
       </div>
       {ROW_CFGS.map((cfg) => {
         const total = round1(cfg.keys.reduce((a, k) => a + dayTot[k], 0));

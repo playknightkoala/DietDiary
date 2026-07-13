@@ -28,21 +28,31 @@ export function WeekStrip() {
           {week.map((key, i) => {
             const isSel = key === selected;
             const isToday = key === todayStr;
+            const isMarked = !!marks[key];
             return (
               <button
                 key={key}
                 onClick={() => selectDate(key)}
+                title={isMarked ? '這天有紀錄' : undefined}
                 style={{
-                  border: 'none', cursor: 'pointer', borderRadius: 14, padding: '8px 2px',
+                  cursor: 'pointer', borderRadius: 14, padding: '8px 2px',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                  background: isSel ? '#4A7C59' : '#FFFFFF',
+                  // 有紀錄的日期亮燈：淡橘底＋橘框＋發光圓點
+                  border: isMarked && !isSel ? '1.5px solid #E8C49A' : '1.5px solid transparent',
+                  background: isSel ? '#4A7C59' : isMarked ? '#FDF3E7' : '#FFFFFF',
                   color: isSel ? '#F4F1EA' : isToday ? '#4A7C59' : '#4A5A4A',
                   boxShadow: isSel ? '0 6px 14px rgba(74,124,89,.3)' : 'none',
                 }}
               >
                 <span style={{ fontSize: 11, opacity: 0.75 }}>{WD_NAMES[i]}</span>
                 <span style={{ fontFamily: 'Outfit', fontSize: 17, fontWeight: 700 }}>{dparse(key).getDate()}</span>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: marks[key] ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent' }} />
+                <span
+                  style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: isMarked ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent',
+                    boxShadow: isMarked ? (isSel ? '0 0 6px rgba(244,241,234,.9)' : '0 0 6px rgba(199,123,74,.85)') : 'none',
+                  }}
+                />
               </button>
             );
           })}

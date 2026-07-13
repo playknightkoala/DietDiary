@@ -29,8 +29,14 @@ export function TodayMealsModal() {
         const m = MEALS.find((mm) => mm.k === e.meal) || MEALS[0];
         return (
           <button key={e.id} onClick={() => openLogFood(e.id)} className="hv-cream" style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 16, padding: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%' }}>
-            {e.photo ? (
-              <div role="img" aria-label={m.name} style={{ width: 52, height: 52, flex: 'none', borderRadius: 12, backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${e.photo}')` }} />
+            {e.photos.length > 0 ? (
+              <div role="img" aria-label={m.name} style={{ position: 'relative', width: 52, height: 52, flex: 'none', borderRadius: 12, backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${e.photos[0]}')` }}>
+                {e.photos.length > 1 && (
+                  <span style={{ position: 'absolute', right: 2, bottom: 2, background: 'rgba(45,59,45,.7)', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 8, padding: '1px 5px' }}>
+                    {e.photos.length}張
+                  </span>
+                )}
+              </div>
             ) : (
               <div style={{ width: 52, height: 52, flex: 'none', borderRadius: 12, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 900, color: m.color }}>{m.glyph}</div>
             )}

@@ -44,7 +44,8 @@ export function LogFoodModal() {
   const entry = useMemo(() => day.entries.find((e) => e.id === editingId) ?? null, [day.entries, editingId]);
 
   const [desc, setDesc] = useState(entry?.desc ?? '');
-  const [photo, setPhoto] = useState(entry?.photo ?? '');
+  const [photos, setPhotos] = useState<string[]>(entry?.photos ?? []);
+  const [uploading, setUploading] = useState(false);
   const [foodStr, setFoodStr] = useState<Record<FoodKey, string>>(() => {
     const init = {} as Record<FoodKey, string>;
     const f = entry?.food ?? emptyFood();
@@ -75,7 +76,7 @@ export function LogFoodModal() {
     closing.current = true;
     const food = draftFood();
     try {
-      if (entryHasData({ desc, photo, food })) {
+      if (entryHasData({ desc, photos, food })) {
         await api.patchEntry(entry.id, { desc, food });
       } else {
         await api.deleteEntry(entry.id);
@@ -97,21 +98,29 @@ export function LogFoodModal() {
     }
   };
 
-  const uploadPhoto = async (file: File | undefined) => {
-    if (!file) return;
+  const MAX_PHOTOS = 6;
+
+  const uploadPhotos = async (files: File[]) => {
+    if (!files.length || uploading) return;
+    const room = MAX_PHOTOS - photos.length;
+    const picked = files.slice(0, room);
+    if (!picked.length) return;
+    setUploading(true);
     try {
-      const blob = await compressImage(file);
-      const { photo: url } = await api.uploadPhoto(entry.id, blob);
-      setPhoto(url);
+      const blobs = await Promise.all(picked.map(compressImage));
+      const { photos: urls } = await api.uploadPhotos(entry.id, blobs);
+      setPhotos(urls);
     } catch {
       /* 壓縮或上傳失敗時維持原狀 */
+    } finally {
+      setUploading(false);
     }
   };
 
-  const removePhoto = async () => {
+  const removePhoto = async (url: string) => {
     try {
-      await api.patchEntry(entry.id, { photo: '' });
-      setPhoto('');
+      const { photos: urls } = await api.patchEntry(entry.id, { photos: photos.filter((p) => p !== url) });
+      setPhotos(urls);
     } catch {
       /* ignore */
     }
@@ -131,36 +140,46 @@ export function LogFoodModal() {
             {kcal} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>kcal</span>
           </span>
         </div>
-        {/* 照片 + 敘述 */}
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {photo ? (
-              <>
-                <div role="img" aria-label="餐點照片" style={{ width: 88, height: 88, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${photo}')` }} />
-                <button onClick={() => void removePhoto()} style={{ border: 'none', background: 'transparent', color: '#C0564A', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>移除照片</button>
-              </>
-            ) : (
-              <label style={{ width: 88, height: 88, border: '1.5px dashed #C9C2B2', borderRadius: 14, background: '#FBFAF6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', color: '#8A9284' }}>
+        {/* 敘述 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+          <label style={{ fontSize: 12.5, color: '#6B7565' }}>這餐吃了什麼？</label>
+          <textarea
+            rows={3}
+            placeholder="例：滷雞腿便當，飯只吃一半⋯"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            style={{ border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '10px 12px', fontSize: 14.5, outline: 'none', background: '#FBFAF6', resize: 'none' }}
+          />
+        </div>
+        {/* 照片（最多 6 張） */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 12.5, color: '#6B7565' }}>餐點照片（最多 {MAX_PHOTOS} 張，可一次選多張）</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+            {photos.map((url) => (
+              <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }}>
+                <button
+                  onClick={() => void removePhoto(url)}
+                  title="移除這張照片"
+                  style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, border: 'none', borderRadius: '50%', background: 'rgba(45,59,45,.65)', color: '#fff', fontSize: 12, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {photos.length < MAX_PHOTOS && (
+              <label style={{ aspectRatio: '1', border: '1.5px dashed #C9C2B2', borderRadius: 14, background: '#FBFAF6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploading ? 'default' : 'pointer', color: '#8A9284', opacity: uploading ? 0.6 : 1 }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="6" width="18" height="14" rx="3" /><circle cx="12" cy="13" r="3.5" /><path d="M9 6l1.2-2h3.6L15 6" /></svg>
-                <span style={{ fontSize: 11 }}>上傳照片</span>
+                <span style={{ fontSize: 11 }}>{uploading ? '上傳中…' : '新增照片'}</span>
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void uploadPhoto(file); }}
+                  multiple
+                  disabled={uploading}
+                  onChange={(e) => { const files = e.target.files ? Array.from(e.target.files) : []; e.target.value = ''; void uploadPhotos(files); }}
                   style={{ display: 'none' }}
                 />
               </label>
             )}
-          </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-            <label style={{ fontSize: 12.5, color: '#6B7565' }}>這餐吃了什麼？</label>
-            <textarea
-              rows={3}
-              placeholder="例：滷雞腿便當，飯只吃一半⋯"
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              style={{ flex: 1, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '10px 12px', fontSize: 14.5, outline: 'none', background: '#FBFAF6', resize: 'none' }}
-            />
           </div>
         </div>
         {/* 份數輸入 */}

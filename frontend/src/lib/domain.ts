@@ -1,4 +1,4 @@
-import type { BodyKey, DayData, Entry, Food, FoodKey, GoalKey, Goals, MealKey } from '../types';
+import type { BodyKey, DayData, Entry, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
 
 // 每份熱量（kcal/份）— 與原型 Component.KCAL 一致
 export const KCAL: Record<FoodKey, number> = {
@@ -56,8 +56,8 @@ export function emptyDay(): DayData {
   };
 }
 
-export function entryHasData(e: { desc: string; photo: string; food: Food }): boolean {
-  return !!(e.desc || e.photo || Object.values(e.food).some((v) => v > 0));
+export function entryHasData(e: { desc: string; photos: string[]; food: Food }): boolean {
+  return !!(e.desc || e.photos.length || Object.values(e.food).some((v) => v > 0));
 }
 
 export function dayFoodTotals(entries: Entry[]): Food {
@@ -85,15 +85,18 @@ export function kcalOfFood(f: Food): number {
   return Math.round(FOOD_KEYS.reduce((a, k) => a + (f[k] || 0) * KCAL[k], 0));
 }
 
-// 日期 key 落在自訂目標區間內用自訂值，否則用預設
+// 日期 key 落在某組目標區間內用該組值（多組重疊時取最新建立的一組），否則用預設
 export function goalsFor(
   key: string,
-  goals: Goals | null
-): { vals: Record<GoalKey, number>; water: number; custom: boolean } {
-  if (goals && goals.start && goals.end && key >= goals.start && key <= goals.end) {
-    return { vals: goals.vals, water: goals.water || DEFAULT_WATER, custom: true };
+  goals: Goal[] | null
+): { vals: Record<GoalKey, number>; water: number; custom: boolean; setBy: 'self' | 'dietitian' | null } {
+  const hit = (goals ?? [])
+    .filter((g) => g.start && g.end && key >= g.start && key <= g.end)
+    .sort((a, b) => b.id - a.id)[0];
+  if (hit) {
+    return { vals: hit.vals, water: hit.water || DEFAULT_WATER, custom: true, setBy: hit.setBy };
   }
-  return { vals: DEFAULT_GOALS, water: DEFAULT_WATER, custom: false };
+  return { vals: DEFAULT_GOALS, water: DEFAULT_WATER, custom: false, setBy: null };
 }
 
 export function dstr(d: Date): string {

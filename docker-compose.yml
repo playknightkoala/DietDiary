@@ -9,9 +9,9 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-}
-      # 收審核通知信的管理員信箱
+      # 此信箱對應的帳號自動成為管理者（後台的初始管理員）
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
-      # 對外網址（開通連結、開通完成信會用到）
+      # 對外網址（帳號開通完成通知信會用到）
       - APP_URL=${APP_URL:-http://localhost:8080}
     volumes:
       - ./docker-data/db:/app/data

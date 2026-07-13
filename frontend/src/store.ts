@@ -1,15 +1,20 @@
 import { create } from 'zustand';
-import { api, clearAuth, getToken, getUsername, saveAuth, setUnauthorizedHandler } from './lib/api';
+import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
-import type { BodyKey, DayData, Goals, TrendPoint } from './types';
+import type { BodyKey, DayData, Goal, Role, TrendPoint } from './types';
 
 export type ModalKey =
   | 'add' | 'meals' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
-  | 'calendar' | 'goals' | 'guide' | null;
+  | 'calendar' | 'goals' | 'guide' | 'account' | null;
+
+// diary＝個人日記；admin＝管理者後台；pro＝營養師頁面
+export type ViewKey = 'diary' | 'admin' | 'pro';
 
 interface AppState {
   token: string | null;
   username: string | null;
+  role: Role;
+  view: ViewKey;
 
   selected: string;
   weekAnchor: string;
@@ -22,11 +27,12 @@ interface AppState {
 
   day: DayData;
   marks: Record<string, true>;
-  goals: Goals | null;
+  goals: Goal[];
   trendPoints: TrendPoint[];
 
-  loginSuccess: (token: string, username: string, persist: boolean) => void;
+  loginSuccess: (token: string, username: string, role: Role, persist: boolean) => void;
   logout: () => void;
+  setView: (view: ViewKey) => void;
 
   selectDate: (date: string, setAnchor?: boolean) => void;
   prevWeek: () => void;
@@ -39,6 +45,7 @@ interface AppState {
   refresh: () => Promise<void>;
   loadGoals: () => Promise<void>;
   loadTrend: () => Promise<void>;
+  loadMe: () => Promise<void>;
   loadAll: () => Promise<void>;
 
   setModal: (modal: ModalKey) => void;
@@ -54,6 +61,8 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   token: getToken(),
   username: getUsername(),
+  role: getRole(),
+  view: 'diary',
 
   selected: dstr(new Date()),
   weekAnchor: dstr(new Date()),
@@ -66,22 +75,23 @@ export const useStore = create<AppState>((set, get) => ({
 
   day: emptyDay(),
   marks: {},
-  goals: null,
+  goals: [],
   trendPoints: [],
 
-  loginSuccess: (token, username, persist) => {
-    saveAuth(token, username, persist);
-    set({ token, username });
+  loginSuccess: (token, username, role, persist) => {
+    saveAuth(token, username, role, persist);
+    set({ token, username, role, view: 'diary' });
     void get().loadAll();
   },
   logout: () => {
     clearAuth();
     set({
-      token: null, username: null, modal: null, editingId: null,
-      day: emptyDay(), marks: {}, goals: null, trendPoints: [],
+      token: null, username: null, role: 'member', view: 'diary', modal: null, editingId: null,
+      day: emptyDay(), marks: {}, goals: [], trendPoints: [],
       trendOpen: false, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
   },
+  setView: (view) => set({ view, modal: null, editingId: null, calMonth: null }),
 
   selectDate: (date, setAnchor = false) => {
     set(setAnchor ? { selected: date, weekAnchor: date } : { selected: date });
@@ -140,8 +150,16 @@ export const useStore = create<AppState>((set, get) => ({
     const { points } = await api.getTrend(get().trendField);
     set({ trendPoints: points });
   },
+  // 同步最新角色（管理者可能事後調整角色）
+  loadMe: async () => {
+    try {
+      const me = await api.me();
+      saveRole(me.role);
+      set({ role: me.role, username: me.username });
+    } catch { /* 401 由共用 handler 處理 */ }
+  },
   loadAll: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals()]);
+    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe()]);
   },
 
   setModal: (modal) => set({ modal }),

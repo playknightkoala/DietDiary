@@ -11,7 +11,7 @@ export interface Entry {
   id: number;
   meal: MealKey;
   desc: string;
-  photo: string;
+  photos: string[];
   food: Food;
 }
 
@@ -26,14 +26,34 @@ export interface DayData {
 
 export type GoalKey = 'meat' | 'veg' | 'grain' | 'oil' | 'fruit' | 'milk';
 
-export interface Goals {
+export interface Goal {
+  id: number;
   start: string;
   end: string;
   vals: Record<GoalKey, number>;
   water: number;
+  setBy: 'self' | 'dietitian';
 }
+
+// 建立／更新目標時送出的內容（不含 id / setBy）
+export type GoalInput = Omit<Goal, 'id' | 'setBy'>;
 
 export interface TrendPoint {
   date: string;
   value: number;
+}
+
+export type Role = 'member' | 'dietitian' | 'admin';
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  status: 'pending' | 'active';
+  role: Role;
+  createdAt: string;
+}
+
+export interface MemberInfo {
+  id: number;
+  username: string;
 }

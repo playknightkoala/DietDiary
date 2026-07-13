@@ -3,16 +3,10 @@ import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
-import { db } from '../db.js';
-import { JWT_SECRET } from '../middleware/auth.js';
-import { authSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema } from '../validation.js';
-import {
-  ADMIN_EMAIL,
-  mailerConfigured,
-  sendAccountApproved,
-  sendAdminApprovalRequest,
-  sendVerifyCode,
-} from '../mailer.js';
+import { db, promoteAdminIfConfigured } from '../db.js';
+import { JWT_SECRET, requireAuth, type Role } from '../middleware/auth.js';
+import { authSchema, changePasswordSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema } from '../validation.js';
+import { mailerConfigured, sendVerifyCode } from '../mailer.js';
 
 export const authRouter = Router();
 
@@ -136,21 +130,10 @@ authRouter.post('/register', async (req, res) => {
   }
 
   const hash = await bcrypt.hash(password, 10);
-  const approvalToken = crypto.randomBytes(32).toString('hex');
-  db.prepare(
-    `INSERT INTO users (username, password_hash, status, approval_token) VALUES (?, ?, 'pending', ?)`
-  ).run(username, hash, approvalToken);
+  // 開通改由管理者後台操作，不再寄送開通連結信
+  db.prepare(`INSERT INTO users (username, password_hash, status) VALUES (?, ?, 'pending')`).run(username, hash);
   db.prepare('DELETE FROM email_codes WHERE email = ?').run(username);
-
-  if (ADMIN_EMAIL) {
-    try {
-      await sendAdminApprovalRequest(username, approvalToken);
-    } catch (e) {
-      console.error('admin approval mail failed:', e);
-    }
-  } else {
-    console.warn('ADMIN_EMAIL 未設定，無法寄送開通通知信');
-  }
+  promoteAdminIfConfigured(username);
 
   return res.status(201).json({
     pending: true,
@@ -158,48 +141,52 @@ authRouter.post('/register', async (req, res) => {
   });
 });
 
-authRouter.get('/approve/:token', async (req, res) => {
-  const token = String(req.params.token || '');
-  const page = (title: string, body: string) =>
-    `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-     <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F1EA;font-family:sans-serif">
-       <div style="background:#fff;border-radius:20px;padding:40px 36px;max-width:420px;text-align:center;box-shadow:0 12px 40px rgba(45,59,45,.08)">
-         <h1 style="color:#4A7C59;font-size:22px;margin:0 0 12px">${title}</h1>
-         <p style="color:#4A5A4A;margin:0">${body}</p>
-       </div>
-     </body></html>`;
-
-  if (!/^[0-9a-f]{64}$/.test(token)) {
-    return res.status(400).send(page('連結無效', '此開通連結格式不正確。'));
-  }
-  const user = db
-    .prepare(`SELECT id, username FROM users WHERE approval_token = ? AND status = 'pending'`)
-    .get(token) as { id: number; username: string } | undefined;
-  if (!user) {
-    return res.status(404).send(page('連結無效或已使用', '此帳號可能已開通，或連結已失效。'));
-  }
-  db.prepare(`UPDATE users SET status = 'active', approval_token = NULL WHERE id = ?`).run(user.id);
-  try {
-    await sendAccountApproved(user.username);
-  } catch (e) {
-    console.error('account approved mail failed:', e);
-  }
-  return res.send(page('帳號已開通', `已開通 <b>${user.username}</b> 的帳號，該使用者現在可以登入。`));
-});
-
 authRouter.post('/login', async (req, res) => {
   const parsed = authSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: '帳號或密碼格式不正確' });
   const { username, password, remember } = parsed.data;
-  const findUser = db.prepare('SELECT id, username, password_hash, status FROM users WHERE username = ?');
-  type UserRow = { id: number; username: string; password_hash: string; status: string };
+  const findUser = db.prepare('SELECT id, username, password_hash, status, role FROM users WHERE username = ?');
+  type UserRow = { id: number; username: string; password_hash: string; status: string; role: Role };
   // 新帳號以小寫 email 儲存；舊帳號維持原樣，先精確比對再退回小寫
-  const user = (findUser.get(username) ?? findUser.get(username.toLowerCase())) as UserRow | undefined;
+  let user = (findUser.get(username) ?? findUser.get(username.toLowerCase())) as UserRow | undefined;
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: '帳號或密碼錯誤' });
   }
+  // ADMIN_EMAIL 對應帳號登入時自動升為管理者（環境變數事後設定也生效）
+  promoteAdminIfConfigured(user.username);
+  user = findUser.get(user.username) as UserRow;
   if (user.status !== 'active') {
     return res.status(403).json({ error: '帳號尚未開通，請等待管理員審核' });
   }
-  return res.json({ token: sign(user.id, remember ? '30d' : '1d'), username: user.username });
+  return res.json({ token: sign(user.id, remember ? '30d' : '1d'), username: user.username, role: user.role });
+});
+
+// 會員中心：目前登入者資訊
+authRouter.get('/me', requireAuth, (req, res) => {
+  const user = db
+    .prepare('SELECT username, role, status, created_at FROM users WHERE id = ?')
+    .get(req.userId) as { username: string; role: Role; status: string; created_at: string } | undefined;
+  if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
+  return res.json({ username: user.username, role: user.role, createdAt: user.created_at });
+});
+
+// 會員中心：變更密碼
+authRouter.post('/change-password', requireAuth, async (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message;
+    return res.status(400).json({
+      error: msg === '兩次輸入的密碼不一致' ? msg : '請輸入目前密碼與至少 6 碼的新密碼',
+    });
+  }
+  const { oldPassword, newPassword } = parsed.data;
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId) as
+    | { password_hash: string }
+    | undefined;
+  if (!user || !(await bcrypt.compare(oldPassword, user.password_hash))) {
+    return res.status(400).json({ error: '目前密碼不正確' });
+  }
+  const hash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.userId);
+  return res.json({ ok: true });
 });
