@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { DATE_RE, goalsSchema } from '../validation.js';
-import { getDayJson, getMarkedDates } from '../helpers.js';
+import { DATE_RE, goalsSchema, photoRatingSchema } from '../validation.js';
+import { getDayJson, getMarkedDates, getPhotoRatings, parsePhotos } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -40,6 +40,31 @@ proRouter.get('/members/:id/marks', (req, res) => {
   const dayMs = new Date(to).getTime() - new Date(from).getTime();
   if (dayMs < 0 || dayMs > 62 * 86400000) return res.status(400).json({ error: 'range too large' });
   return res.json({ dates: getMarkedDates(member.id, from, to) });
+});
+
+// 替會員的單張照片評分（綠燈／黃燈／紅燈；rating: null 清除評分）
+proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const entry = db
+    .prepare('SELECT id, photos FROM entries WHERE id = ? AND user_id = ?')
+    .get(req.params.eid, member.id) as { id: number; photos: string } | undefined;
+  if (!entry) return res.status(404).json({ error: 'not found' });
+  const parsed = photoRatingSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { photo, rating } = parsed.data;
+  if (!parsePhotos(entry.photos).includes(photo)) {
+    return res.status(404).json({ error: 'photo not found' });
+  }
+  if (rating === null) {
+    db.prepare('DELETE FROM photo_ratings WHERE entry_id = ? AND photo = ?').run(entry.id, photo);
+  } else {
+    db.prepare(
+      `INSERT INTO photo_ratings (entry_id, photo, rating, rated_by) VALUES (?, ?, ?, ?)
+       ON CONFLICT(entry_id, photo) DO UPDATE SET rating = excluded.rating, rated_by = excluded.rated_by, rated_at = datetime('now')`
+    ).run(entry.id, photo, rating, req.userId);
+  }
+  return res.json({ ratings: getPhotoRatings(entry.id) });
 });
 
 proRouter.get('/members/:id/goals', (req, res) => {

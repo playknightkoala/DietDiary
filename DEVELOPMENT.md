@@ -45,7 +45,7 @@ docker compose up -d --build
 - **開通**：由管理者在「管理者後台」按「開通」（不再寄開通連結信）；開通時若有設定 SMTP 會寄通知信給使用者。後台也可調整角色、停用或刪除會員（連同其所有紀錄與照片）。
 - **初始管理員**：`ADMIN_EMAIL` 環境變數對應的帳號會在啟動／註冊／登入時自動升為管理者並開通。
 - **會員中心**：右上角人像圖示可查看帳號並變更密碼。
-- **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。
+- **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。也可替會員的每張餐點照片評分（綠燈＝均衡良好、黃燈＝尚可、紅燈＝需改善），燈號會顯示在會員端的照片角落。
 
 防濫用：nginx 對 `/api/auth/` 做 per-IP 限流（5 req/s、burst 10，超過回 429），設定在 `frontend/nginx.conf`。
 
@@ -89,6 +89,7 @@ docker compose up -d --build
 | GET | `/api/pro/members` | （dietitian/admin）會員清單 |
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
+| PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
 

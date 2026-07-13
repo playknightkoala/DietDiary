@@ -3,7 +3,8 @@ import { api } from '../lib/api';
 import { useStore } from '../store';
 import { BODY_DEFS, MEALS, WD_NAMES, addDays, dayFoodTotals, dstr, entryHasData, goalsFor, kcalOfFood, round1 } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
-import type { DayData, FoodKey, Goal, GoalKey, MemberInfo } from '../types';
+import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
+import type { DayData, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -71,6 +72,17 @@ export function DietitianScreen() {
       .catch((e) => setError(e instanceof Error ? e.message : '載入當日紀錄失敗'));
     return () => { cancelled = true; };
   }, [memberId, date]);
+
+  // 照片評分：點同色再點一次＝取消
+  const ratePhoto = async (entryId: number, photo: string, rating: PhotoRating, current: PhotoRating | undefined) => {
+    if (memberId === '') return;
+    try {
+      const { ratings } = await api.proRatePhoto(memberId, entryId, photo, current === rating ? null : rating);
+      setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === entryId ? { ...en, ratings } : en)) } : d));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '評分失敗，請再試一次');
+    }
+  };
 
   const selectDate = (d: string) => {
     setDate(d);
@@ -253,6 +265,15 @@ export function DietitianScreen() {
 
             <div style={cardStyle}>
               <div style={{ fontSize: 16, fontWeight: 900 }}>當日飲食（{entries.length} 筆）</div>
+              <div style={{ fontSize: 11.5, color: '#8A9284', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                點照片下方的燈號替該張照片評分（再點一次取消）：
+                {RATING_KEYS.map((r) => (
+                  <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: RATING_DEFS[r].color, display: 'inline-block' }} />
+                    {RATING_DEFS[r].name.slice(3)}
+                  </span>
+                ))}
+              </div>
               {entries.length === 0 && (
                 <div style={{ padding: '14px 0', textAlign: 'center', color: '#8A9284', fontSize: 13.5 }}>這天沒有飲食紀錄。</div>
               )}
@@ -267,12 +288,37 @@ export function DietitianScreen() {
                     </div>
                     {e.desc && <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6 }}>{e.desc}</div>}
                     {e.photos.length > 0 && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {e.photos.map((url) => (
-                          <a key={url} href={url} target="_blank" rel="noreferrer" title="開啟原圖">
-                            <div style={{ width: 64, height: 64, borderRadius: 10, border: '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
-                          </a>
-                        ))}
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {e.photos.map((url) => {
+                          const current = e.ratings[url];
+                          return (
+                            <div key={url} style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
+                              <a href={url} target="_blank" rel="noreferrer" title="開啟原圖" style={{ position: 'relative', display: 'block' }}>
+                                <div style={{ width: 72, height: 72, borderRadius: 10, border: current ? `2.5px solid ${RATING_DEFS[current].color}` : '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
+                                <PhotoRatingBadge rating={current} size={14} />
+                              </a>
+                              <div style={{ display: 'flex', gap: 5 }}>
+                                {RATING_KEYS.map((r) => {
+                                  const active = current === r;
+                                  return (
+                                    <button
+                                      key={r}
+                                      onClick={() => void ratePhoto(e.id, url, r, current)}
+                                      title={RATING_DEFS[r].name + (active ? '（再點一次取消）' : '')}
+                                      style={{
+                                        width: 20, height: 20, borderRadius: '50%', cursor: 'pointer',
+                                        background: RATING_DEFS[r].color,
+                                        border: active ? '2.5px solid #2D3B2D' : '2px solid #fff',
+                                        boxShadow: '0 1px 3px rgba(45,59,45,.25)',
+                                        opacity: current && !active ? 0.35 : 1,
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

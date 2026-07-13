@@ -58,6 +58,29 @@ export function entryToJson(e: EntryRow) {
   return { id: e.id, meal: e.meal, desc: e.desc, photos: parsePhotos(e.photos), food: parseFood(e.food) };
 }
 
+export type PhotoRating = 'green' | 'yellow' | 'red';
+
+export function getPhotoRatings(entryId: number): Record<string, PhotoRating> {
+  const rows = db
+    .prepare('SELECT photo, rating FROM photo_ratings WHERE entry_id = ?')
+    .all(entryId) as { photo: string; rating: PhotoRating }[];
+  return Object.fromEntries(rows.map((r) => [r.photo, r.rating]));
+}
+
+// 對外回傳的 entry 一律附上營養師的照片評分（無評分＝空物件）
+export function entryToJsonWithRatings(e: EntryRow) {
+  return { ...entryToJson(e), ratings: getPhotoRatings(e.id) };
+}
+
+export function deletePhotoRatings(entryId: number, photos?: string[]) {
+  if (photos === undefined) {
+    db.prepare('DELETE FROM photo_ratings WHERE entry_id = ?').run(entryId);
+    return;
+  }
+  const del = db.prepare('DELETE FROM photo_ratings WHERE entry_id = ? AND photo = ?');
+  for (const p of photos) del.run(entryId, p);
+}
+
 export function getDayJson(userId: number, date: string) {
   const row = db
     .prepare('SELECT * FROM days WHERE user_id = ? AND date = ?')
@@ -66,7 +89,7 @@ export function getDayJson(userId: number, date: string) {
     db
       .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
       .all(userId, date) as EntryRow[]
-  ).map(entryToJson);
+  ).map(entryToJsonWithRatings);
   return {
     water: row?.water ?? 0,
     ex: { min: row?.ex_min ?? '', desc: row?.ex_desc ?? '' },
@@ -114,6 +137,7 @@ export function deleteUserData(userId: number) {
   const photoRows = db.prepare('SELECT photos FROM entries WHERE user_id = ?').all(userId) as { photos: string }[];
   for (const r of photoRows) parsePhotos(r.photos).forEach(unlinkPhoto);
   const tx = db.transaction(() => {
+    db.prepare('DELETE FROM photo_ratings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);

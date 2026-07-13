@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE INDEX IF NOT EXISTS idx_entries_user_date ON entries(user_id, date);
 
+CREATE TABLE IF NOT EXISTS photo_ratings (
+  entry_id INTEGER NOT NULL REFERENCES entries(id),
+  photo TEXT NOT NULL,
+  rating TEXT NOT NULL CHECK (rating IN ('green','yellow','red')),
+  rated_by INTEGER,
+  rated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (entry_id, photo)
+);
+
 CREATE TABLE IF NOT EXISTS goal_periods (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),

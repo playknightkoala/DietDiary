@@ -1,4 +1,4 @@
-import type { AdminUser, DayData, Entry, Food, Goal, GoalInput, MealKey, MemberInfo, Role, TrendPoint } from '../types';
+import type { AdminUser, DayData, Entry, Food, Goal, GoalInput, MealKey, MemberInfo, PhotoRating, Role, TrendPoint } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -155,6 +155,11 @@ export const api = {
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
+  proRatePhoto: (memberId: number, entryId: number, photo: string, rating: PhotoRating | null) =>
+    request<{ ratings: Partial<Record<string, PhotoRating>> }>(`/api/pro/members/${memberId}/entries/${entryId}/photo-rating`, {
+      method: 'PUT',
+      body: JSON.stringify({ photo, rating }),
+    }),
   proGoals: (memberId: number) => request<Goal[]>(`/api/pro/members/${memberId}/goals`),
   proCreateGoal: (memberId: number, goal: GoalInput) =>
     request<Goal>(`/api/pro/members/${memberId}/goals`, { method: 'POST', body: JSON.stringify(goal) }),

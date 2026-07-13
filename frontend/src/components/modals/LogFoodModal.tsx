@@ -4,6 +4,7 @@ import { compressImage } from '../../lib/photo';
 import { FOOD_KEYS, MEALS, clampPortion, emptyFood, entryHasData, kcalOfFood } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { Food, FoodKey } from '../../types';
+import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { CloseButton, ModalShell } from './ModalShell';
 
 interface InputGroup {
@@ -164,6 +165,7 @@ export function LogFoodModal() {
                 >
                   ✕
                 </button>
+                <PhotoRatingBadge rating={entry.ratings[url]} />
               </div>
             ))}
             {photos.length < MAX_PHOTOS && (

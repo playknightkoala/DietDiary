@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { DATE_RE, dayPatchSchema, entryCreateSchema } from '../validation.js';
-import { getDayJson, ensureDayRow, getMarkedDates, entryToJson, type EntryRow } from '../helpers.js';
+import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, type EntryRow } from '../helpers.js';
 
 export const daysRouter = Router();
 daysRouter.use(requireAuth);
@@ -59,5 +59,5 @@ daysRouter.post('/:date/entries', (req, res) => {
   const row = db
     .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE id = ?')
     .get(Number(info.lastInsertRowid)) as EntryRow;
-  return res.status(201).json(entryToJson(row));
+  return res.status(201).json(entryToJsonWithRatings(row));
 });

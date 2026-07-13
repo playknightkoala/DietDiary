@@ -5,7 +5,7 @@ import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, entryToJson, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryToJsonWithRatings, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -38,23 +38,26 @@ entriesRouter.patch('/:id', (req, res) => {
   if (desc !== undefined) { sets.push('desc = ?'); args.push(desc); }
   if (food !== undefined) { sets.push('food = ?'); args.push(JSON.stringify(food)); }
   if (photos !== undefined) {
-    // 只允許保留既有照片的子集合（= 刪除部分照片），被移除的檔案順手清掉
+    // 只允許保留既有照片的子集合（= 刪除部分照片），被移除的檔案與其評分順手清掉
     const current = parsePhotos(entry.photos);
     const keep = current.filter((p) => photos.includes(p));
-    current.filter((p) => !keep.includes(p)).forEach(unlinkPhoto);
+    const removed = current.filter((p) => !keep.includes(p));
+    removed.forEach(unlinkPhoto);
+    deletePhotoRatings(entry.id, removed);
     sets.push('photos = ?');
     args.push(JSON.stringify(keep));
   }
   if (sets.length) {
     db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
   }
-  return res.json(entryToJson(getOwnedEntry(req.userId, req.params.id)!));
+  return res.json(entryToJsonWithRatings(getOwnedEntry(req.userId, req.params.id)!));
 });
 
 entriesRouter.delete('/:id', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
   parsePhotos(entry.photos).forEach(unlinkPhoto);
+  deletePhotoRatings(entry.id);
   db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
   return res.status(204).end();
 });

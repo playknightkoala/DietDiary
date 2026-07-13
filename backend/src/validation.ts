@@ -87,6 +87,12 @@ export const changePasswordSchema = z
 
 export const ROLES = ['member', 'dietitian', 'admin'] as const;
 
+// 營養師替單張照片評分；rating 為 null 表示清除評分
+export const photoRatingSchema = z.object({
+  photo: z.string().max(300),
+  rating: z.enum(['green', 'yellow', 'red']).nullable(),
+});
+
 export const adminPatchUserSchema = z.object({
   role: z.enum(ROLES).optional(),
   status: z.enum(['pending', 'active']).optional(),

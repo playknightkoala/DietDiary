@@ -1,5 +1,6 @@
 import { MEALS, entryHasData, kcalOfFood } from '../../lib/domain';
 import { useStore } from '../../store';
+import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function TodayMealsModal() {
@@ -36,6 +37,7 @@ export function TodayMealsModal() {
                     {e.photos.length}張
                   </span>
                 )}
+                <PhotoRatingBadge rating={e.ratings[e.photos[0]]} size={13} />
               </div>
             ) : (
               <div style={{ width: 52, height: 52, flex: 'none', borderRadius: 12, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 900, color: m.color }}>{m.glyph}</div>

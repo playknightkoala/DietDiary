@@ -7,11 +7,16 @@ export type FoodKey =
 
 export type Food = Record<FoodKey, number>;
 
+// 營養師對單張照片的評分：綠燈（均衡）／黃燈（尚可）／紅燈（需改善）
+export type PhotoRating = 'green' | 'yellow' | 'red';
+
 export interface Entry {
   id: number;
   meal: MealKey;
   desc: string;
   photos: string[];
+  // 以照片 URL 為 key 的營養師評分（未評分的照片不會出現）
+  ratings: Partial<Record<string, PhotoRating>>;
   food: Food;
 }
 
