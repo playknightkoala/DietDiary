@@ -15,7 +15,7 @@ export function getUsername(): string | null {
 
 export function getRole(): Role {
   const r = sessionStorage.getItem(ROLE_KEY) ?? localStorage.getItem(ROLE_KEY);
-  return r === 'admin' || r === 'dietitian' ? r : 'member';
+  return r === 'admin' || r === 'dietitian' || r === 'citizen' ? r : 'member';
 }
 
 // persist=true（自動登入）存 localStorage 跨瀏覽器工作階段；否則存 sessionStorage 關閉即登出

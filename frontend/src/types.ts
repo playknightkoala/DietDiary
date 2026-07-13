@@ -70,7 +70,8 @@ export interface TrendPoint {
   value: number;
 }
 
-export type Role = 'member' | 'dietitian' | 'admin';
+// citizen（駒駒國民）：權限與 member 完全相同，僅名稱不同
+export type Role = 'member' | 'citizen' | 'dietitian' | 'admin';
 
 export interface AdminUser {
   id: number;

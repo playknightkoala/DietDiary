@@ -11,13 +11,13 @@ proRouter.use(requireAuth, requireRole('dietitian', 'admin'));
 
 function getMember(id: string | number) {
   return db
-    .prepare(`SELECT id, username FROM users WHERE id = ? AND role = 'member' AND status = 'active'`)
+    .prepare(`SELECT id, username FROM users WHERE id = ? AND role IN ('member','citizen') AND status = 'active'`)
     .get(id) as { id: number; username: string } | undefined;
 }
 
 proRouter.get('/members', (_req, res) => {
   const rows = db
-    .prepare(`SELECT id, username FROM users WHERE role = 'member' AND status = 'active' ORDER BY username`)
+    .prepare(`SELECT id, username FROM users WHERE role IN ('member','citizen') AND status = 'active' ORDER BY username`)
     .all() as { id: number; username: string }[];
   return res.json(rows);
 });
