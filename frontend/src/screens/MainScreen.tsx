@@ -1,10 +1,10 @@
 import { useStore } from '../store';
 import { TopBar } from '../components/TopBar';
 import { WeekStrip } from '../components/WeekStrip';
-import { KcalWaterRow, FoodGroupsCard, ExerciseCard } from '../components/OverviewCards';
+import { KcalWaterRow, FoodGroupsCard } from '../components/OverviewCards';
 import { BodyCard } from '../components/BodyCard';
+import { DayFeed } from '../components/DayFeed';
 import { AddMenuSheet } from '../components/modals/AddMenuSheet';
-import { TodayMealsModal } from '../components/modals/TodayMealsModal';
 import { LogFoodModal } from '../components/modals/LogFoodModal';
 import { WaterModal } from '../components/modals/WaterModal';
 import { ExerciseModal } from '../components/modals/ExerciseModal';
@@ -29,10 +29,12 @@ export function MainScreen() {
           <FoodGroupsCard />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <ExerciseCard />
           <BodyCard />
         </div>
       </div>
+
+      {/* 動態牆：飲食（新→舊）＋喝水＋運動，可展開留言 */}
+      <DayFeed />
 
       {/* FAB */}
       <button
@@ -44,7 +46,6 @@ export function MainScreen() {
       </button>
 
       {modal === 'add' && <AddMenuSheet />}
-      {modal === 'meals' && <TodayMealsModal />}
       {modal === 'logFood' && <LogFoodModal />}
       {modal === 'logWater' && <WaterModal />}
       {modal === 'logEx' && <ExerciseModal />}

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { DATE_RE, goalsSchema, photoRatingSchema } from '../validation.js';
-import { getDayJson, getMarkedDates, getPhotoRatings, parsePhotos } from '../helpers.js';
+import { COMMENT_TARGET_RE, DATE_RE, commentCreateSchema, goalsSchema, photoRatingSchema } from '../validation.js';
+import { commentTargetOwned, createComment, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -65,6 +65,39 @@ proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
     ).run(entry.id, photo, rating, req.userId);
   }
   return res.json({ ratings: getPhotoRatings(entry.id) });
+});
+
+// 營養師對會員紀錄（飲食／喝水／運動）的留言
+proRouter.get('/members/:id/comments', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const target = String(req.query.target || '');
+  if (!COMMENT_TARGET_RE.test(target) || !commentTargetOwned(member.id, target)) {
+    return res.status(400).json({ error: 'invalid target' });
+  }
+  return res.json(listComments(member.id, target, req.userId));
+});
+
+proRouter.post('/members/:id/comments', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const parsed = commentCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入留言內容（最多 1000 字）' });
+  const { target, body } = parsed.data;
+  if (!commentTargetOwned(member.id, target)) return res.status(400).json({ error: 'invalid target' });
+  createComment(member.id, target, req.userId, body);
+  return res.status(201).json(listComments(member.id, target, req.userId));
+});
+
+// 營養師只能刪自己寫的留言
+proRouter.delete('/members/:id/comments/:cid', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const info = db
+    .prepare('DELETE FROM entry_comments WHERE id = ? AND author_id = ? AND user_id = ?')
+    .run(req.params.cid, req.userId, member.id);
+  if (!info.changes) return res.status(404).json({ error: 'not found' });
+  return res.status(204).end();
 });
 
 proRouter.get('/members/:id/goals', (req, res) => {

@@ -1,4 +1,4 @@
-import type { AdminUser, DayData, Entry, Food, Goal, GoalInput, MealKey, MemberInfo, PhotoRating, Role, TrendPoint } from '../types';
+import type { AdminUser, CommentTarget, DayData, Entry, EntryComment, Food, Goal, GoalInput, MealKey, MemberInfo, PhotoRating, Role, TrendPoint } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -122,9 +122,9 @@ export const api = {
   getMarks: (from: string, to: string) =>
     request<{ dates: string[] }>(`/api/days/marks?from=${from}&to=${to}`),
 
-  createEntry: (date: string, meal: MealKey) =>
-    request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal }) }),
-  patchEntry: (id: number, patch: { desc?: string; food?: Food; photos?: string[] }) =>
+  createEntry: (date: string, meal: MealKey, eatTime?: string) =>
+    request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal, eatTime }) }),
+  patchEntry: (id: number, patch: { desc?: string; food?: Food; photos?: string[]; date?: string; eatTime?: string }) =>
     request<Entry>(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, { method: 'DELETE' }),
   uploadPhotos: (id: number, blobs: Blob[]) => {
@@ -132,6 +132,13 @@ export const api = {
     blobs.forEach((b, i) => form.append('photos', b, `photo-${i}.jpg`));
     return request<{ photos: string[] }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
+
+  // 留言（會員對自己的紀錄）
+  getComments: (target: CommentTarget) =>
+    request<EntryComment[]>(`/api/comments?target=${encodeURIComponent(target)}`),
+  postComment: (target: CommentTarget, body: string) =>
+    request<EntryComment[]>('/api/comments', { method: 'POST', body: JSON.stringify({ target, body }) }),
+  deleteComment: (id: number) => request<void>(`/api/comments/${id}`, { method: 'DELETE' }),
 
   getGoals: () => request<Goal[]>('/api/goals'),
   createGoal: (goal: GoalInput) =>
@@ -160,6 +167,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ photo, rating }),
     }),
+  proComments: (memberId: number, target: CommentTarget) =>
+    request<EntryComment[]>(`/api/pro/members/${memberId}/comments?target=${encodeURIComponent(target)}`),
+  proPostComment: (memberId: number, target: CommentTarget, body: string) =>
+    request<EntryComment[]>(`/api/pro/members/${memberId}/comments`, { method: 'POST', body: JSON.stringify({ target, body }) }),
+  proDeleteComment: (memberId: number, id: number) =>
+    request<void>(`/api/pro/members/${memberId}/comments/${id}`, { method: 'DELETE' }),
   proGoals: (memberId: number) => request<Goal[]>(`/api/pro/members/${memberId}/goals`),
   proCreateGoal: (memberId: number, goal: GoalInput) =>
     request<Goal>(`/api/pro/members/${memberId}/goals`, { method: 'POST', body: JSON.stringify(goal) }),

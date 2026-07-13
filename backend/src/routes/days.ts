@@ -54,10 +54,10 @@ daysRouter.post('/:date/entries', (req, res) => {
   const parsed = entryCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
   const info = db
-    .prepare("INSERT INTO entries (user_id, date, meal, food) VALUES (?, ?, ?, '{}')")
-    .run(req.userId, date, parsed.data.meal);
+    .prepare("INSERT INTO entries (user_id, date, meal, eat_time, food) VALUES (?, ?, ?, ?, '{}')")
+    .run(req.userId, date, parsed.data.meal, parsed.data.eatTime ?? '');
   const row = db
-    .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food FROM entries WHERE id = ?')
     .get(Number(info.lastInsertRowid)) as EntryRow;
   return res.status(201).json(entryToJsonWithRatings(row));
 });

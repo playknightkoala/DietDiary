@@ -53,7 +53,29 @@ export function emptyDay(): DayData {
     ex: { min: '', desc: '' },
     body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '' },
     entries: [],
+    commentCounts: { water: 0, ex: 0 },
   };
+}
+
+// 目前時刻 HH:MM（新增飲食紀錄的預設用餐時間）
+export function nowHM(): string {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// 留言時間顯示：M/D HH:MM
+export function fmtCommentTime(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 動態牆排序：新→舊（有時間的在前、依時間倒序；沒填時間的墊後、依建立順序倒序）
+export function sortEntriesNewestFirst(entries: Entry[]): Entry[] {
+  return entries.slice().sort((a, b) => {
+    if (a.eatTime && b.eatTime) return b.eatTime.localeCompare(a.eatTime) || b.id - a.id;
+    if (a.eatTime !== b.eatTime) return a.eatTime ? -1 : 1;
+    return b.id - a.id;
+  });
 }
 
 export function entryHasData(e: { desc: string; photos: string[]; food: Food }): boolean {

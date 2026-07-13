@@ -76,9 +76,11 @@ docker compose up -d --build
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries）|
 | GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
-| POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal}` |
-| PATCH / DELETE | `/api/entries/:id` | 更新（desc / food / photos 子集合＝刪除照片）／刪除 |
-| POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 6 張，前端已壓縮 640px JPEG）|
+| POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
+| PATCH / DELETE | `/api/entries/:id` | 更新（desc / food / photos 子集合＝刪除照片 / eatTime / date＝移到別天）／刪除 |
+| POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 10 張，前端已壓縮 640px JPEG）|
+| GET / POST | `/api/comments?target=` | 留言（target：`entry:<id>`／`water:<date>`／`ex:<date>`）|
+| DELETE | `/api/comments/:cid` | 刪除自己的留言 |
 | GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
 | PUT / DELETE | `/api/goals/:id` | 編輯／刪除單組目標（營養師設定的目標會員不可改）|
 | GET | `/api/body-trend?field=weight&limit=30` | 身體數據趨勢 |
@@ -90,6 +92,8 @@ docker compose up -d --build
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
 | PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
+| GET / POST | `/api/pro/members/:id/comments?target=` | （dietitian/admin）查看／新增對會員紀錄的留言 |
+| DELETE | `/api/pro/members/:id/comments/:cid` | （dietitian/admin）刪除自己的留言 |
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
 

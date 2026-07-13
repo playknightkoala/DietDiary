@@ -17,7 +17,22 @@ export interface Entry {
   photos: string[];
   // 以照片 URL 為 key 的營養師評分（未評分的照片不會出現）
   ratings: Partial<Record<string, PhotoRating>>;
+  // 用餐時間 HH:MM，空字串＝未填
+  eatTime: string;
+  commentCount: number;
   food: Food;
+}
+
+// 留言對象：某筆飲食（entry:<id>）、某天的喝水（water:<date>）或運動（ex:<date>）
+export type CommentTarget = `entry:${number}` | `water:${string}` | `ex:${string}`;
+
+export interface EntryComment {
+  id: number;
+  body: string;
+  createdAt: number; // Unix ms
+  author: string;
+  role: Role;
+  mine: boolean;
 }
 
 export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';
@@ -27,6 +42,8 @@ export interface DayData {
   ex: { min: string; desc: string };
   body: Record<BodyKey, string>;
   entries: Entry[];
+  // 喝水／運動貼文的留言數
+  commentCounts: { water: number; ex: number };
 }
 
 export type GoalKey = 'meat' | 'veg' | 'grain' | 'oil' | 'fruit' | 'milk';

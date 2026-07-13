@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// 用餐時間 HH:MM（24 小時制），空字串＝未填
+export const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export const FOOD_KEYS = [
   'meatLow', 'meatMed', 'meatHigh', 'meatXHigh',
@@ -66,15 +68,29 @@ export const dayPatchSchema = z.object({
 
 export const entryCreateSchema = z.object({
   meal: z.enum(MEAL_KEYS),
+  eatTime: z.string().regex(TIME_RE).or(z.literal('')).optional(),
 });
 
-export const MAX_PHOTOS = 6;
+export const MAX_PHOTOS = 10;
+
+const eatTimeSchema = z.string().regex(TIME_RE).or(z.literal(''));
 
 export const entryPatchSchema = z.object({
   desc: z.string().max(2000).optional(),
   food: foodSchema.optional(),
   // PATCH 只能「保留既有照片的子集合」（刪除用）；新增照片走 /photos 上傳
   photos: z.array(z.string().max(300)).max(MAX_PHOTOS).optional(),
+  // 用餐日期／時間：改日期會把這筆紀錄移到該天
+  date: z.string().regex(DATE_RE).optional(),
+  eatTime: eatTimeSchema.optional(),
+});
+
+// 留言對象：某筆飲食（entry:<id>）、某天的喝水（water:<date>）或運動（ex:<date>）
+export const COMMENT_TARGET_RE = /^(entry:\d{1,10}|water:\d{4}-\d{2}-\d{2}|ex:\d{4}-\d{2}-\d{2})$/;
+
+export const commentCreateSchema = z.object({
+  target: z.string().regex(COMMENT_TARGET_RE),
+  body: z.string().trim().min(1).max(1000),
 });
 
 export const changePasswordSchema = z

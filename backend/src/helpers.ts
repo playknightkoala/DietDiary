@@ -13,6 +13,7 @@ export interface EntryRow {
   meal: string;
   desc: string;
   photos: string;
+  eat_time: string;
   food: string;
 }
 
@@ -55,7 +56,7 @@ export function unlinkPhoto(photoUrl: string) {
 }
 
 export function entryToJson(e: EntryRow) {
-  return { id: e.id, meal: e.meal, desc: e.desc, photos: parsePhotos(e.photos), food: parseFood(e.food) };
+  return { id: e.id, meal: e.meal, desc: e.desc, photos: parsePhotos(e.photos), eatTime: e.eat_time ?? '', food: parseFood(e.food) };
 }
 
 export type PhotoRating = 'green' | 'yellow' | 'red';
@@ -67,9 +68,65 @@ export function getPhotoRatings(entryId: number): Record<string, PhotoRating> {
   return Object.fromEntries(rows.map((r) => [r.photo, r.rating]));
 }
 
-// 對外回傳的 entry 一律附上營養師的照片評分（無評分＝空物件）
+// 對外回傳的 entry 一律附上營養師的照片評分（無評分＝空物件）與留言數
 export function entryToJsonWithRatings(e: EntryRow) {
-  return { ...entryToJson(e), ratings: getPhotoRatings(e.id) };
+  return { ...entryToJson(e), ratings: getPhotoRatings(e.id), commentCount: countComments(`entry:${e.id}`) };
+}
+
+// ---- 留言（target：entry:<id> / water:<date> / ex:<date>，owner 為紀錄擁有者）----
+
+export interface CommentJson {
+  id: number;
+  body: string;
+  createdAt: number;
+  author: string;
+  role: string;
+  mine: boolean;
+}
+
+// entry:<id> 全域唯一；water:/ex: 需連 owner 一起查
+export function countComments(target: string, ownerId?: number): number {
+  const row = target.startsWith('entry:')
+    ? db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target)
+    : db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ? AND user_id = ?').get(target, ownerId ?? -1);
+  return (row as { c: number }).c;
+}
+
+export function listComments(ownerId: number, target: string, viewerId: number): CommentJson[] {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.body, c.created_at, c.author_id, u.username, u.role
+       FROM entry_comments c JOIN users u ON u.id = c.author_id
+       WHERE c.user_id = ? AND c.target = ? ORDER BY c.id`
+    )
+    .all(ownerId, target) as { id: number; body: string; created_at: number; author_id: number; username: string; role: string }[];
+  return rows.map((r) => ({
+    id: r.id,
+    body: r.body,
+    createdAt: r.created_at,
+    author: r.username,
+    role: r.role,
+    mine: r.author_id === viewerId,
+  }));
+}
+
+export function createComment(ownerId: number, target: string, authorId: number, body: string) {
+  db.prepare('INSERT INTO entry_comments (user_id, target, author_id, body, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    ownerId,
+    target,
+    authorId,
+    body,
+    Date.now()
+  );
+}
+
+// 確認留言對象屬於該會員：entry 需為其所有；water/ex 為其當日紀錄（日期格式已由 schema 驗證）
+export function commentTargetOwned(ownerId: number, target: string): boolean {
+  if (target.startsWith('entry:')) {
+    const id = Number(target.slice(6));
+    return !!db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(id, ownerId);
+  }
+  return true;
 }
 
 export function deletePhotoRatings(entryId: number, photos?: string[]) {
@@ -87,10 +144,14 @@ export function getDayJson(userId: number, date: string) {
     .get(userId, date) as DayRow | undefined;
   const entries = (
     db
-      .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
+      .prepare('SELECT id, meal, desc, photos, eat_time, food FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
       .all(userId, date) as EntryRow[]
   ).map(entryToJsonWithRatings);
   return {
+    commentCounts: {
+      water: countComments(`water:${date}`, userId),
+      ex: countComments(`ex:${date}`, userId),
+    },
     water: row?.water ?? 0,
     ex: { min: row?.ex_min ?? '', desc: row?.ex_desc ?? '' },
     body: {
@@ -138,6 +199,7 @@ export function deleteUserData(userId: number) {
   for (const r of photoRows) parsePhotos(r.photos).forEach(unlinkPhoto);
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM photo_ratings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(userId);
+    db.prepare('DELETE FROM entry_comments WHERE user_id = ? OR author_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);

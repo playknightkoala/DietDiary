@@ -4,7 +4,7 @@ import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
 import type { BodyKey, DayData, Goal, Role, TrendPoint } from './types';
 
 export type ModalKey =
-  | 'add' | 'meals' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
+  | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
   | 'calendar' | 'goals' | 'guide' | 'account' | null;
 
 // diary＝個人日記；admin＝管理者後台；pro＝營養師頁面

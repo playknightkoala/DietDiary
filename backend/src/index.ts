@@ -7,6 +7,7 @@ import { goalsRouter } from './routes/goals.js';
 import { trendRouter } from './routes/trend.js';
 import { adminRouter } from './routes/admin.js';
 import { proRouter } from './routes/pro.js';
+import { commentsRouter } from './routes/comments.js';
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,7 @@ app.use('/api/goals', goalsRouter);
 app.use('/api/body-trend', trendRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/pro', proRouter);
+app.use('/api/comments', commentsRouter);
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

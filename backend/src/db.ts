@@ -57,10 +57,21 @@ CREATE TABLE IF NOT EXISTS entries (
   desc TEXT NOT NULL DEFAULT '',
   photo TEXT NOT NULL DEFAULT '',
   photos TEXT NOT NULL DEFAULT '[]',
+  eat_time TEXT NOT NULL DEFAULT '',
   food TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_entries_user_date ON entries(user_id, date);
+
+CREATE TABLE IF NOT EXISTS entry_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  target TEXT NOT NULL,
+  author_id INTEGER NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entry_comments_target ON entry_comments(user_id, target);
 
 CREATE TABLE IF NOT EXISTS photo_ratings (
   entry_id INTEGER NOT NULL REFERENCES entries(id),
@@ -105,6 +116,9 @@ if (!captchaCols.includes('verified')) {
 const entryCols = (db.pragma('table_info(entries)') as { name: string }[]).map((c) => c.name);
 if (!entryCols.includes('photos')) {
   db.exec(`ALTER TABLE entries ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'`);
+}
+if (!entryCols.includes('eat_time')) {
+  db.exec(`ALTER TABLE entries ADD COLUMN eat_time TEXT NOT NULL DEFAULT ''`);
 }
 const legacyPhotos = db
   .prepare(`SELECT id, photo FROM entries WHERE photo != '' AND photos = '[]'`)

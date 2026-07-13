@@ -60,7 +60,6 @@ export function FoodGroupsCard() {
   const day = useStore((s) => s.day);
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
-  const setModal = useStore((s) => s.setModal);
 
   const dayTot = dayFoodTotals(day.entries);
   const gInfo = goalsFor(selected, goals);
@@ -95,30 +94,7 @@ export function FoodGroupsCard() {
           </div>
         );
       })}
-      <div style={{ fontSize: 11.5, color: '#8A9284' }}>紅字表示超過目標 20% 以上。點右下「＋」記錄。</div>
-      <button onClick={() => setModal('meals')} className="hv-cream" style={{ height: 44, border: '1.5px solid #4A7C59', borderRadius: 13, background: '#fff', color: '#4A7C59', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
-        查看今日飲食
-      </button>
-    </div>
-  );
-}
-
-// 今日運動卡
-export function ExerciseCard() {
-  const day = useStore((s) => s.day);
-  const hasEx = (day.ex.min && +day.ex.min > 0) || day.ex.desc;
-  const exSummary = hasEx
-    ? (day.ex.min ? day.ex.min + ' 分鐘' : '') + (day.ex.min && day.ex.desc ? '・' : '') + (day.ex.desc || '')
-    : '尚未記錄，點右下「＋」新增。';
-
-  return (
-    <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C77B4A" strokeWidth="2" strokeLinecap="round"><path d="M6.5 6.5l11 11M4 10l6-6M14 20l6-6M3 7l4-4M17 21l4-4" /></svg>
-        <div style={{ fontSize: 16, fontWeight: 900 }}>今日運動</div>
-      </div>
-      <div style={{ fontSize: 14, color: '#4A5A4A', lineHeight: 1.6 }}>{exSummary}</div>
+      <div style={{ fontSize: 11.5, color: '#8A9284' }}>紅字表示超過目標 20% 以上。點右下「＋」記錄，下方動態牆可查看每筆內容。</div>
     </div>
   );
 }

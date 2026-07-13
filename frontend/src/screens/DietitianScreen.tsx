@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { BODY_DEFS, MEALS, WD_NAMES, addDays, dayFoodTotals, dstr, entryHasData, goalsFor, kcalOfFood, round1 } from '../lib/domain';
+import { BODY_DEFS, MEALS, WD_NAMES, addDays, dayFoodTotals, dstr, entryHasData, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
-import type { DayData, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
+import { CommentsThread } from '../components/CommentsThread';
+import type { CommentTarget, DayData, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -84,6 +85,14 @@ export function DietitianScreen() {
     }
   };
 
+  // 留言串（營養師身分）：綁定目前選擇的會員
+  const commentProps = (target: CommentTarget, count: number) => ({
+    count,
+    load: () => api.proComments(memberId as number, target),
+    post: (body: string) => api.proPostComment(memberId as number, target, body),
+    remove: (id: number) => api.proDeleteComment(memberId as number, id),
+  });
+
   const selectDate = (d: string) => {
     setDate(d);
     const [y, m] = d.split('-').map(Number);
@@ -100,7 +109,7 @@ export function DietitianScreen() {
   const prevMonth = () => setCalMonth(calMonth.m === 0 ? { y: calMonth.y - 1, m: 11 } : { y: calMonth.y, m: calMonth.m - 1 });
   const nextMonth = () => setCalMonth(calMonth.m === 11 ? { y: calMonth.y + 1, m: 0 } : { y: calMonth.y, m: calMonth.m + 1 });
 
-  const entries = (day?.entries ?? []).filter(entryHasData);
+  const entries = sortEntriesNewestFirst((day?.entries ?? []).filter(entryHasData));
   const totals = dayFoodTotals(entries);
   const gInfo = goalsFor(date, goals);
   const totalKcal = kcalOfFood(totals);
@@ -251,10 +260,12 @@ export function DietitianScreen() {
                 })}
               </div>
 
-              {/* 喝水／運動／身體數據 */}
-              <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#4A5A4A', lineHeight: 1.7 }}>
+              {/* 喝水／運動／身體數據（喝水與運動可留言） */}
+              <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#4A5A4A', lineHeight: 1.7 }}>
                 <div>喝水：{day?.water ?? 0} / {gInfo.water} ml</div>
+                <CommentsThread key={`w-${memberId}-${date}`} {...commentProps(`water:${date}`, day?.commentCounts.water ?? 0)} />
                 <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}` : '未記錄'}</div>
+                <CommentsThread key={`x-${memberId}-${date}`} {...commentProps(`ex:${date}`, day?.commentCounts.ex ?? 0)} />
                 <div>
                   身體數據：{bodyItems.length
                     ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、')
@@ -284,6 +295,7 @@ export function DietitianScreen() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: m.color, fontWeight: 900 }}>{m.glyph}</div>
                       <span style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</span>
+                      <span style={{ fontSize: 12, color: '#8A9284' }}>{e.eatTime || '未填時間'}</span>
                       <span style={{ fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 700, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
                     </div>
                     {e.desc && <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6 }}>{e.desc}</div>}
@@ -321,6 +333,7 @@ export function DietitianScreen() {
                         })}
                       </div>
                     )}
+                    <CommentsThread key={`e-${e.id}`} {...commentProps(`entry:${e.id}`, e.commentCount)} />
                   </div>
                 );
               })}

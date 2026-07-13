@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import { MEALS } from '../../lib/domain';
+import { MEALS, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import { CloseButton } from './ModalShell';
 
@@ -22,7 +22,7 @@ export function AddMenuSheet() {
     if (busy) return;
     setBusy(true);
     try {
-      const entry = await api.createEntry(selected, meal.k);
+      const entry = await api.createEntry(selected, meal.k, nowHM());
       await loadDay();
       openLogFood(entry.id);
     } catch {

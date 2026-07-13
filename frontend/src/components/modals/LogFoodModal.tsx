@@ -39,6 +39,7 @@ const INPUT_GROUPS: InputGroup[] = [
 export function LogFoodModal() {
   const editingId = useStore((s) => s.editingId);
   const day = useStore((s) => s.day);
+  const selected = useStore((s) => s.selected);
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
 
@@ -47,6 +48,9 @@ export function LogFoodModal() {
   const [desc, setDesc] = useState(entry?.desc ?? '');
   const [photos, setPhotos] = useState<string[]>(entry?.photos ?? []);
   const [uploading, setUploading] = useState(false);
+  // 用餐時間：預設為目前檢視的日期＋紀錄上的時間；改日期會把這筆移到該天
+  const [eatDate, setEatDate] = useState(selected);
+  const [eatTime, setEatTime] = useState(entry?.eatTime ?? '');
   const [foodStr, setFoodStr] = useState<Record<FoodKey, string>>(() => {
     const init = {} as Record<FoodKey, string>;
     const f = entry?.food ?? emptyFood();
@@ -78,7 +82,7 @@ export function LogFoodModal() {
     const food = draftFood();
     try {
       if (entryHasData({ desc, photos, food })) {
-        await api.patchEntry(entry.id, { desc, food });
+        await api.patchEntry(entry.id, { desc, food, eatTime, date: eatDate || selected });
       } else {
         await api.deleteEntry(entry.id);
       }
@@ -99,7 +103,7 @@ export function LogFoodModal() {
     }
   };
 
-  const MAX_PHOTOS = 6;
+  const MAX_PHOTOS = 10;
 
   const uploadPhotos = async (files: File[]) => {
     if (!files.length || uploading) return;
@@ -140,6 +144,24 @@ export function LogFoodModal() {
           <span style={{ fontFamily: 'Outfit', fontSize: 24, fontWeight: 800, color: '#2D3B2D' }}>
             {kcal} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>kcal</span>
           </span>
+        </div>
+        {/* 用餐時間 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ fontSize: 12.5, color: '#6B7565' }}>用餐時間（改日期會把這筆紀錄移到該天）</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="date"
+              value={eatDate}
+              onChange={(e) => setEatDate(e.target.value)}
+              style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
+            />
+            <input
+              type="time"
+              value={eatTime}
+              onChange={(e) => setEatTime(e.target.value)}
+              style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
+            />
+          </div>
         </div>
         {/* 敘述 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>

@@ -22,7 +22,7 @@ entriesRouter.use(requireAuth);
 
 function getOwnedEntry(userId: number, id: string | number) {
   return db
-    .prepare('SELECT id, meal, desc, photos, food FROM entries WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food FROM entries WHERE id = ? AND user_id = ?')
     .get(id, userId) as EntryRow | undefined;
 }
 
@@ -31,12 +31,14 @@ entriesRouter.patch('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   const parsed = entryPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { desc, food, photos } = parsed.data;
+  const { desc, food, photos, date, eatTime } = parsed.data;
 
   const sets: string[] = [];
   const args: string[] = [];
   if (desc !== undefined) { sets.push('desc = ?'); args.push(desc); }
   if (food !== undefined) { sets.push('food = ?'); args.push(JSON.stringify(food)); }
+  if (date !== undefined) { sets.push('date = ?'); args.push(date); } // 改用餐日期＝把紀錄移到該天
+  if (eatTime !== undefined) { sets.push('eat_time = ?'); args.push(eatTime); }
   if (photos !== undefined) {
     // 只允許保留既有照片的子集合（= 刪除部分照片），被移除的檔案與其評分順手清掉
     const current = parsePhotos(entry.photos);
@@ -58,6 +60,7 @@ entriesRouter.delete('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   parsePhotos(entry.photos).forEach(unlinkPhoto);
   deletePhotoRatings(entry.id);
+  db.prepare('DELETE FROM entry_comments WHERE target = ?').run(`entry:${entry.id}`);
   db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
   return res.status(204).end();
 });
