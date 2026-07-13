@@ -93,17 +93,6 @@ export function LogFoodModal() {
     }
   };
 
-  const remove = async () => {
-    if (closing.current) return;
-    closing.current = true;
-    try {
-      await api.deleteEntry(entry.id);
-      await refresh();
-    } finally {
-      closeModal();
-    }
-  };
-
   const MAX_PHOTOS = 10;
 
   const uploadPhotos = async (files: File[]) => {
@@ -237,7 +226,6 @@ export function LogFoodModal() {
           </div>
         ))}
         <button onClick={() => void finish()} className="hv-green" style={{ height: 48, flex: 'none', border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>完成</button>
-        <button onClick={() => void remove()} className="hv-red-tint" style={{ height: 40, flex: 'none', border: 'none', borderRadius: 13, background: 'transparent', color: '#C0564A', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>刪除這筆紀錄</button>
       </div>
     </ModalShell>
   );
