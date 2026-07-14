@@ -132,6 +132,52 @@ export function createComment(ownerId: number, target: string, authorId: number,
   );
 }
 
+// ---- 通知（營養師留言／照片評分／調整份數時通知會員）----
+
+export type NotificationType = 'comment' | 'rating' | 'food';
+
+// 取得通知對象貼文所屬日期：entry 查資料表；water/ex 直接取 target 內的日期
+export function notificationDate(target: string): string {
+  if (target.startsWith('entry:')) {
+    const row = db.prepare('SELECT date FROM entries WHERE id = ?').get(Number(target.slice(6))) as { date: string } | undefined;
+    return row?.date ?? '';
+  }
+  return target.slice(target.indexOf(':') + 1);
+}
+
+// 同一貼文的同類型未讀通知只保留一則（例如一筆紀錄多張照片評分只算一則），重複事件僅更新時間
+// memberId：接收者為營養師時，標記通知來自哪位會員的貼文（0＝自己的紀錄）
+export function pushNotification(userId: number, type: NotificationType, target: string, memberId = 0) {
+  const date = notificationDate(target);
+  if (!date) return;
+  const existing = db
+    .prepare('SELECT id FROM notifications WHERE user_id = ? AND type = ? AND target = ? AND member_id = ? AND read = 0')
+    .get(userId, type, target, memberId) as { id: number } | undefined;
+  if (existing) {
+    db.prepare('UPDATE notifications SET created_at = ?, date = ? WHERE id = ?').run(Date.now(), date, existing.id);
+  } else {
+    db.prepare('INSERT INTO notifications (user_id, type, target, date, member_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+      userId,
+      type,
+      target,
+      date,
+      memberId,
+      Date.now()
+    );
+  }
+}
+
+// 會員在自己的貼文留言時，通知所有曾在該貼文留言的營養師／管理者（排除留言者本人）
+export function notifyCommentWatchers(ownerId: number, target: string, authorId: number) {
+  const watchers = db
+    .prepare(
+      `SELECT DISTINCT c.author_id AS id FROM entry_comments c JOIN users u ON u.id = c.author_id
+       WHERE c.user_id = ? AND c.target = ? AND c.author_id != ? AND u.role IN ('dietitian','admin')`
+    )
+    .all(ownerId, target, authorId) as { id: number }[];
+  for (const w of watchers) pushNotification(w.id, 'comment', target, ownerId);
+}
+
 // 確認留言對象屬於該會員：entry 需為其所有；water/ex 為其當日紀錄（日期格式已由 schema 驗證）
 export function commentTargetOwned(ownerId: number, target: string): boolean {
   if (target.startsWith('entry:')) {
@@ -214,6 +260,7 @@ export function deleteUserData(userId: number) {
   for (const r of photoRows) parsePhotos(r.photos).forEach(unlinkPhoto);
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM photo_ratings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(userId);
+    db.prepare('DELETE FROM notifications WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM entry_comments WHERE user_id = ? OR author_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);

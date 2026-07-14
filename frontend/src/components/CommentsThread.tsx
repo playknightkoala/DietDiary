@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fmtCommentTime } from '../lib/domain';
 import type { EntryComment } from '../types';
 
@@ -12,16 +12,27 @@ interface CommentsThreadProps {
   load: () => Promise<EntryComment[]>;
   post: (body: string) => Promise<EntryComment[]>;
   remove: (id: number) => Promise<void>;
+  initialOpen?: boolean;
 }
 
 // 收合式留言串：點開才載入並顯示內容，會員與營養師頁面共用
-export function CommentsThread({ count: initialCount, load, post, remove }: CommentsThreadProps) {
-  const [open, setOpen] = useState(false);
+// initialOpen：掛載時即展開並載入（營養師由通知跳轉至該貼文時使用）
+export function CommentsThread({ count: initialCount, load, post, remove, initialOpen }: CommentsThreadProps) {
+  const [open, setOpen] = useState(!!initialOpen);
   const [comments, setComments] = useState<EntryComment[] | null>(null);
   const [count, setCount] = useState(initialCount);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!initialOpen) return;
+    load()
+      .then((list) => { setComments(list); setCount(list.length); })
+      .catch(() => setError('載入留言失敗'));
+    // 僅掛載時載入一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggle = async () => {
     if (open) {
@@ -116,7 +127,7 @@ export function CommentsThread({ count: initialCount, load, post, remove }: Comm
               value={input}
               maxLength={1000}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send(); }}
               style={{ flex: 1, minWidth: 0, height: 38, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 13.5, outline: 'none', background: '#FBFAF6' }}
             />
             <button

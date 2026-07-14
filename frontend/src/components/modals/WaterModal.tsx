@@ -86,7 +86,7 @@ export function WaterModal() {
             placeholder="例：350"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void addWater(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void addWater(); }}
             style={{ flex: 1, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 16, outline: 'none', background: '#FBFAF6', minWidth: 0 }}
           />
           <button onClick={() => void addWater()} className="hv-blue" style={{ flex: 'none', height: 46, padding: '0 20px', border: 'none', borderRadius: 12, background: '#5B8DB8', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>加入</button>

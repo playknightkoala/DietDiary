@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
-import type { BodyKey, DayData, Goal, Role, TrendPoint } from './types';
+import type { BodyKey, DayData, Goal, NotificationItem, Role, TrendPoint } from './types';
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
-  | 'calendar' | 'goals' | 'account' | null;
+  | 'calendar' | 'goals' | 'account' | 'notify' | null;
 
 // diary＝個人日記；admin＝管理者後台；pro＝營養師頁面
 export type ViewKey = 'diary' | 'admin' | 'pro';
@@ -24,6 +24,8 @@ interface AppState {
   // 指南為獨立疊加層（不佔 modal 狀態），可蓋在任何視窗或畫面上
   guideOpen: boolean;
   guideTab: number;
+  // 營養師點通知後要聚焦的會員貼文（DietitianScreen 讀取後清除）
+  proFocus: { memberId: number; date: string; target: string } | null;
   trendOpen: boolean;
   trendField: BodyKey;
 
@@ -31,6 +33,8 @@ interface AppState {
   marks: Record<string, true>;
   goals: Goal[];
   trendPoints: TrendPoint[];
+  notifications: NotificationItem[];
+  unreadCount: number;
 
   loginSuccess: (token: string, username: string, role: Role, persist: boolean) => void;
   logout: () => void;
@@ -47,6 +51,9 @@ interface AppState {
   refresh: () => Promise<void>;
   loadGoals: () => Promise<void>;
   loadTrend: () => Promise<void>;
+  loadNotifications: () => Promise<void>;
+  readNotification: (id: number) => Promise<void>;
+  readAllNotifications: () => Promise<void>;
   loadMe: () => Promise<void>;
   loadAll: () => Promise<void>;
 
@@ -56,6 +63,8 @@ interface AppState {
   closeModal: () => void;
   openGuide: (tab?: number) => void;
   closeGuide: () => void;
+  openProPost: (memberId: number, date: string, target: string) => void;
+  clearProFocus: () => void;
   setGuideTab: (i: number) => void;
   setTrendOpen: (open: boolean) => void;
   setTrendField: (f: BodyKey) => void;
@@ -75,6 +84,7 @@ export const useStore = create<AppState>((set, get) => ({
   calMonth: null,
   guideOpen: false,
   guideTab: 0,
+  proFocus: null,
   trendOpen: false,
   trendField: 'weight',
 
@@ -82,6 +92,8 @@ export const useStore = create<AppState>((set, get) => ({
   marks: {},
   goals: [],
   trendPoints: [],
+  notifications: [],
+  unreadCount: 0,
 
   loginSuccess: (token, username, role, persist) => {
     saveAuth(token, username, role, persist);
@@ -92,8 +104,8 @@ export const useStore = create<AppState>((set, get) => ({
     clearAuth();
     set({
       token: null, username: null, role: 'member', view: 'diary', modal: null, editingId: null,
-      day: emptyDay(), marks: {}, goals: [], trendPoints: [],
-      trendOpen: false, guideOpen: false, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
+      day: emptyDay(), marks: {}, goals: [], trendPoints: [], notifications: [], unreadCount: 0,
+      trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
   },
   setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false }),
@@ -155,6 +167,26 @@ export const useStore = create<AppState>((set, get) => ({
     const { points } = await api.getTrend(get().trendField);
     set({ trendPoints: points });
   },
+  loadNotifications: async () => {
+    try {
+      const { unread, items } = await api.getNotifications();
+      set({ notifications: items, unreadCount: unread });
+    } catch { /* 靜默失敗，下次輪詢再試 */ }
+  },
+  readNotification: async (id) => {
+    set((s) => {
+      const wasUnread = s.notifications.some((n) => n.id === id && !n.read);
+      return {
+        notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
+        unreadCount: wasUnread ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
+      };
+    });
+    try { await api.markNotificationsRead([id]); } catch { /* ignore */ }
+  },
+  readAllNotifications: async () => {
+    set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })), unreadCount: 0 }));
+    try { await api.markNotificationsRead(); } catch { /* ignore */ }
+  },
   // 同步最新角色（管理者可能事後調整角色）
   loadMe: async () => {
     try {
@@ -164,7 +196,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe()]);
+    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications()]);
   },
 
   setModal: (modal) => set({ modal }),
@@ -178,6 +210,10 @@ export const useStore = create<AppState>((set, get) => ({
   closeModal: () => set({ modal: null, editingId: null, calMonth: null }),
   openGuide: (tab = 0) => set({ guideOpen: true, guideTab: tab }),
   closeGuide: () => set({ guideOpen: false }),
+  // 營養師點通知：切到營養師頁並聚焦該會員的該則貼文
+  openProPost: (memberId, date, target) =>
+    set({ view: 'pro', modal: null, editingId: null, calMonth: null, guideOpen: false, proFocus: { memberId, date, target } }),
+  clearProFocus: () => set({ proFocus: null }),
   setGuideTab: (guideTab) => set({ guideTab }),
   setTrendOpen: (trendOpen) => {
     set({ trendOpen });

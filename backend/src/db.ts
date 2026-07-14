@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS photo_ratings (
   PRIMARY KEY (entry_id, photo)
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL CHECK (type IN ('comment','rating','food')),
+  target TEXT NOT NULL,
+  date TEXT NOT NULL,
+  member_id INTEGER NOT NULL DEFAULT 0,
+  read INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
+
 CREATE TABLE IF NOT EXISTS goal_periods (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -172,6 +184,12 @@ if (legacyPhotos.length) {
     for (const r of legacyPhotos) move.run(JSON.stringify([r.photo]), r.id);
   });
   tx();
+}
+
+// 通知的 member_id：接收者為營養師時，標記通知來自哪位會員的貼文（0＝自己的紀錄）
+const notifCols = (db.pragma('table_info(notifications)') as { name: string }[]).map((c) => c.name);
+if (!notifCols.includes('member_id')) {
+  db.exec(`ALTER TABLE notifications ADD COLUMN member_id INTEGER NOT NULL DEFAULT 0`);
 }
 
 // 舊資料庫的單筆 goals 資料表：搬進 goal_periods 後移除

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { COMMENT_TARGET_RE, DATE_RE, commentCreateSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
-import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, type EntryRow } from '../helpers.js';
+import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -63,6 +63,8 @@ proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
       `INSERT INTO photo_ratings (entry_id, photo, rating, rated_by) VALUES (?, ?, ?, ?)
        ON CONFLICT(entry_id, photo) DO UPDATE SET rating = excluded.rating, rated_by = excluded.rated_by, rated_at = datetime('now')`
     ).run(entry.id, photo, rating, req.userId);
+    // 同一筆紀錄不論評幾張照片，只產生一則未讀通知
+    pushNotification(member.id, 'rating', `entry:${entry.id}`);
   }
   return res.json({ ratings: getPhotoRatings(entry.id) });
 });
@@ -82,6 +84,7 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
     Date.now(),
     entry.id
   );
+  pushNotification(member.id, 'food', `entry:${entry.id}`);
   const row = db
     .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ?')
     .get(entry.id) as EntryRow;
@@ -107,6 +110,7 @@ proRouter.post('/members/:id/comments', (req, res) => {
   const { target, body } = parsed.data;
   if (!commentTargetOwned(member.id, target)) return res.status(400).json({ error: 'invalid target' });
   createComment(member.id, target, req.userId, body);
+  pushNotification(member.id, 'comment', target);
   return res.status(201).json(listComments(member.id, target, req.userId));
 });
 

@@ -6,8 +6,10 @@ import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
 import { FoodFields } from '../components/FoodFields';
+import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
+import { NotificationsModal } from '../components/modals/NotificationsModal';
 import type { CommentTarget, DayData, Entry, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
@@ -27,6 +29,11 @@ const GROUP_ROWS: { name: string; gkey: GoalKey; keys: FoodKey[]; color: string 
 export function DietitianScreen() {
   const setView = useStore((s) => s.setView);
   const role = useStore((s) => s.role);
+  const modal = useStore((s) => s.modal);
+  const setModal = useStore((s) => s.setModal);
+  const unreadCount = useStore((s) => s.unreadCount);
+  const proFocus = useStore((s) => s.proFocus);
+  const clearProFocus = useStore((s) => s.clearProFocus);
 
   const todayStr = dstr(new Date());
   const [members, setMembers] = useState<MemberInfo[]>([]);
@@ -44,6 +51,27 @@ export function DietitianScreen() {
   useEffect(() => {
     api.proMembers().then(setMembers).catch((e) => setError(e instanceof Error ? e.message : '載入會員清單失敗'));
   }, []);
+
+  // 由通知跳轉而來：選定會員與日期，並記下要聚焦的貼文
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
+  useEffect(() => {
+    if (!proFocus) return;
+    setMemberId(proFocus.memberId);
+    setDate(proFocus.date);
+    const [y, m] = proFocus.date.split('-').map(Number);
+    setCalMonth({ y, m: m - 1 });
+    setFocusTarget(proFocus.target);
+    clearProFocus();
+  }, [proFocus, clearProFocus]);
+
+  // 當日資料載入後捲動到聚焦的貼文
+  useEffect(() => {
+    if (!focusTarget || !day) return;
+    const el = document.getElementById(`pro-post-${focusTarget}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // day 更新時執行一次即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day]);
 
   const loadGoals = useCallback(async (mid: number) => {
     setGoals(await api.proGoals(mid));
@@ -87,6 +115,8 @@ export function DietitianScreen() {
       setError(e instanceof Error ? e.message : '評分失敗，請再試一次');
     }
   };
+
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   // 編輯會員某筆紀錄的六大類份數（會標記「營養師調整」）
   const [foodEditing, setFoodEditing] = useState<Entry | null>(null);
@@ -164,10 +194,22 @@ export function DietitianScreen() {
           </div>
           <div style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 800, color: '#2D3B2D' }}>營養師頁面{role === 'admin' ? '（管理者檢視）' : ''}</div>
         </div>
-        <button onClick={() => setView('diary')} className="hv-cream" style={{ height: 38, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, color: '#4A5A4A' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
-          回到日記
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative' }}>
+            <button title="通知" onClick={() => setModal('notify')} className="hv-cream" style={{ width: 38, height: 38, border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" strokeWidth="2" strokeLinecap="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+            </button>
+            {unreadCount > 0 && (
+              <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 99, background: '#C0564A', color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', pointerEvents: 'none' }}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <button onClick={() => setView('diary')} className="hv-cream" style={{ height: 38, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, color: '#4A5A4A' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+            回到日記
+          </button>
+        </div>
       </div>
 
       {/* 會員與日期選擇 */}
@@ -298,9 +340,21 @@ export function DietitianScreen() {
               {/* 喝水／運動／身體數據（喝水與運動可留言） */}
               <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#4A5A4A', lineHeight: 1.7 }}>
                 <div>喝水：{day?.water ?? 0} / {gInfo.water} ml{day?.waterTime ? `（${day.waterTime}）` : ''}</div>
-                <CommentsThread key={`w-${memberId}-${date}`} {...commentProps(`water:${date}`, day?.commentCounts.water ?? 0)} />
+                <div id={`pro-post-water:${date}`}>
+                  <CommentsThread
+                    key={`w-${memberId}-${date}${focusTarget === `water:${date}` ? '-f' : ''}`}
+                    {...commentProps(`water:${date}`, day?.commentCounts.water ?? 0)}
+                    initialOpen={focusTarget === `water:${date}`}
+                  />
+                </div>
                 <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}${day!.exTime ? `（${day!.exTime}）` : ''}` : '未記錄'}</div>
-                <CommentsThread key={`x-${memberId}-${date}`} {...commentProps(`ex:${date}`, day?.commentCounts.ex ?? 0)} />
+                <div id={`pro-post-ex:${date}`}>
+                  <CommentsThread
+                    key={`x-${memberId}-${date}${focusTarget === `ex:${date}` ? '-f' : ''}`}
+                    {...commentProps(`ex:${date}`, day?.commentCounts.ex ?? 0)}
+                    initialOpen={focusTarget === `ex:${date}`}
+                  />
+                </div>
                 <div>
                   身體數據：{bodyItems.length
                     ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、') + (day!.bodyTime ? `（${day!.bodyTime}）` : '')
@@ -326,7 +380,7 @@ export function DietitianScreen() {
               {entries.map((e) => {
                 const m = MEALS.find((mm) => mm.k === e.meal) || MEALS[0];
                 return (
-                  <div key={e.id} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div key={e.id} id={`pro-post-entry:${e.id}`} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                       <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: m.color, fontWeight: 900 }}>{m.glyph}</div>
                       <span style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</span>
@@ -352,10 +406,10 @@ export function DietitianScreen() {
                           const current = e.ratings[url];
                           return (
                             <div key={url} style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
-                              <a href={url} target="_blank" rel="noreferrer" title="開啟原圖" style={{ position: 'relative', display: 'block' }}>
+                              <button onClick={() => setLightbox(url)} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                                 <div style={{ width: 72, height: 72, borderRadius: 10, border: current ? `2.5px solid ${RATING_DEFS[current].color}` : '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                                 <PhotoRatingBadge rating={current} size={14} />
-                              </a>
+                              </button>
                               <div style={{ display: 'flex', gap: 5 }}>
                                 {RATING_KEYS.map((r) => {
                                   const active = current === r;
@@ -380,7 +434,11 @@ export function DietitianScreen() {
                         })}
                       </div>
                     )}
-                    <CommentsThread key={`e-${e.id}`} {...commentProps(`entry:${e.id}`, e.commentCount)} />
+                    <CommentsThread
+                      key={`e-${e.id}${focusTarget === `entry:${e.id}` ? '-f' : ''}`}
+                      {...commentProps(`entry:${e.id}`, e.commentCount)}
+                      initialOpen={focusTarget === `entry:${e.id}`}
+                    />
                   </div>
                 );
               })}
@@ -421,6 +479,9 @@ export function DietitianScreen() {
           </div>
         </ModalShell>
       )}
+
+      {modal === 'notify' && <NotificationsModal />}
+      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

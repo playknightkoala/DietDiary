@@ -1,4 +1,4 @@
-import type { AdminUser, CommentTarget, DayData, Entry, EntryComment, Food, Goal, GoalInput, MealKey, MemberInfo, PhotoRating, Role, TrendPoint } from '../types';
+import type { AdminUser, CommentTarget, DayData, Entry, EntryComment, Food, Goal, GoalInput, MealKey, MemberInfo, NotificationItem, PhotoRating, Role, TrendPoint } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -141,6 +141,11 @@ export const api = {
   postComment: (target: CommentTarget, body: string) =>
     request<EntryComment[]>('/api/comments', { method: 'POST', body: JSON.stringify({ target, body }) }),
   deleteComment: (id: number) => request<void>(`/api/comments/${id}`, { method: 'DELETE' }),
+
+  // 通知（營養師留言／照片評分／調整份數）
+  getNotifications: () => request<{ unread: number; items: NotificationItem[] }>('/api/notifications'),
+  markNotificationsRead: (ids?: number[]) =>
+    request<{ ok: true }>('/api/notifications/read', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }),
 
   getGoals: () => request<Goal[]>('/api/goals'),
   createGoal: (goal: GoalInput) =>

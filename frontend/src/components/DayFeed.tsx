@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../lib/api';
 import { MEALS, dstr, entryHasData, fmtCommentTime, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
 import { useStore } from '../store';
 import { CommentsThread } from './CommentsThread';
+import { Lightbox } from './Lightbox';
 import { PhotoRatingBadge } from './PhotoRatingBadge';
 import type { CommentTarget } from '../types';
 
@@ -30,6 +32,7 @@ export function DayFeed() {
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
   const openLogFood = useStore((s) => s.openLogFood);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const entries = sortEntriesNewestFirst(day.entries.filter(entryHasData));
   const hasEx = (day.ex.min && +day.ex.min > 0) || day.ex.desc;
@@ -80,10 +83,10 @@ export function DayFeed() {
           {e.photos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {e.photos.map((url) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" title="開啟原圖" style={{ position: 'relative', display: 'block' }}>
+                <button key={url} onClick={() => setLightbox(url)} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                   <div style={{ width: 76, height: 76, borderRadius: 12, border: '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                   <PhotoRatingBadge rating={e.ratings[url]} size={14} />
-                </a>
+                </button>
               ))}
             </div>
           )}
@@ -154,6 +157,8 @@ export function DayFeed() {
       )}
 
       {posts.map((p) => p.node)}
+
+      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

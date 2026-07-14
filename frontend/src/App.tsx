@@ -12,12 +12,20 @@ export default function App() {
   const role = useStore((s) => s.role);
   const guideOpen = useStore((s) => s.guideOpen);
   const loadAll = useStore((s) => s.loadAll);
+  const loadNotifications = useStore((s) => s.loadNotifications);
 
   useEffect(() => {
     if (token) void loadAll();
     // 只在初次掛載時載入（登入時 loginSuccess 會自行載入）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 每 60 秒輪詢通知（登入期間）
+  useEffect(() => {
+    if (!token) return;
+    const timer = setInterval(() => void loadNotifications(), 60_000);
+    return () => clearInterval(timer);
+  }, [token, loadNotifications]);
 
   if (!token) return <LoginScreen />;
   const screen =

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { COMMENT_TARGET_RE, commentCreateSchema } from '../validation.js';
-import { commentTargetOwned, createComment, listComments } from '../helpers.js';
+import { commentTargetOwned, createComment, listComments, notifyCommentWatchers } from '../helpers.js';
 
 // 會員對自己紀錄的留言（營養師留言走 /api/pro/members/:id/comments）
 export const commentsRouter = Router();
@@ -22,6 +22,8 @@ commentsRouter.post('/', (req, res) => {
   const { target, body } = parsed.data;
   if (!commentTargetOwned(req.userId, target)) return res.status(400).json({ error: 'invalid target' });
   createComment(req.userId, target, req.userId, body);
+  // 通知曾在這則貼文留言的營養師（會員回覆營養師）
+  notifyCommentWatchers(req.userId, target, req.userId);
   return res.status(201).json(listComments(req.userId, target, req.userId));
 });
 

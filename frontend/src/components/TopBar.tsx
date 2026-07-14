@@ -18,17 +18,19 @@ export function TopBar() {
   const setModal = useStore((s) => s.setModal);
   const openGuide = useStore((s) => s.openGuide);
   const openCalendar = useStore((s) => s.openCalendar);
+  const unreadCount = useStore((s) => s.unreadCount);
   const logout = useStore((s) => s.logout);
   const role = useStore((s) => s.role);
   const setView = useStore((s) => s.setView);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 11, background: '#4A7C59', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 20px 8px' }}>
+      {/* 標題固定不換行、不被壓縮，管理者圖示較多時只讓右側圖示換行 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+        <div style={{ width: 34, height: 34, flex: 'none', borderRadius: 11, background: '#4A7C59', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" strokeWidth="2" strokeLinecap="round"><path d="M12 21c4.5 0 8-3.5 8-9V5l-8-2-8 2v7c0 5.5 3.5 9 8 9z" /></svg>
         </div>
-        <div style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 800, color: '#2D3B2D' }}>均衡日記</div>
+        <div style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 800, color: '#2D3B2D', whiteSpace: 'nowrap' }}>均衡日記</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {(role === 'dietitian' || role === 'admin') && (
@@ -41,6 +43,16 @@ export function TopBar() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C77B4A" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M22 11h-6" /></svg>
           </IconBtn>
         )}
+        <div style={{ position: 'relative' }}>
+          <IconBtn title="通知" onClick={() => setModal('notify')}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" strokeWidth="2" strokeLinecap="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+          </IconBtn>
+          {unreadCount > 0 && (
+            <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 99, background: '#C0564A', color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', pointerEvents: 'none' }}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </div>
         <IconBtn title="月曆" onClick={openCalendar}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M8 2v4M16 2v4M3 9h18" /></svg>
         </IconBtn>

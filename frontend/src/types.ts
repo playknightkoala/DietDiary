@@ -85,3 +85,19 @@ export interface MemberInfo {
   id: number;
   username: string;
 }
+
+// 通知：營養師留言／照片評分／調整份數（meal 為 entry 目標的餐別，紀錄已刪除時為 null）
+// memberId > 0 表示是「會員回覆」通知（接收者為營養師），指向該會員的貼文
+export type NotificationType = 'comment' | 'rating' | 'food';
+
+export interface NotificationItem {
+  id: number;
+  type: NotificationType;
+  target: string;
+  date: string;
+  memberId: number;
+  memberName: string | null;
+  meal: MealKey | null;
+  read: boolean;
+  createdAt: number;
+}
