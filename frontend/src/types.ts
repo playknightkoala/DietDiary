@@ -84,6 +84,9 @@ export interface AdminUser {
 export interface MemberInfo {
   id: number;
   username: string;
+  nickname: string;
+  // 這位營養師替該會員取的私人暱稱（僅本人可見；未設定為 null）
+  alias: string | null;
 }
 
 // 通知：營養師留言／照片評分／調整份數（meal 為 entry 目標的餐別，紀錄已刪除時為 null）

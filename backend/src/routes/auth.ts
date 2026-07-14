@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
 import { db, promoteAdminIfConfigured } from '../db.js';
 import { JWT_SECRET, requireAuth, type Role } from '../middleware/auth.js';
-import { authSchema, changePasswordSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema } from '../validation.js';
+import { authSchema, changePasswordSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema } from '../validation.js';
 import { mailerConfigured, sendVerifyCode } from '../mailer.js';
 
 export const authRouter = Router();
@@ -164,10 +164,18 @@ authRouter.post('/login', async (req, res) => {
 // 會員中心：目前登入者資訊
 authRouter.get('/me', requireAuth, (req, res) => {
   const user = db
-    .prepare('SELECT username, role, status, created_at FROM users WHERE id = ?')
-    .get(req.userId) as { username: string; role: Role; status: string; created_at: string } | undefined;
+    .prepare('SELECT username, role, status, nickname, created_at FROM users WHERE id = ?')
+    .get(req.userId) as { username: string; role: Role; status: string; nickname: string; created_at: string } | undefined;
   if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
-  return res.json({ username: user.username, role: user.role, createdAt: user.created_at });
+  return res.json({ username: user.username, role: user.role, nickname: user.nickname, createdAt: user.created_at });
+});
+
+// 設定／變更自己的暱稱（1～20 字）
+authRouter.post('/nickname', requireAuth, (req, res) => {
+  const parsed = nicknameSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入 1～20 字的暱稱' });
+  db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(parsed.data.nickname, req.userId);
+  return res.json({ ok: true, nickname: parsed.data.nickname });
 });
 
 // 會員中心：變更密碼

@@ -109,7 +109,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password, remember }),
     }),
-  me: () => request<{ username: string; role: Role; createdAt: string }>('/api/auth/me'),
+  me: () => request<{ username: string; role: Role; nickname: string; createdAt: string }>('/api/auth/me'),
+  setNickname: (nickname: string) =>
+    request<{ ok: true; nickname: string }>('/api/auth/nickname', { method: 'POST', body: JSON.stringify({ nickname }) }),
   changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) =>
     request<{ ok: true }>('/api/auth/change-password', {
       method: 'POST',
@@ -166,6 +168,8 @@ export const api = {
 
   // 營養師
   proMembers: () => request<MemberInfo[]>('/api/pro/members'),
+  proSetAlias: (memberId: number, alias: string) =>
+    request<{ ok: true; alias: string }>(`/api/pro/members/${memberId}/alias`, { method: 'PUT', body: JSON.stringify({ alias }) }),
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),

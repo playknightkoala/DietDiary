@@ -13,7 +13,32 @@ const ROLE_NAMES = { member: '一般會員', citizen: '駒駒國民', dietitian:
 export function AccountModal() {
   const username = useStore((s) => s.username);
   const role = useStore((s) => s.role);
+  const nickname = useStore((s) => s.nickname);
+  const setNickname = useStore((s) => s.setNickname);
   const closeModal = useStore((s) => s.closeModal);
+
+  const [nickInput, setNickInput] = useState(nickname ?? '');
+  const [nickError, setNickError] = useState('');
+  const [nickNotice, setNickNotice] = useState('');
+  const [nickBusy, setNickBusy] = useState(false);
+
+  const saveNickname = async () => {
+    const value = nickInput.trim();
+    setNickError('');
+    setNickNotice('');
+    if (!value) return setNickError('請輸入 1～20 字的暱稱');
+    if (nickBusy) return;
+    setNickBusy(true);
+    try {
+      const r = await api.setNickname(value);
+      setNickname(r.nickname);
+      setNickNotice('暱稱已更新');
+    } catch (e) {
+      setNickError(e instanceof Error ? e.message : '更新暱稱失敗，請再試一次');
+    } finally {
+      setNickBusy(false);
+    }
+  };
 
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -55,6 +80,26 @@ export function AccountModal() {
         <div style={{ fontSize: 14.5, fontWeight: 700, color: '#2D3B2D', wordBreak: 'break-all' }}>{username}</div>
         <div style={{ fontSize: 12, color: '#8A9284', marginTop: 4 }}>身分</div>
         <div style={{ fontSize: 13.5, fontWeight: 700, color: '#4A7C59' }}>{ROLE_NAMES[role]}</div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #F0EDE3', paddingTop: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 900 }}>暱稱</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="text"
+            maxLength={20}
+            placeholder="1～20 字"
+            value={nickInput}
+            onChange={(e) => setNickInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void saveNickname(); }}
+            style={{ ...inputStyle, flex: 1, minWidth: 0, width: 'auto' }}
+          />
+          <button onClick={() => void saveNickname()} disabled={nickBusy} className="hv-green" style={{ flex: 'none', height: 44, padding: '0 16px', border: 'none', borderRadius: 12, background: '#4A7C59', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: nickBusy ? 0.7 : 1 }}>
+            儲存
+          </button>
+        </div>
+        {nickError && <div style={{ fontSize: 12.5, color: '#C0564A', fontWeight: 700 }}>{nickError}</div>}
+        {nickNotice && <div style={{ fontSize: 12.5, color: '#4A7C59', fontWeight: 700 }}>{nickNotice}</div>}
       </div>
 
       <form

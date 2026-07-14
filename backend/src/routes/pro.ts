@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, commentCreateSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
+import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
 import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
@@ -15,11 +15,35 @@ function getMember(id: string | number) {
     .get(id) as { id: number; username: string } | undefined;
 }
 
-proRouter.get('/members', (_req, res) => {
+// 會員清單：附上會員自訂暱稱與「這位營養師」替會員取的私人暱稱（僅本人可見）
+proRouter.get('/members', (req, res) => {
   const rows = db
-    .prepare(`SELECT id, username FROM users WHERE role IN ('member','citizen') AND status = 'active' ORDER BY username`)
-    .all() as { id: number; username: string }[];
+    .prepare(
+      `SELECT u.id, u.username, u.nickname, a.alias
+       FROM users u
+       LEFT JOIN member_aliases a ON a.member_id = u.id AND a.dietitian_id = ?
+       WHERE u.role IN ('member','citizen') AND u.status = 'active' ORDER BY u.username`
+    )
+    .all(req.userId) as { id: number; username: string; nickname: string; alias: string | null }[];
   return res.json(rows);
+});
+
+// 營養師替會員取私人暱稱（僅該營養師自己看得到；alias 空字串＝清除）
+proRouter.put('/members/:id/alias', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const parsed = aliasSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '暱稱最多 20 字' });
+  const alias = parsed.data.alias;
+  if (alias === '') {
+    db.prepare('DELETE FROM member_aliases WHERE dietitian_id = ? AND member_id = ?').run(req.userId, member.id);
+  } else {
+    db.prepare(
+      `INSERT INTO member_aliases (dietitian_id, member_id, alias) VALUES (?, ?, ?)
+       ON CONFLICT(dietitian_id, member_id) DO UPDATE SET alias = excluded.alias`
+    ).run(req.userId, member.id, alias);
+  }
+  return res.json({ ok: true, alias });
 });
 
 proRouter.get('/members/:id/days/:date', (req, res) => {

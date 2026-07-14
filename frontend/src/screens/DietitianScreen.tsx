@@ -116,7 +116,7 @@ export function DietitianScreen() {
     }
   };
 
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
 
   // 編輯會員某筆紀錄的六大類份數（會標記「營養師調整」）
   const [foodEditing, setFoodEditing] = useState<Entry | null>(null);
@@ -147,6 +147,28 @@ export function DietitianScreen() {
       setError(e instanceof Error ? e.message : '儲存份數失敗，請再試一次');
     } finally {
       setSavingFood(false);
+    }
+  };
+
+  // 會員顯示名稱：私人暱稱（僅自己可見）＞會員自訂暱稱＞帳號
+  const memberLabel = (m: MemberInfo) => m.alias || m.nickname || m.username;
+
+  // 編輯私人暱稱（僅該營養師可見）
+  const [aliasEditing, setAliasEditing] = useState(false);
+  const [aliasInput, setAliasInput] = useState('');
+  const [aliasBusy, setAliasBusy] = useState(false);
+
+  const saveAlias = async (value: string) => {
+    if (memberId === '' || aliasBusy) return;
+    setAliasBusy(true);
+    try {
+      await api.proSetAlias(memberId, value.trim());
+      setMembers(await api.proMembers());
+      setAliasEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '儲存暱稱失敗，請再試一次');
+    } finally {
+      setAliasBusy(false);
     }
   };
 
@@ -222,9 +244,18 @@ export function DietitianScreen() {
         >
           <option value="">— 請選擇會員 —</option>
           {members.map((m) => (
-            <option key={m.id} value={m.id}>{m.username}</option>
+            <option key={m.id} value={m.id}>{memberLabel(m) === m.username ? m.username : `${memberLabel(m)}（${m.username}）`}</option>
           ))}
         </select>
+        {member && (
+          <button
+            onClick={() => { setAliasInput(member.alias ?? ''); setAliasEditing(true); }}
+            className="hv-cream"
+            style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}
+          >
+            私人暱稱
+          </button>
+        )}
         <label style={{ fontSize: 13.5, fontWeight: 700, color: '#4A5A4A', marginLeft: 6 }}>日期</label>
         <button onClick={() => selectDate(addDays(date, -1))} className="hv-sand" style={{ width: 34, height: 40, border: '1.5px solid #DDD8CA', borderRadius: 10, background: '#fff', cursor: 'pointer', color: '#4A5A4A' }}>‹</button>
         <PickerInput
@@ -287,7 +318,7 @@ export function DietitianScreen() {
             </div>
 
             <div style={cardStyle}>
-              <div style={{ fontSize: 16, fontWeight: 900 }}>{member?.username ?? ''} 的階段目標</div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>{member ? memberLabel(member) : ''} 的階段目標</div>
               <div style={{ fontSize: 12.5, color: '#6B7565' }}>在此新增或編輯的目標會標示為「營養師設定」，會員無法自行修改。</div>
               <GoalManager
                 goals={goals}
@@ -402,11 +433,11 @@ export function DietitianScreen() {
                     {e.desc && <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6 }}>{e.desc}</div>}
                     {e.photos.length > 0 && (
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        {e.photos.map((url) => {
+                        {e.photos.map((url, pi) => {
                           const current = e.ratings[url];
                           return (
                             <div key={url} style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
-                              <button onClick={() => setLightbox(url)} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
+                              <button onClick={() => setLightbox({ photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                                 <div style={{ width: 72, height: 72, borderRadius: 10, border: current ? `2.5px solid ${RATING_DEFS[current].color}` : '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                                 <PhotoRatingBadge rating={current} size={14} />
                               </button>
@@ -453,7 +484,7 @@ export function DietitianScreen() {
           <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 17, fontWeight: 900 }}>
               調整份數 — {(MEALS.find((mm) => mm.k === foodEditing.meal) || MEALS[0]).name}
-              <span style={{ fontSize: 12, fontWeight: 400, color: '#8A9284', marginLeft: 8 }}>{member?.username}</span>
+              <span style={{ fontSize: 12, fontWeight: 400, color: '#8A9284', marginLeft: 8 }}>{member ? memberLabel(member) : ''}</span>
             </div>
             <CloseButton onClick={() => setFoodEditing(null)} />
           </div>
@@ -480,8 +511,43 @@ export function DietitianScreen() {
         </ModalShell>
       )}
 
+      {/* 私人暱稱視窗：只有這位營養師自己看得到，其他營養師／管理者／會員皆不可見 */}
+      {aliasEditing && member && (
+        <ModalShell maxWidth={400} cardStyle={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 17, fontWeight: 900 }}>私人暱稱</div>
+            <CloseButton onClick={() => setAliasEditing(false)} />
+          </div>
+          <div style={{ fontSize: 13, color: '#6B7565', lineHeight: 1.7 }}>
+            替這位會員取一個只有你自己看得到的暱稱（最多 20 字），方便辨識；其他營養師、管理者與會員本人都不會看到。
+          </div>
+          <div style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 12, padding: '9px 12px', fontSize: 12.5, color: '#8A9284', wordBreak: 'break-all' }}>
+            會員：{member.nickname ? `${member.nickname}（${member.username}）` : member.username}
+          </div>
+          <input
+            type="text"
+            maxLength={20}
+            placeholder="例：週三團班的小美"
+            value={aliasInput}
+            onChange={(e) => setAliasInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void saveAlias(aliasInput); }}
+            style={{ height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            {member.alias && (
+              <button onClick={() => void saveAlias('')} disabled={aliasBusy} className="hv-red-tint" style={{ flex: 1, height: 46, border: '1.5px solid #E4C9C4', borderRadius: 13, background: '#fff', fontSize: 14, fontWeight: 700, color: '#C0564A', cursor: 'pointer', opacity: aliasBusy ? 0.7 : 1 }}>
+                清除暱稱
+              </button>
+            )}
+            <button onClick={() => void saveAlias(aliasInput)} disabled={aliasBusy} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: aliasBusy ? 0.7 : 1 }}>
+                儲存
+            </button>
+          </div>
+        </ModalShell>
+      )}
+
       {modal === 'notify' && <NotificationsModal />}
-      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox photos={lightbox.photos} index={lightbox.index} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

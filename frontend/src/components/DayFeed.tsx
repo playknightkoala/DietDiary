@@ -32,7 +32,7 @@ export function DayFeed() {
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
   const openLogFood = useStore((s) => s.openLogFood);
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
 
   const entries = sortEntriesNewestFirst(day.entries.filter(entryHasData));
   const hasEx = (day.ex.min && +day.ex.min > 0) || day.ex.desc;
@@ -82,8 +82,8 @@ export function DayFeed() {
           {e.desc && <div style={{ fontSize: 13.5, color: '#4A5A4A', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{e.desc}</div>}
           {e.photos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {e.photos.map((url) => (
-                <button key={url} onClick={() => setLightbox(url)} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
+              {e.photos.map((url, pi) => (
+                <button key={url} onClick={() => setLightbox({ photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                   <div style={{ width: 76, height: 76, borderRadius: 12, border: '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                   <PhotoRatingBadge rating={e.ratings[url]} size={14} />
                 </button>
@@ -158,7 +158,7 @@ export function DayFeed() {
 
       {posts.map((p) => p.node)}
 
-      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox photos={lightbox.photos} index={lightbox.index} onClose={() => setLightbox(null)} />}
     </div>
   );
 }

@@ -14,6 +14,8 @@ interface AppState {
   token: string | null;
   username: string | null;
   role: Role;
+  // null＝尚未載入（loadMe 完成前不觸發強制設定暱稱）；''＝未設定
+  nickname: string | null;
   view: ViewKey;
 
   selected: string;
@@ -51,6 +53,7 @@ interface AppState {
   refresh: () => Promise<void>;
   loadGoals: () => Promise<void>;
   loadTrend: () => Promise<void>;
+  setNickname: (nickname: string) => void;
   loadNotifications: () => Promise<void>;
   readNotification: (id: number) => Promise<void>;
   readAllNotifications: () => Promise<void>;
@@ -75,6 +78,7 @@ export const useStore = create<AppState>((set, get) => ({
   token: getToken(),
   username: getUsername(),
   role: getRole(),
+  nickname: null,
   view: 'diary',
 
   selected: dstr(new Date()),
@@ -97,13 +101,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   loginSuccess: (token, username, role, persist) => {
     saveAuth(token, username, role, persist);
-    set({ token, username, role, view: 'diary' });
+    set({ token, username, role, nickname: null, view: 'diary' });
     void get().loadAll();
   },
   logout: () => {
     clearAuth();
     set({
-      token: null, username: null, role: 'member', view: 'diary', modal: null, editingId: null,
+      token: null, username: null, role: 'member', nickname: null, view: 'diary', modal: null, editingId: null,
       day: emptyDay(), marks: {}, goals: [], trendPoints: [], notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
@@ -187,12 +191,13 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })), unreadCount: 0 }));
     try { await api.markNotificationsRead(); } catch { /* ignore */ }
   },
+  setNickname: (nickname) => set({ nickname }),
   // 同步最新角色（管理者可能事後調整角色）
   loadMe: async () => {
     try {
       const me = await api.me();
       saveRole(me.role);
-      set({ role: me.role, username: me.username });
+      set({ role: me.role, username: me.username, nickname: me.nickname });
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {

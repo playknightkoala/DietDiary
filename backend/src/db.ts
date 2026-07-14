@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active')),
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','citizen','dietitian','admin')),
+  nickname TEXT NOT NULL DEFAULT '',
   approval_token TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -98,6 +99,13 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
 
+CREATE TABLE IF NOT EXISTS member_aliases (
+  dietitian_id INTEGER NOT NULL REFERENCES users(id),
+  member_id INTEGER NOT NULL REFERENCES users(id),
+  alias TEXT NOT NULL,
+  PRIMARY KEY (dietitian_id, member_id)
+);
+
 CREATE TABLE IF NOT EXISTS goal_periods (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -150,6 +158,12 @@ if (!usersSql.includes('citizen')) {
   rebuild();
   db.pragma('foreign_keys = ON');
 }
+// 暱稱欄位（於 citizen 重建之後檢查，確保新舊資料庫皆補上）
+const userCols2 = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
+if (!userCols2.includes('nickname')) {
+  db.exec(`ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''`);
+}
+
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {
   db.exec(`ALTER TABLE captchas ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`);

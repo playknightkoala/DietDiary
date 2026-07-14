@@ -23,10 +23,12 @@ interface NotificationRow {
 notificationsRouter.get('/', (req, res) => {
   const rows = db
     .prepare(
-      `SELECT n.id, n.type, n.target, n.date, n.member_id, n.read, n.created_at, e.meal, mu.username AS member_name
+      `SELECT n.id, n.type, n.target, n.date, n.member_id, n.read, n.created_at, e.meal,
+              COALESCE(NULLIF(a.alias, ''), NULLIF(mu.nickname, ''), mu.username) AS member_name
        FROM notifications n
        LEFT JOIN entries e ON n.target = 'entry:' || e.id
        LEFT JOIN users mu ON mu.id = n.member_id
+       LEFT JOIN member_aliases a ON a.member_id = n.member_id AND a.dietitian_id = n.user_id
        WHERE n.user_id = ?
        ORDER BY n.id DESC LIMIT 30`
     )

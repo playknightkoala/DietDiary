@@ -5,12 +5,14 @@ import { MainScreen } from './screens/MainScreen';
 import { AdminScreen } from './screens/AdminScreen';
 import { DietitianScreen } from './screens/DietitianScreen';
 import { GuideModal } from './components/modals/GuideModal';
+import { NicknameModal } from './components/modals/NicknameModal';
 
 export default function App() {
   const token = useStore((s) => s.token);
   const view = useStore((s) => s.view);
   const role = useStore((s) => s.role);
   const guideOpen = useStore((s) => s.guideOpen);
+  const nickname = useStore((s) => s.nickname);
   const loadAll = useStore((s) => s.loadAll);
   const loadNotifications = useStore((s) => s.loadNotifications);
 
@@ -37,6 +39,8 @@ export default function App() {
       {screen}
       {/* 指南為獨立疊加層，任何畫面／彈窗上都可開啟 */}
       {guideOpen && <GuideModal />}
+      {/* 尚未設定暱稱：強制先設定才能繼續使用（nickname === null 表示尚未載入，不觸發） */}
+      {nickname === '' && <NicknameModal />}
     </>
   );
 }
