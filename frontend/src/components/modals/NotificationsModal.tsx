@@ -17,12 +17,17 @@ const TYPE_DEFS = {
   comment: { glyph: '留', tint: '#E3EBD9', color: '#4A7C59', text: (label: string) => `你的「${label}」有新留言` },
   rating: { glyph: '評', tint: '#E5EBF1', color: '#5B8DB8', text: (label: string) => `營養師評分了「${label}」的照片` },
   food: { glyph: '份', tint: '#F3E7D8', color: '#C77B4A', text: (label: string) => `營養師調整了「${label}」的六大類份數` },
+  post: { glyph: '新', tint: '#F6E5E9', color: '#B5537A', text: (label: string) => `「${label}」有新紀錄` },
 } as const;
 
-// 通知文字：memberId > 0 表示會員回覆營養師的通知
+// 通知文字：memberId > 0 表示接收者為營養師（會員回覆／追蹤的會員發新貼文）
 function itemText(n: NotificationItem): string {
   const label = postLabel(n);
-  if (n.memberId > 0) return `${n.memberName ?? '會員'} 回覆了「${label}」的留言`;
+  if (n.memberId > 0) {
+    const name = n.memberName ?? '會員';
+    if (n.type === 'post') return `${name} 新增了「${label}」`;
+    return `${name} 回覆了「${label}」的留言`;
+  }
   return TYPE_DEFS[n.type].text(label);
 }
 
@@ -66,7 +71,7 @@ export function NotificationsModal() {
           <div style={{ textAlign: 'center', color: '#8A9284', fontSize: 13.5, padding: '30px 0' }}>目前沒有通知。</div>
         )}
         {notifications.map((n) => {
-          const def = n.memberId > 0 ? TYPE_DEFS.comment : TYPE_DEFS[n.type];
+          const def = n.memberId > 0 && n.type !== 'post' ? TYPE_DEFS.comment : TYPE_DEFS[n.type];
           return (
             <button
               key={n.id}

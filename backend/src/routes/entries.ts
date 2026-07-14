@@ -5,7 +5,7 @@ import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryToJsonWithRatings, parseFood, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, notifyFollowers, parseFood, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -59,7 +59,12 @@ entriesRouter.patch('/:id', (req, res) => {
   if (sets.length) {
     db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
   }
-  return res.json(entryToJsonWithRatings(getOwnedEntry(req.userId, req.params.id)!));
+  const updated = getOwnedEntry(req.userId, req.params.id)!;
+  // 紀錄第一次從空白變成有內容＝發布新貼文，通知追蹤這位會員的營養師
+  if (!entryHasData(entryToJson(entry)) && entryHasData(entryToJson(updated))) {
+    notifyFollowers(req.userId, `entry:${entry.id}`);
+  }
+  return res.json(entryToJsonWithRatings(updated));
 });
 
 entriesRouter.delete('/:id', (req, res) => {
@@ -90,5 +95,9 @@ entriesRouter.post('/:id/photos', upload.array('photos', MAX_PHOTOS), (req, res)
   });
   const photos = [...current, ...urls];
   db.prepare('UPDATE entries SET photos = ? WHERE id = ?').run(JSON.stringify(photos), entry.id);
+  // 空白紀錄因上傳照片而有內容＝發布新貼文
+  if (!entryHasData(entryToJson(entry))) {
+    notifyFollowers(req.userId, `entry:${entry.id}`);
+  }
   return res.json({ photos });
 });

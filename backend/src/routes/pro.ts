@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
+import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, followSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
 import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
@@ -15,17 +15,33 @@ function getMember(id: string | number) {
     .get(id) as { id: number; username: string } | undefined;
 }
 
-// 會員清單：附上會員自訂暱稱與「這位營養師」替會員取的私人暱稱（僅本人可見）
+// 會員清單：附上會員自訂暱稱、「這位營養師」替會員取的私人暱稱與追蹤狀態（皆僅本人可見）
 proRouter.get('/members', (req, res) => {
   const rows = db
     .prepare(
-      `SELECT u.id, u.username, u.nickname, a.alias
+      `SELECT u.id, u.username, u.nickname, a.alias,
+              CASE WHEN f.member_id IS NULL THEN 0 ELSE 1 END AS followed
        FROM users u
        LEFT JOIN member_aliases a ON a.member_id = u.id AND a.dietitian_id = ?
+       LEFT JOIN follows f ON f.member_id = u.id AND f.dietitian_id = ?
        WHERE u.role IN ('member','citizen') AND u.status = 'active' ORDER BY u.username`
     )
-    .all(req.userId) as { id: number; username: string; nickname: string; alias: string | null }[];
-  return res.json(rows);
+    .all(req.userId, req.userId) as { id: number; username: string; nickname: string; alias: string | null; followed: number }[];
+  return res.json(rows.map((r) => ({ ...r, followed: !!r.followed })));
+});
+
+// 追蹤／取消追蹤會員：追蹤中的會員發布新貼文時會收到通知
+proRouter.put('/members/:id/follow', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const parsed = followSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  if (parsed.data.follow) {
+    db.prepare('INSERT OR IGNORE INTO follows (dietitian_id, member_id) VALUES (?, ?)').run(req.userId, member.id);
+  } else {
+    db.prepare('DELETE FROM follows WHERE dietitian_id = ? AND member_id = ?').run(req.userId, member.id);
+  }
+  return res.json({ ok: true, followed: parsed.data.follow });
 });
 
 // 營養師替會員取私人暱稱（僅該營養師自己看得到；alias 空字串＝清除）

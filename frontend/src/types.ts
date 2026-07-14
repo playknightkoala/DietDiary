@@ -87,11 +87,13 @@ export interface MemberInfo {
   nickname: string;
   // 這位營養師替該會員取的私人暱稱（僅本人可見；未設定為 null）
   alias: string | null;
+  // 這位營養師是否追蹤該會員（追蹤中的會員發新貼文會收到通知）
+  followed: boolean;
 }
 
 // 通知：營養師留言／照片評分／調整份數（meal 為 entry 目標的餐別，紀錄已刪除時為 null）
 // memberId > 0 表示是「會員回覆」通知（接收者為營養師），指向該會員的貼文
-export type NotificationType = 'comment' | 'rating' | 'food';
+export type NotificationType = 'comment' | 'rating' | 'food' | 'post';
 
 export interface NotificationItem {
   id: number;

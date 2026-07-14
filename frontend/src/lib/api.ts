@@ -170,6 +170,8 @@ export const api = {
   proMembers: () => request<MemberInfo[]>('/api/pro/members'),
   proSetAlias: (memberId: number, alias: string) =>
     request<{ ok: true; alias: string }>(`/api/pro/members/${memberId}/alias`, { method: 'PUT', body: JSON.stringify({ alias }) }),
+  proSetFollow: (memberId: number, follow: boolean) =>
+    request<{ ok: true; followed: boolean }>(`/api/pro/members/${memberId}/follow`, { method: 'PUT', body: JSON.stringify({ follow }) }),
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),

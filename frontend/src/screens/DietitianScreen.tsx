@@ -172,6 +172,21 @@ export function DietitianScreen() {
     }
   };
 
+  // 追蹤／取消追蹤：追蹤中的會員發布新貼文（飲食／喝水／運動）會收到通知
+  const [followBusy, setFollowBusy] = useState(false);
+  const toggleFollow = async (m: MemberInfo) => {
+    if (followBusy) return;
+    setFollowBusy(true);
+    try {
+      await api.proSetFollow(m.id, !m.followed);
+      setMembers(await api.proMembers());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '更新追蹤狀態失敗，請再試一次');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
   // 留言串（營養師身分）：綁定目前選擇的會員
   const commentProps = (target: CommentTarget, count: number) => ({
     count,
@@ -244,17 +259,36 @@ export function DietitianScreen() {
         >
           <option value="">— 請選擇會員 —</option>
           {members.map((m) => (
-            <option key={m.id} value={m.id}>{memberLabel(m) === m.username ? m.username : `${memberLabel(m)}（${m.username}）`}</option>
+            <option key={m.id} value={m.id}>
+              {`${m.followed ? '★ ' : ''}${memberLabel(m) === m.username ? m.username : `${memberLabel(m)}（${m.username}）`}`}
+            </option>
           ))}
         </select>
         {member && (
-          <button
-            onClick={() => { setAliasInput(member.alias ?? ''); setAliasEditing(true); }}
-            className="hv-cream"
-            style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}
-          >
-            私人暱稱
-          </button>
+          <>
+            <button
+              onClick={() => void toggleFollow(member)}
+              disabled={followBusy}
+              title={member.followed ? '取消追蹤後將不再收到新貼文通知' : '追蹤後，這位會員發布新貼文（飲食／喝水／運動）會通知你'}
+              className="hv-cream"
+              style={{
+                border: `1px solid ${member.followed ? '#C77B4A' : '#DDD8CA'}`,
+                color: member.followed ? '#C77B4A' : '#6B7565',
+                background: member.followed ? '#FDF3E7' : 'transparent',
+                borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700,
+                opacity: followBusy ? 0.6 : 1,
+              }}
+            >
+              {member.followed ? '★ 追蹤中' : '☆ 追蹤'}
+            </button>
+            <button
+              onClick={() => { setAliasInput(member.alias ?? ''); setAliasEditing(true); }}
+              className="hv-cream"
+              style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}
+            >
+              私人暱稱
+            </button>
+          </>
         )}
         <label style={{ fontSize: 13.5, fontWeight: 700, color: '#4A5A4A', marginLeft: 6 }}>日期</label>
         <button onClick={() => selectDate(addDays(date, -1))} className="hv-sand" style={{ width: 34, height: 40, border: '1.5px solid #DDD8CA', borderRadius: 10, background: '#fff', cursor: 'pointer', color: '#4A5A4A' }}>‹</button>

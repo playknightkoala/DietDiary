@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { DATE_RE, dayPatchSchema, entryCreateSchema } from '../validation.js';
-import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, type EntryRow } from '../helpers.js';
+import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, type EntryRow } from '../helpers.js';
 
 export const daysRouter = Router();
 daysRouter.use(requireAuth);
@@ -33,6 +33,9 @@ daysRouter.patch('/:date', (req, res) => {
   const { water, waterTime, ex, exTime, body, bodyTime } = parsed.data;
 
   ensureDayRow(req.userId, date);
+  const prev = db
+    .prepare('SELECT water, ex_min, ex_desc FROM days WHERE user_id = ? AND date = ?')
+    .get(req.userId, date) as { water: number; ex_min: string; ex_desc: string };
   const sets: string[] = [];
   const args: (string | number)[] = [];
   if (water !== undefined) { sets.push('water = ?'); args.push(water); }
@@ -47,6 +50,13 @@ daysRouter.patch('/:date', (req, res) => {
   if (sets.length) {
     db.prepare(`UPDATE days SET ${sets.join(', ')} WHERE user_id = ? AND date = ?`)
       .run(...args, req.userId, date);
+  }
+  // 新貼文通知追蹤者：喝水量增加、或運動從無到有／內容變更（歸零與清空不通知）
+  if (water !== undefined && water > prev.water) {
+    notifyFollowers(req.userId, `water:${date}`);
+  }
+  if (ex && ((ex.min && +ex.min > 0) || ex.desc) && (ex.min !== prev.ex_min || ex.desc !== prev.ex_desc)) {
+    notifyFollowers(req.userId, `ex:${date}`);
   }
   return res.json(getDayJson(req.userId, date));
 });

@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS photo_ratings (
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id),
-  type TEXT NOT NULL CHECK (type IN ('comment','rating','food')),
+  type TEXT NOT NULL CHECK (type IN ('comment','rating','food','post')),
   target TEXT NOT NULL,
   date TEXT NOT NULL,
   member_id INTEGER NOT NULL DEFAULT 0,
@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
+
+CREATE TABLE IF NOT EXISTS follows (
+  dietitian_id INTEGER NOT NULL REFERENCES users(id),
+  member_id INTEGER NOT NULL REFERENCES users(id),
+  PRIMARY KEY (dietitian_id, member_id)
+);
 
 CREATE TABLE IF NOT EXISTS member_aliases (
   dietitian_id INTEGER NOT NULL REFERENCES users(id),
@@ -204,6 +210,35 @@ if (legacyPhotos.length) {
 const notifCols = (db.pragma('table_info(notifications)') as { name: string }[]).map((c) => c.name);
 if (!notifCols.includes('member_id')) {
   db.exec(`ALTER TABLE notifications ADD COLUMN member_id INTEGER NOT NULL DEFAULT 0`);
+}
+
+// 舊 notifications 的 type CHECK 不含 post（追蹤的會員發新貼文）：重建資料表搬移資料
+const notifSql = (
+  db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'`).get() as { sql: string }
+).sql;
+if (!notifSql.includes("'post'")) {
+  db.pragma('foreign_keys = OFF');
+  const rebuildNotif = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE notifications_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL CHECK (type IN ('comment','rating','food','post')),
+        target TEXT NOT NULL,
+        date TEXT NOT NULL,
+        member_id INTEGER NOT NULL DEFAULT 0,
+        read INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO notifications_new (id, user_id, type, target, date, member_id, read, created_at)
+        SELECT id, user_id, type, target, date, member_id, read, created_at FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_new RENAME TO notifications;
+      CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
+    `);
+  });
+  rebuildNotif();
+  db.pragma('foreign_keys = ON');
 }
 
 // 舊資料庫的單筆 goals 資料表：搬進 goal_periods 後移除

@@ -134,7 +134,7 @@ export function createComment(ownerId: number, target: string, authorId: number,
 
 // ---- 通知（營養師留言／照片評分／調整份數時通知會員）----
 
-export type NotificationType = 'comment' | 'rating' | 'food';
+export type NotificationType = 'comment' | 'rating' | 'food' | 'post';
 
 // 取得通知對象貼文所屬日期：entry 查資料表；water/ex 直接取 target 內的日期
 export function notificationDate(target: string): string {
@@ -165,6 +165,14 @@ export function pushNotification(userId: number, type: NotificationType, target:
       Date.now()
     );
   }
+}
+
+// 追蹤的會員發布新貼文（飲食／喝水／運動）時，通知所有追蹤者（營養師）
+export function notifyFollowers(memberId: number, target: string) {
+  const followers = db
+    .prepare('SELECT dietitian_id AS id FROM follows WHERE member_id = ?')
+    .all(memberId) as { id: number }[];
+  for (const f of followers) pushNotification(f.id, 'post', target, memberId);
 }
 
 // 會員在自己的貼文留言時，通知所有曾在該貼文留言的營養師／管理者（排除留言者本人）
@@ -262,6 +270,7 @@ export function deleteUserData(userId: number) {
     db.prepare('DELETE FROM photo_ratings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(userId);
     db.prepare('DELETE FROM notifications WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM member_aliases WHERE member_id = ? OR dietitian_id = ?').run(userId, userId);
+    db.prepare('DELETE FROM follows WHERE member_id = ? OR dietitian_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entry_comments WHERE user_id = ? OR author_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);

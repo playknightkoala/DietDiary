@@ -109,6 +109,7 @@ export const changePasswordSchema = z
 // 暱稱：1～20 字；私人暱稱允許空字串（＝清除）
 export const nicknameSchema = z.object({ nickname: z.string().trim().min(1).max(20) });
 export const aliasSchema = z.object({ alias: z.string().trim().max(20) });
+export const followSchema = z.object({ follow: z.boolean() });
 
 export const ROLES = ['member', 'citizen', 'dietitian', 'admin'] as const;
 
