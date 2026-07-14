@@ -16,6 +16,7 @@ function IconBtn({ title, onClick, children }: { title: string; onClick: () => v
 
 export function TopBar() {
   const setModal = useStore((s) => s.setModal);
+  const setGuideTab = useStore((s) => s.setGuideTab);
   const openCalendar = useStore((s) => s.openCalendar);
   const logout = useStore((s) => s.logout);
   const role = useStore((s) => s.role);
@@ -46,7 +47,7 @@ export function TopBar() {
         <IconBtn title="目標設定" onClick={() => setModal('goals')}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" fill="#4A5A4A" /></svg>
         </IconBtn>
-        <IconBtn title="份數指南" onClick={() => setModal('guide')}>
+        <IconBtn title="份數指南" onClick={() => { setGuideTab(0); setModal('guide'); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A5A4A" strokeWidth="2" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-2.5" /></svg>
         </IconBtn>
         <IconBtn title="會員中心" onClick={() => setModal('account')}>

@@ -8,6 +8,7 @@ export interface GuideSection {
   title: string;
   items?: GuideItem[];
   text?: string;
+  image?: string;
 }
 
 export interface GuideCategory {
@@ -17,6 +18,12 @@ export interface GuideCategory {
 }
 
 export const GUIDE_DATA: GuideCategory[] = [
+  { name: '份量參考', color: '#4A5A4A', sections: [
+    { title: '標準碗、盤尺寸照片', image: '/guide/bowl-plate.jpg' },
+    { title: '手掌大小照片舉例', image: '/guide/palm.jpg' },
+    { title: '標準杯、新鮮屋牛奶照片舉例', image: '/guide/cup-milk.jpg' },
+    { title: '標準匙、一姆指堅果照片舉例', image: '/guide/spoon-thumb.jpg' },
+  ]},
   { name: '蛋豆魚肉', color: '#C0564A', sections: [
     { title: '低脂（55 卡/份）一份舉例', items: [
       { qty: '1/4掌', desc: '里肌肉（可食生重35g、熟重30g）' },

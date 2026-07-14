@@ -26,11 +26,11 @@ export function GuideModal() {
           </button>
         ))}
       </div>
-      <div style={{ flex: '1 1 auto', minHeight: 0, padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div key={guideTab} style={{ flex: '1 1 auto', minHeight: 0, padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {cat.sections.map((sec) => (
           <div key={sec.title} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 900, color: cat.color }}>{sec.title}</div>
-            {sec.items ? (
+            {sec.items && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {sec.items.map((it, j) => (
                   <div key={j} style={{ display: 'flex', gap: 10, background: '#fff', border: '1px solid #EEEAE0', borderRadius: 12, padding: '9px 12px', fontSize: 13.5 }}>
@@ -39,7 +39,11 @@ export function GuideModal() {
                   </div>
                 ))}
               </div>
-            ) : (
+            )}
+            {sec.image && (
+              <img src={sec.image} alt={sec.title} style={{ display: 'block', width: '100%', background: '#fff', border: '1px solid #EEEAE0', borderRadius: 12 }} />
+            )}
+            {sec.text && (
               <div style={{ fontSize: 13.5, color: '#4A5A4A', lineHeight: 1.7, background: '#fff', border: '1px solid #EEEAE0', borderRadius: 12, padding: '12px 14px' }}>{sec.text}</div>
             )}
           </div>
