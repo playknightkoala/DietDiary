@@ -52,11 +52,13 @@ export function NotificationsModal() {
       <div style={{ flex: 'none', padding: '18px 20px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>通知</div>
         <span style={{ flex: 1 }} />
-        {unreadCount > 0 && (
-          <button onClick={() => void readAllNotifications()} style={{ border: 'none', background: 'transparent', color: '#5B8DB8', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-            全部標示已讀
-          </button>
-        )}
+        <button
+          onClick={() => void readAllNotifications()}
+          disabled={unreadCount === 0}
+          style={{ border: 'none', background: 'transparent', color: unreadCount > 0 ? '#5B8DB8' : '#B8BDB2', fontSize: 12.5, fontWeight: 700, cursor: unreadCount > 0 ? 'pointer' : 'default' }}
+        >
+          全部標示已讀
+        </button>
         <CloseButton onClick={closeModal} />
       </div>
       <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
