@@ -5,7 +5,7 @@ import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTo
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
-import { FoodFields } from '../components/FoodFields';
+import { FoodFields, FoodSummaryGrid } from '../components/FoodFields';
 import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
@@ -529,6 +529,8 @@ export function DietitianScreen() {
                         })}
                       </div>
                     )}
+                    {/* 這餐的六大類份數（唯讀；調整請按「編輯份數」） */}
+                    <FoodSummaryGrid food={e.food} />
                     <CommentsThread
                       key={`e-${e.id}${focusTarget === `entry:${e.id}` ? '-f' : ''}`}
                       {...commentProps(`entry:${e.id}`, e.commentCount)}
