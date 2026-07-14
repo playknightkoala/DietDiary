@@ -5,15 +5,16 @@ import { CloseButton, ModalShell } from './ModalShell';
 export function GuideModal() {
   const guideTab = useStore((s) => s.guideTab);
   const setGuideTab = useStore((s) => s.setGuideTab);
-  const closeModal = useStore((s) => s.closeModal);
+  const closeGuide = useStore((s) => s.closeGuide);
 
   const cat = GUIDE_DATA[guideTab];
 
   return (
-    <ModalShell maxWidth={560} cardStyle={{ background: '#F4F1EA', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    // zIndex 60：指南是獨立疊加層，需蓋在一般彈窗（50）之上
+    <ModalShell maxWidth={560} zIndex={60} cardStyle={{ background: '#F4F1EA', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ flex: 'none', padding: '18px 20px 12px', background: '#fff', borderBottom: '1.5px solid #E4DFD2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '22px 22px 0 0' }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>食物份數指南</div>
-        <CloseButton onClick={closeModal} />
+        <CloseButton onClick={closeGuide} />
       </div>
       <div style={{ flex: 'none', padding: '10px 14px', background: '#fff', display: 'flex', gap: 6, overflowX: 'auto', borderBottom: '1.5px solid #E4DFD2' }}>
         {GUIDE_DATA.map((g, i) => (

@@ -5,7 +5,7 @@ import type { BodyKey, DayData, Goal, Role, TrendPoint } from './types';
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
-  | 'calendar' | 'goals' | 'guide' | 'account' | null;
+  | 'calendar' | 'goals' | 'account' | null;
 
 // diary＝個人日記；admin＝管理者後台；pro＝營養師頁面
 export type ViewKey = 'diary' | 'admin' | 'pro';
@@ -21,6 +21,8 @@ interface AppState {
   modal: ModalKey;
   editingId: number | null;
   calMonth: { y: number; m: number } | null;
+  // 指南為獨立疊加層（不佔 modal 狀態），可蓋在任何視窗或畫面上
+  guideOpen: boolean;
   guideTab: number;
   trendOpen: boolean;
   trendField: BodyKey;
@@ -52,6 +54,8 @@ interface AppState {
   openLogFood: (entryId: number) => void;
   openCalendar: () => void;
   closeModal: () => void;
+  openGuide: (tab?: number) => void;
+  closeGuide: () => void;
   setGuideTab: (i: number) => void;
   setTrendOpen: (open: boolean) => void;
   setTrendField: (f: BodyKey) => void;
@@ -69,6 +73,7 @@ export const useStore = create<AppState>((set, get) => ({
   modal: null,
   editingId: null,
   calMonth: null,
+  guideOpen: false,
   guideTab: 0,
   trendOpen: false,
   trendField: 'weight',
@@ -88,10 +93,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       token: null, username: null, role: 'member', view: 'diary', modal: null, editingId: null,
       day: emptyDay(), marks: {}, goals: [], trendPoints: [],
-      trendOpen: false, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
+      trendOpen: false, guideOpen: false, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
   },
-  setView: (view) => set({ view, modal: null, editingId: null, calMonth: null }),
+  setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false }),
 
   selectDate: (date, setAnchor = false) => {
     set(setAnchor ? { selected: date, weekAnchor: date } : { selected: date });
@@ -171,6 +176,8 @@ export const useStore = create<AppState>((set, get) => ({
     void get().loadMonthMarks(y, m - 1);
   },
   closeModal: () => set({ modal: null, editingId: null, calMonth: null }),
+  openGuide: (tab = 0) => set({ guideOpen: true, guideTab: tab }),
+  closeGuide: () => set({ guideOpen: false }),
   setGuideTab: (guideTab) => set({ guideTab }),
   setTrendOpen: (trendOpen) => {
     set({ trendOpen });

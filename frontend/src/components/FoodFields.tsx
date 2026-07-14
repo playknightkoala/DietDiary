@@ -1,3 +1,5 @@
+import { GUIDE_DATA } from '../lib/guideData';
+import { useStore } from '../store';
 import type { FoodKey } from '../types';
 
 export interface FoodInputGroup {
@@ -37,6 +39,7 @@ interface FoodFieldsProps {
 
 // 六大類份數輸入表單（記錄飲食視窗與營養師編輯份數共用）
 export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
+  const openGuide = useStore((s) => s.openGuide);
   return (
     <>
       {FOOD_INPUT_GROUPS.map((g) => (
@@ -45,6 +48,12 @@ export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
             <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
             <span style={{ fontSize: 14, fontWeight: 700 }}>{g.name}</span>
             <span style={{ fontSize: 12, color: '#8A9284' }}>{g.note}</span>
+            <button
+              onClick={() => openGuide(Math.max(0, GUIDE_DATA.findIndex((c) => c.name === g.name)))}
+              style={{ marginLeft: 'auto', flex: 'none', border: 'none', background: 'transparent', color: '#5B8DB8', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 4px' }}
+            >
+              一份是多少？
+            </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(96px,1fr))', gap: 8 }}>
             {g.fields.map((f) => (

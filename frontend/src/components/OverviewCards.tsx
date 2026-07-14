@@ -60,16 +60,23 @@ export function FoodGroupsCard() {
   const day = useStore((s) => s.day);
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
+  const openGuide = useStore((s) => s.openGuide);
 
   const dayTot = dayFoodTotals(day.entries);
   const gInfo = goalsFor(selected, goals);
 
   return (
     <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ fontSize: 16, fontWeight: 900 }}>六大類飲食份數</div>
-        <div style={{ fontSize: 12, color: gInfo.setBy === 'dietitian' ? '#5B8DB8' : '#6B7565', fontWeight: gInfo.setBy === 'dietitian' ? 700 : 400 }}>
-          目標：{gInfo.setBy === 'dietitian' ? '營養師設定' : gInfo.custom ? '自訂區間' : '預設'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: gInfo.setBy === 'dietitian' ? '#5B8DB8' : '#6B7565', fontWeight: gInfo.setBy === 'dietitian' ? 700 : 400 }}>
+            目標：{gInfo.setBy === 'dietitian' ? '營養師設定' : gInfo.custom ? '自訂區間' : '預設'}
+          </div>
+          <button onClick={() => openGuide()} className="hv-cream" style={{ flex: 'none', border: '1px solid #4A7C59', color: '#4A7C59', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-2.5" /></svg>
+            份數指南
+          </button>
         </div>
       </div>
       {ROW_CFGS.map((cfg) => {

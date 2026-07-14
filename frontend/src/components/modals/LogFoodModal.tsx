@@ -15,6 +15,7 @@ export function LogFoodModal() {
   const selected = useStore((s) => s.selected);
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
+  const openGuide = useStore((s) => s.openGuide);
 
   const entry = useMemo(() => day.entries.find((e) => e.id === editingId) ?? null, [day.entries, editingId]);
 
@@ -184,7 +185,12 @@ export function LogFoodModal() {
           </div>
         </div>
         {/* 份數輸入 */}
-        <div style={{ fontSize: 12.5, color: '#6B7565' }}>輸入這餐的六大類份數（0.1 ～ 99）。</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: '#6B7565' }}>輸入這餐的六大類份數（0.1 ～ 99）。</span>
+          <button onClick={() => openGuide()} className="hv-cream" style={{ flex: 'none', border: '1px solid #4A7C59', color: '#4A7C59', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}>
+            份數指南
+          </button>
+        </div>
         {entry.foodEditedAt > 0 && (
           <div style={{ fontSize: 12.5, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 10, padding: '8px 12px', lineHeight: 1.6, fontWeight: 700 }}>
             此筆份數已由營養師於 {fmtCommentTime(entry.foodEditedAt)} 調整；若自行修改，此標記將移除。
