@@ -70,7 +70,7 @@ daysRouter.post('/:date/entries', (req, res) => {
     .prepare("INSERT INTO entries (user_id, date, meal, eat_time, food) VALUES (?, ?, ?, ?, '{}')")
     .run(req.userId, date, parsed.data.meal, parsed.data.eatTime ?? '');
   const row = db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ?')
     .get(Number(info.lastInsertRowid)) as EntryRow;
   return res.status(201).json(entryToJsonWithRatings(row));
 });

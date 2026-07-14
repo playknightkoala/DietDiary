@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 // 照片放大檢視（取代另開新視窗）：點背景或 ✕ 關閉
 // 多張照片時可左右滑動（觸控）、點兩側箭頭或按 ←→ 切換；Esc 關閉
+// caption：每張照片下方的資訊面板（份數摘要、評分按鈕等）
 // zIndex 80：需蓋在一般彈窗（50）與指南（60）之上
-export function Lightbox({ photos, index: initialIndex, onClose }: { photos: string[]; index: number; onClose: () => void }) {
+export function Lightbox({ photos, index: initialIndex, onClose, caption }: { photos: string[]; index: number; onClose: () => void; caption?: (url: string) => ReactNode }) {
   const [index, setIndex] = useState(() => Math.min(Math.max(initialIndex, 0), photos.length - 1));
   const touchX = useRef<number | null>(null);
   const many = photos.length > 1;
@@ -43,13 +45,22 @@ export function Lightbox({ photos, index: initialIndex, onClose }: { photos: str
       }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(20,26,20,.85)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
     >
-      <img
-        key={photos[index]}
-        src={photos[index]}
-        alt=""
+      <div
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 14, boxShadow: '0 24px 60px rgba(0,0,0,.45)', animation: 'popIn .2s ease both' }}
-      />
+        style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, minHeight: 0 }}
+      >
+        <img
+          key={photos[index]}
+          src={photos[index]}
+          alt=""
+          style={{ maxWidth: '100%', minHeight: 0, flex: '0 1 auto', objectFit: 'contain', borderRadius: 14, boxShadow: '0 24px 60px rgba(0,0,0,.45)', animation: 'popIn .2s ease both' }}
+        />
+        {caption && (
+          <div style={{ flex: 'none', maxWidth: 520, width: '100%', background: 'rgba(20,26,20,.72)', borderRadius: 14, padding: '10px 14px', color: '#F4F1EA' }}>
+            {caption(photos[index])}
+          </div>
+        )}
+      </div>
       {many && (
         <>
           <button onClick={(e) => { e.stopPropagation(); prev(); }} title="上一張" style={navBtnStyle('left')}>‹</button>

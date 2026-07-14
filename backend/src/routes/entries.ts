@@ -5,7 +5,7 @@ import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, notifyFollowers, parseFood, parsePhotos, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -22,7 +22,7 @@ entriesRouter.use(requireAuth);
 
 function getOwnedEntry(userId: number, id: string | number) {
   return db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ? AND user_id = ?')
     .get(id, userId) as EntryRow | undefined;
 }
 
@@ -31,31 +31,52 @@ entriesRouter.patch('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   const parsed = entryPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { desc, food, photos, date, eatTime } = parsed.data;
+  const { desc, food, photoFoods, photos, date, eatTime } = parsed.data;
 
   const sets: string[] = [];
   const args: string[] = [];
   if (desc !== undefined) { sets.push('desc = ?'); args.push(desc); }
-  if (food !== undefined) {
-    sets.push('food = ?');
-    args.push(JSON.stringify(food));
-    // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留）
-    if (JSON.stringify(parseFood(entry.food)) !== JSON.stringify(food)) {
-      sets.push('food_edited_at = 0');
-    }
-  }
-  if (date !== undefined) { sets.push('date = ?'); args.push(date); } // 改用餐日期＝把紀錄移到該天
+  if (date !== undefined) { sets.push('date = ?'); args.push(date); } // 改用餐日期＝把這筆紀錄移到該天
   if (eatTime !== undefined) { sets.push('eat_time = ?'); args.push(eatTime); }
+
+  // 照片保留清單（PATCH 只能刪除，新增走 /photos 上傳）
+  let finalPhotos = parsePhotos(entry.photos);
   if (photos !== undefined) {
-    // 只允許保留既有照片的子集合（= 刪除部分照片），被移除的檔案與其評分順手清掉
-    const current = parsePhotos(entry.photos);
-    const keep = current.filter((p) => photos.includes(p));
-    const removed = current.filter((p) => !keep.includes(p));
+    const keep = finalPhotos.filter((p) => photos.includes(p));
+    const removed = finalPhotos.filter((p) => !keep.includes(p));
     removed.forEach(unlinkPhoto);
     deletePhotoRatings(entry.id, removed);
     sets.push('photos = ?');
     args.push(JSON.stringify(keep));
+    finalPhotos = keep;
   }
+
+  if (photoFoods !== undefined) {
+    // 逐張照片份數：只保留現有照片的項目，food 欄位改存總和
+    const filtered = Object.fromEntries(Object.entries(photoFoods).filter(([url]) => finalPhotos.includes(url)));
+    const total = sumFoods(Object.values(filtered));
+    sets.push('photo_foods = ?', 'food = ?');
+    args.push(JSON.stringify(filtered), JSON.stringify(total));
+    // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留）
+    if (JSON.stringify(parsePhotoFoods(entry.photo_foods)) !== JSON.stringify(filtered)) {
+      sets.push('food_edited_at = 0');
+    }
+  } else if (food !== undefined) {
+    sets.push('food = ?');
+    args.push(JSON.stringify(food));
+    if (JSON.stringify(parseFood(entry.food)) !== JSON.stringify(food)) {
+      sets.push('food_edited_at = 0');
+    }
+  } else if (photos !== undefined) {
+    // 只刪照片：一併清掉該照片的份數並重算總和（原本就有逐張份數才需要）
+    const stored = parsePhotoFoods(entry.photo_foods);
+    if (Object.keys(stored).length) {
+      const pruned = Object.fromEntries(Object.entries(stored).filter(([url]) => finalPhotos.includes(url)));
+      sets.push('photo_foods = ?', 'food = ?');
+      args.push(JSON.stringify(pruned), JSON.stringify(sumFoods(Object.values(pruned))));
+    }
+  }
+
   if (sets.length) {
     db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
   }

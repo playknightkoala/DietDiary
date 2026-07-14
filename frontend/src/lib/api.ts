@@ -128,7 +128,7 @@ export const api = {
 
   createEntry: (date: string, meal: MealKey, eatTime?: string) =>
     request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal, eatTime }) }),
-  patchEntry: (id: number, patch: { desc?: string; food?: Food; photos?: string[]; date?: string; eatTime?: string }) =>
+  patchEntry: (id: number, patch: { desc?: string; food?: Food; photoFoods?: Record<string, Food>; photos?: string[]; date?: string; eatTime?: string }) =>
     request<Entry>(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, { method: 'DELETE' }),
   uploadPhotos: (id: number, blobs: Blob[]) => {
@@ -175,10 +175,10 @@ export const api = {
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
-  proEditFood: (memberId: number, entryId: number, food: Food) =>
+  proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food> }) =>
     request<Entry>(`/api/pro/members/${memberId}/entries/${entryId}/food`, {
       method: 'PUT',
-      body: JSON.stringify({ food }),
+      body: JSON.stringify(payload),
     }),
   proRatePhoto: (memberId: number, entryId: number, photo: string, rating: PhotoRating | null) =>
     request<{ ratings: Partial<Record<string, PhotoRating>> }>(`/api/pro/members/${memberId}/entries/${entryId}/photo-rating`, {

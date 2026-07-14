@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTotals, dstr, emptyFood, entryHasData, fmtCommentTime, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst } from '../lib/domain';
+import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTotals, dstr, emptyFood, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst, sumFoods } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
@@ -10,7 +10,7 @@ import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
 import { NotificationsModal } from '../components/modals/NotificationsModal';
-import type { CommentTarget, DayData, Entry, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
+import type { CommentTarget, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -116,31 +116,58 @@ export function DietitianScreen() {
     }
   };
 
-  const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ entryId: number; photos: string[]; index: number } | null>(null);
+  const lightboxEntry = lightbox ? (day?.entries ?? []).find((en) => en.id === lightbox.entryId) : null;
 
   // 編輯會員某筆紀錄的六大類份數（會標記「營養師調整」）
+  // 有照片的紀錄逐張編輯（pfStr：photo url → 份數字串），無照片編輯整筆（foodStr）
   const [foodEditing, setFoodEditing] = useState<Entry | null>(null);
   const [foodStr, setFoodStr] = useState<Record<FoodKey, string>>({} as Record<FoodKey, string>);
+  const [pfStr, setPfStr] = useState<Record<string, Record<FoodKey, string>>>({});
+  const [foodPage, setFoodPage] = useState(0);
   const [savingFood, setSavingFood] = useState(false);
 
+  const toFoodStr = (f: Food): Record<FoodKey, string> => {
+    const s = {} as Record<FoodKey, string>;
+    FOOD_KEYS.forEach((k) => (s[k] = f[k] ? String(f[k]) : ''));
+    return s;
+  };
+  const strToFood = (s: Record<FoodKey, string> | undefined) => {
+    const f = emptyFood();
+    if (s) FOOD_KEYS.forEach((k) => (f[k] = clampPortion(s[k] ?? '')));
+    return f;
+  };
+
   const openFoodEditor = (e: Entry) => {
-    const init = {} as Record<FoodKey, string>;
-    FOOD_KEYS.forEach((k) => (init[k] = e.food[k] ? String(e.food[k]) : ''));
-    setFoodStr(init);
+    if (e.photos.length) {
+      const init: Record<string, Record<FoodKey, string>> = {};
+      e.photos.forEach((url) => (init[url] = toFoodStr(e.photoFoods[url] ?? emptyFood())));
+      // 舊資料（有照片但沒逐張份數）：把整筆份數先放到第一張，總和不變
+      const hasAny = e.photos.some((url) => FOOD_KEYS.some((k) => (e.photoFoods[url]?.[k] ?? 0) > 0));
+      if (!hasAny && FOOD_KEYS.some((k) => e.food[k] > 0)) init[e.photos[0]] = toFoodStr(e.food);
+      setPfStr(init);
+      setFoodPage(0);
+    } else {
+      setFoodStr(toFoodStr(e.food));
+    }
     setFoodEditing(e);
   };
 
-  const draftFood = () => {
-    const f = emptyFood();
-    FOOD_KEYS.forEach((k) => (f[k] = clampPortion(foodStr[k] ?? '')));
-    return f;
-  };
+  const draftFood = () => strToFood(foodStr);
+  // 調整後總熱量：有照片時為各張加總
+  const draftTotal = () =>
+    foodEditing && foodEditing.photos.length
+      ? sumFoods(foodEditing.photos.map((url) => strToFood(pfStr[url])))
+      : draftFood();
 
   const saveFood = async () => {
     if (!foodEditing || memberId === '' || savingFood) return;
     setSavingFood(true);
     try {
-      const updated = await api.proEditFood(memberId, foodEditing.id, draftFood());
+      const payload = foodEditing.photos.length
+        ? { photoFoods: Object.fromEntries(foodEditing.photos.map((url) => [url, strToFood(pfStr[url])])) }
+        : { food: draftFood() };
+      const updated = await api.proEditFood(memberId, foodEditing.id, payload);
       setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === updated.id ? updated : en)) } : d));
       setFoodEditing(null);
     } catch (e) {
@@ -472,7 +499,7 @@ export function DietitianScreen() {
                           const current = e.ratings[url];
                           return (
                             <div key={url} style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
-                              <button onClick={() => setLightbox({ photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
+                              <button onClick={() => setLightbox({ entryId: e.id, photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                                 <div style={{ width: 72, height: 72, borderRadius: 10, border: current ? `2.5px solid ${RATING_DEFS[current].color}` : '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                                 <PhotoRatingBadge rating={current} size={14} />
                               </button>
@@ -525,23 +552,68 @@ export function DietitianScreen() {
           </div>
           <div style={{ padding: '14px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: '#E5EBF1', borderRadius: 16, padding: '12px 16px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: '#5B8DB8' }}>調整後熱量</span>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: '#5B8DB8' }}>調整後熱量{foodEditing.photos.length ? '（總和）' : ''}</span>
               <span style={{ fontFamily: 'Outfit', fontSize: 24, fontWeight: 800, color: '#2D3B2D' }}>
-                {kcalOfFood(draftFood())} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>kcal</span>
+                {kcalOfFood(draftTotal())} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>kcal</span>
               </span>
             </div>
             <div style={{ fontSize: 12.5, color: '#6B7565' }}>
               儲存後會員端會標示「營養師調整份數」；會員若自行再修改，標示會移除。
             </div>
-            <FoodFields
-              foodStr={foodStr}
-              onChange={(key, raw) => setFoodStr((s) => ({ ...s, [key]: raw }))}
-              onBlur={(key) => setFoodStr((s) => { const v = clampPortion(s[key] ?? ''); return { ...s, [key]: v ? String(v) : '' }; })}
-            />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setFoodEditing(null)} className="hv-sand" style={{ flex: 1, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', fontSize: 15, fontWeight: 700, color: '#4A5A4A', cursor: 'pointer' }}>取消</button>
-              <button onClick={() => void saveFood()} disabled={savingFood} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: savingFood ? 0.7 : 1 }}>儲存份數</button>
-            </div>
+            {foodEditing.photos.length ? (
+              <>
+                {/* 逐張照片編輯份數 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 900 }}>第 {foodPage + 1} / {foodEditing.photos.length} 張照片</span>
+                  <span style={{ fontFamily: 'Outfit', fontSize: 13, fontWeight: 700, color: '#4A7C59' }}>
+                    {kcalOfFood(strToFood(pfStr[foodEditing.photos[foodPage]]))} kcal
+                  </span>
+                </div>
+                <div style={{ height: 170, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${foodEditing.photos[foodPage]}')` }} />
+                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+                  {foodEditing.photos.map((url, i) => (
+                    <button
+                      key={url}
+                      onClick={() => setFoodPage(i)}
+                      style={{ flex: 'none', width: 44, height: 44, borderRadius: 10, border: i === foodPage ? '2.5px solid #4A7C59' : '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')`, cursor: 'pointer', padding: 0 }}
+                    />
+                  ))}
+                </div>
+                <FoodFields
+                  key={foodEditing.photos[foodPage]}
+                  foodStr={pfStr[foodEditing.photos[foodPage]] ?? ({} as Record<FoodKey, string>)}
+                  onChange={(key, raw) => setPfStr((s) => ({ ...s, [foodEditing.photos[foodPage]]: { ...s[foodEditing.photos[foodPage]], [key]: raw } }))}
+                  onBlur={(key) => setPfStr((s) => {
+                    const url = foodEditing.photos[foodPage];
+                    const v = clampPortion(s[url]?.[key] ?? '');
+                    return { ...s, [url]: { ...s[url], [key]: v ? String(v) : '' } };
+                  })}
+                />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {foodPage > 0 && (
+                    <button onClick={() => setFoodPage((p) => p - 1)} className="hv-sand" style={{ flex: 1, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', fontSize: 15, fontWeight: 700, color: '#4A5A4A', cursor: 'pointer' }}>上一張</button>
+                  )}
+                  {foodPage < foodEditing.photos.length - 1 ? (
+                    <button onClick={() => setFoodPage((p) => p + 1)} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>下一張</button>
+                  ) : (
+                    <button onClick={() => void saveFood()} disabled={savingFood} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: savingFood ? 0.7 : 1 }}>儲存份數</button>
+                  )}
+                </div>
+                <button onClick={() => setFoodEditing(null)} className="hv-sand" style={{ height: 40, border: 'none', background: 'transparent', fontSize: 13.5, fontWeight: 700, color: '#8A9284', cursor: 'pointer' }}>取消</button>
+              </>
+            ) : (
+              <>
+                <FoodFields
+                  foodStr={foodStr}
+                  onChange={(key, raw) => setFoodStr((s) => ({ ...s, [key]: raw }))}
+                  onBlur={(key) => setFoodStr((s) => { const v = clampPortion(s[key] ?? ''); return { ...s, [key]: v ? String(v) : '' }; })}
+                />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setFoodEditing(null)} className="hv-sand" style={{ flex: 1, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', fontSize: 15, fontWeight: 700, color: '#4A5A4A', cursor: 'pointer' }}>取消</button>
+                  <button onClick={() => void saveFood()} disabled={savingFood} className="hv-green" style={{ flex: 2, height: 46, border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', opacity: savingFood ? 0.7 : 1 }}>儲存份數</button>
+                </div>
+              </>
+            )}
           </div>
         </ModalShell>
       )}
@@ -582,7 +654,48 @@ export function DietitianScreen() {
       )}
 
       {modal === 'notify' && <NotificationsModal />}
-      {lightbox && <Lightbox photos={lightbox.photos} index={lightbox.index} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <Lightbox
+          photos={lightbox.photos}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          caption={(url) => {
+            const f = lightboxEntry?.photoFoods[url];
+            const summary = f ? foodSummary(f) : '';
+            const current = lightboxEntry?.ratings[url];
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#B8CDBB' }}>
+                  這張照片的份數{f ? `・${kcalOfFood(f)} kcal` : ''}
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{summary || '尚未記錄這張照片的份數'}</div>
+                {lightboxEntry && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid rgba(244,241,234,.18)' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#B8CDBB' }}>評分</span>
+                    {RATING_KEYS.map((r) => {
+                      const active = current === r;
+                      return (
+                        <button
+                          key={r}
+                          onClick={() => void ratePhoto(lightboxEntry.id, url, r, current)}
+                          title={RATING_DEFS[r].name + (active ? '（再點一次取消）' : '')}
+                          style={{
+                            width: 22, height: 22, borderRadius: '50%', cursor: 'pointer',
+                            background: RATING_DEFS[r].color,
+                            border: active ? '2.5px solid #fff' : '2px solid rgba(255,255,255,.35)',
+                            opacity: current && !active ? 0.4 : 1,
+                          }}
+                        />
+                      );
+                    })}
+                    <span style={{ fontSize: 12, color: '#DDD8CA' }}>{current ? RATING_DEFS[current].name : '未評分'}</span>
+                  </div>
+                )}
+              </div>
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS entries (
   photos TEXT NOT NULL DEFAULT '[]',
   eat_time TEXT NOT NULL DEFAULT '',
   food TEXT NOT NULL DEFAULT '{}',
+  photo_foods TEXT NOT NULL DEFAULT '{}',
   food_edited_at INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -186,6 +187,10 @@ if (!entryCols.includes('eat_time')) {
 if (!entryCols.includes('food_edited_at')) {
   // 營養師調整份數的時間戳（0＝未被調整）
   db.exec(`ALTER TABLE entries ADD COLUMN food_edited_at INTEGER NOT NULL DEFAULT 0`);
+}
+if (!entryCols.includes('photo_foods')) {
+  // 逐張照片的六大類份數（photo url → food JSON；有照片時 food 欄位存總和）
+  db.exec(`ALTER TABLE entries ADD COLUMN photo_foods TEXT NOT NULL DEFAULT '{}'`);
 }
 
 // 喝水／運動／身體數據的紀錄時間

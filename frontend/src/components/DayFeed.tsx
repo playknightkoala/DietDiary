@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../lib/api';
-import { MEALS, dstr, entryHasData, fmtCommentTime, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
+import { MEALS, dstr, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
 import { useStore } from '../store';
 import { CommentsThread } from './CommentsThread';
 import { Lightbox } from './Lightbox';
@@ -32,7 +32,8 @@ export function DayFeed() {
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
   const openLogFood = useStore((s) => s.openLogFood);
-  const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ entryId: number; photos: string[]; index: number } | null>(null);
+  const lightboxEntry = lightbox ? day.entries.find((e) => e.id === lightbox.entryId) : null;
 
   const entries = sortEntriesNewestFirst(day.entries.filter(entryHasData));
   const hasEx = (day.ex.min && +day.ex.min > 0) || day.ex.desc;
@@ -83,7 +84,7 @@ export function DayFeed() {
           {e.photos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {e.photos.map((url, pi) => (
-                <button key={url} onClick={() => setLightbox({ photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
+                <button key={url} onClick={() => setLightbox({ entryId: e.id, photos: e.photos, index: pi })} title="放大檢視" style={{ position: 'relative', display: 'block', border: 'none', background: 'transparent', padding: 0, cursor: 'zoom-in' }}>
                   <div style={{ width: 76, height: 76, borderRadius: 12, border: '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${url}')` }} />
                   <PhotoRatingBadge rating={e.ratings[url]} size={14} />
                 </button>
@@ -158,7 +159,25 @@ export function DayFeed() {
 
       {posts.map((p) => p.node)}
 
-      {lightbox && <Lightbox photos={lightbox.photos} index={lightbox.index} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <Lightbox
+          photos={lightbox.photos}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          caption={(url) => {
+            const f = lightboxEntry?.photoFoods[url];
+            const summary = f ? foodSummary(f) : '';
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#B8CDBB' }}>
+                  這張照片的份數{f ? `・${kcalOfFood(f)} kcal` : ''}
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{summary || '尚未記錄這張照片的份數'}</div>
+              </div>
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

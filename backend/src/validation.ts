@@ -80,9 +80,16 @@ export const MAX_PHOTOS = 10;
 
 const eatTimeSchema = z.string().regex(TIME_RE).or(z.literal(''));
 
+// 逐張照片的份數（photo url → food）
+export const photoFoodsSchema = z
+  .record(z.string().max(300), foodSchema)
+  .refine((o) => Object.keys(o).length <= MAX_PHOTOS);
+
 export const entryPatchSchema = z.object({
   desc: z.string().max(2000).optional(),
   food: foodSchema.optional(),
+  // 逐張照片份數；提供時 food 欄位會改存各照片的總和
+  photoFoods: photoFoodsSchema.optional(),
   // PATCH 只能「保留既有照片的子集合」（刪除用）；新增照片走 /photos 上傳
   photos: z.array(z.string().max(300)).max(MAX_PHOTOS).optional(),
   // 用餐日期／時間：改日期會把這筆紀錄移到該天

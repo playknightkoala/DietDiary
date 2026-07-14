@@ -110,6 +110,29 @@ export function kcalOfFood(f: Food): number {
   return Math.round(FOOD_KEYS.reduce((a, k) => a + (f[k] || 0) * KCAL[k], 0));
 }
 
+// 多張照片份數加總（一位小數，避免浮點誤差；與後端邏輯一致）
+export function sumFoods(foods: Food[]): Food {
+  const total = emptyFood();
+  for (const f of foods) {
+    for (const k of FOOD_KEYS) total[k] = Math.round((total[k] + (f[k] || 0)) * 10) / 10;
+  }
+  return total;
+}
+
+// 各份數欄位的顯示名稱（照片份數摘要用）
+export const FOOD_KEY_NAMES: Record<FoodKey, string> = {
+  meatLow: '蛋豆魚肉（低脂）', meatMed: '蛋豆魚肉（中脂）', meatHigh: '蛋豆魚肉（高脂）', meatXHigh: '蛋豆魚肉（超高脂）',
+  veg: '蔬菜', grain: '全穀雜糧', oil: '油脂堅果', fruit: '水果',
+  milkSkim: '乳品（脫脂）', milkLow: '乳品（低脂）', milkFull: '乳品（全脂）',
+};
+
+// 一張照片份數的文字摘要：「蔬菜 1、全穀雜糧 2」；全為 0 回傳空字串
+export function foodSummary(f: Food): string {
+  return FOOD_KEYS.filter((k) => (f[k] || 0) > 0)
+    .map((k) => `${FOOD_KEY_NAMES[k]} ${f[k]}`)
+    .join('、');
+}
+
 // 日期 key 落在某組目標區間內用該組值（多組重疊時取最新建立的一組），否則用預設
 export function goalsFor(
   key: string,

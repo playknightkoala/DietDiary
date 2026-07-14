@@ -15,6 +15,7 @@ export interface EntryRow {
   photos: string;
   eat_time: string;
   food: string;
+  photo_foods: string;
   food_edited_at: number;
 }
 
@@ -44,6 +45,30 @@ export function parseFood(json: string): Food {
   }
 }
 
+// 逐張照片的份數（photo url → Food）
+export function parsePhotoFoods(json: string): Record<string, Food> {
+  try {
+    const o = JSON.parse(json);
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      const out: Record<string, Food> = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (v && typeof v === 'object') out[k] = { ...emptyFood(), ...(v as Partial<Food>) };
+      }
+      return out;
+    }
+  } catch { /* fallthrough */ }
+  return {};
+}
+
+// 多張照片份數加總（一位小數，避免浮點誤差）
+export function sumFoods(foods: Food[]): Food {
+  const total = emptyFood();
+  for (const f of foods) {
+    for (const k of FOOD_KEYS) total[k] = Math.round((total[k] + (f[k] || 0)) * 10) / 10;
+  }
+  return total;
+}
+
 export function parsePhotos(json: string): string[] {
   try {
     const arr = JSON.parse(json);
@@ -66,7 +91,8 @@ export function entryToJson(e: EntryRow) {
     desc: e.desc,
     photos: parsePhotos(e.photos),
     eatTime: e.eat_time ?? '',
-    food: parseFood(e.food),
+    food: parseFood(e.food), // 有照片時為各照片份數的總和
+    photoFoods: parsePhotoFoods(e.photo_foods ?? '{}'),
     foodEditedAt: e.food_edited_at ?? 0, // >0＝營養師調整過份數
   };
 }
@@ -214,7 +240,7 @@ export function getDayJson(userId: number, date: string) {
     .get(userId, date) as DayRow | undefined;
   const entries = (
     db
-      .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
+      .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
       .all(userId, date) as EntryRow[]
   ).map(entryToJsonWithRatings);
   return {

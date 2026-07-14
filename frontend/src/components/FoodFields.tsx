@@ -31,6 +31,13 @@ export const FOOD_INPUT_GROUPS: FoodInputGroup[] = [
     ] },
 ];
 
+// 版面順序（三欄）：水果 蔬菜 全穀雜糧／蛋豆魚肉 乳品 油脂堅果
+const LAYOUT_ORDER = ['水果', '蔬菜', '全穀雜糧', '蛋豆魚肉', '乳品', '油脂堅果'];
+const ORDERED_GROUPS = LAYOUT_ORDER.map((n) => FOOD_INPUT_GROUPS.find((g) => g.name === n)!);
+
+// 佔位文字用短欄位名（去掉卡數註記）
+const shortLabel = (label: string) => label.split('（')[0];
+
 interface FoodFieldsProps {
   foodStr: Record<FoodKey, string>;
   onChange: (key: FoodKey, raw: string) => void;
@@ -38,43 +45,38 @@ interface FoodFieldsProps {
 }
 
 // 六大類份數輸入表單（記錄飲食視窗與營養師編輯份數共用）
+// 緊湊三欄版型：圓形圖示＋名稱＋直排輸入框；點圖示或名稱開啟該分類的份數指南
 export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
   const openGuide = useStore((s) => s.openGuide);
   return (
-    <>
-      {FOOD_INPUT_GROUPS.map((g) => (
-        <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #F0EDE3', paddingTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{g.name}</span>
-            <span style={{ fontSize: 12, color: '#8A9284' }}>{g.note}</span>
-            <button
-              onClick={() => openGuide(Math.max(0, GUIDE_DATA.findIndex((c) => c.name === g.name)))}
-              style={{ marginLeft: 'auto', flex: 'none', border: 'none', background: 'transparent', color: '#5B8DB8', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 4px' }}
-            >
-              一份是多少？
-            </button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(96px,1fr))', gap: 8 }}>
-            {g.fields.map((f) => (
-              <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11.5, color: '#8A9284' }}>{f.label}</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={99}
-                  step={0.1}
-                  placeholder="0"
-                  value={foodStr[f.key]}
-                  onChange={(e) => onChange(f.key, e.target.value)}
-                  onBlur={() => onBlur(f.key)}
-                  style={{ height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6', width: '100%', textAlign: 'center' }}
-                />
-              </div>
-            ))}
-          </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px 10px', borderTop: '1px solid #F0EDE3', paddingTop: 14 }}>
+      {ORDERED_GROUPS.map((g) => (
+        <div key={g.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <button
+            onClick={() => openGuide(Math.max(0, GUIDE_DATA.findIndex((c) => c.name === g.name)))}
+            title={`${g.note}・點我看「一份是多少？」`}
+            style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}
+          >
+            <div style={{ width: 46, height: 46, borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: '#2D3B2D' }}>{g.name}</span>
+          </button>
+          {g.fields.map((f) => (
+            <input
+              key={f.key}
+              type="number"
+              min={0}
+              max={99}
+              step={0.1}
+              placeholder={shortLabel(f.label)}
+              title={f.label}
+              value={foodStr[f.key] ?? ''}
+              onChange={(e) => onChange(f.key, e.target.value)}
+              onBlur={() => onBlur(f.key)}
+              style={{ height: 38, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 8px', fontSize: 14.5, outline: 'none', background: '#FBFAF6', width: '100%', textAlign: 'center' }}
+            />
+          ))}
         </div>
       ))}
-    </>
+    </div>
   );
 }

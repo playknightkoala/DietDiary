@@ -20,7 +20,10 @@ export interface Entry {
   // 用餐時間 HH:MM，空字串＝未填
   eatTime: string;
   commentCount: number;
+  // 有照片時為各照片份數的總和；無照片時為整筆的份數
   food: Food;
+  // 逐張照片的份數（photo url → Food；尚未記錄的照片不會出現）
+  photoFoods: Partial<Record<string, Food>>;
   // 營養師調整份數的時間戳（Unix ms，0＝未被調整）
   foodEditedAt: number;
 }

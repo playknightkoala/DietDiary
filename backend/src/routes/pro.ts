@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, followSchema, foodSchema, goalsSchema, photoRatingSchema } from '../validation.js';
-import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, type EntryRow } from '../helpers.js';
+import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, followSchema, foodSchema, goalsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
+import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, sumFoods, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -110,23 +110,37 @@ proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
 });
 
 // 營養師調整會員某筆紀錄的六大類份數（會標記「營養師調整」，會員自行再改則移除標記）
+// 有照片的紀錄以 photoFoods 逐張調整（food 欄位存總和）；無照片以 food 調整
 proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
   const member = getMember(req.params.id);
   if (!member) return res.status(404).json({ error: 'not found' });
   const entry = db
-    .prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?')
-    .get(req.params.eid, member.id) as { id: number } | undefined;
+    .prepare('SELECT id, photos FROM entries WHERE id = ? AND user_id = ?')
+    .get(req.params.eid, member.id) as { id: number; photos: string } | undefined;
   if (!entry) return res.status(404).json({ error: 'not found' });
-  const parsed = foodSchema.safeParse(req.body?.food);
-  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  db.prepare('UPDATE entries SET food = ?, food_edited_at = ? WHERE id = ?').run(
-    JSON.stringify(parsed.data),
-    Date.now(),
-    entry.id
-  );
+  if (req.body?.photoFoods !== undefined) {
+    const parsed = photoFoodsSchema.safeParse(req.body.photoFoods);
+    if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+    const existing = parsePhotos(entry.photos);
+    const filtered = Object.fromEntries(Object.entries(parsed.data).filter(([url]) => existing.includes(url)));
+    db.prepare('UPDATE entries SET photo_foods = ?, food = ?, food_edited_at = ? WHERE id = ?').run(
+      JSON.stringify(filtered),
+      JSON.stringify(sumFoods(Object.values(filtered))),
+      Date.now(),
+      entry.id
+    );
+  } else {
+    const parsed = foodSchema.safeParse(req.body?.food);
+    if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+    db.prepare('UPDATE entries SET food = ?, food_edited_at = ? WHERE id = ?').run(
+      JSON.stringify(parsed.data),
+      Date.now(),
+      entry.id
+    );
+  }
   pushNotification(member.id, 'food', `entry:${entry.id}`);
   const row = db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, food_edited_at FROM entries WHERE id = ?')
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ?')
     .get(entry.id) as EntryRow;
   return res.json(entryToJsonWithRatings(row));
 });
