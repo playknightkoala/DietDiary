@@ -81,28 +81,26 @@ export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
   );
 }
 
-// 唯讀版份數格：動態牆貼文用，同輸入表單的三欄版型，但只列出有填數字的分類與欄位
+// 唯讀版份數列：動態牆貼文用，只顯示「分類圖示＋份數」（多欄位分類顯示合計；滑過看細項）
 export function FoodSummaryGrid({ food }: { food: Food }) {
   const groups = ORDERED_GROUPS
-    .map((g) => ({ g, fields: g.fields.filter((f) => (food[f.key] || 0) > 0) }))
-    .filter((x) => x.fields.length > 0);
+    .map((g) => {
+      const filled = g.fields.filter((f) => (food[f.key] || 0) > 0);
+      const total = Math.round(filled.reduce((a, f) => a + (food[f.key] || 0), 0) * 10) / 10;
+      return { g, filled, total };
+    })
+    .filter((x) => x.total > 0);
   if (!groups.length) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', borderTop: '1px solid #F0EDE3', paddingTop: 12 }}>
-      {groups.map(({ g, fields }) => (
-        <div key={g.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <div style={{ width: 40, height: 40, borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
-          <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2D3B2D' }}>{g.name}</span>
-          {fields.map((f) => (
-            <div
-              key={f.key}
-              title={`${f.label}：${food[f.key]} 份`}
-              style={{ height: 34, border: '1.5px solid #EEEAE0', borderRadius: 11, padding: '0 8px', fontSize: 13.5, background: '#FBFAF6', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: '#2D3B2D' }}
-            >
-              {g.fields.length > 1 && <span style={{ fontSize: 11.5, color: '#8A9284' }}>{shortLabel(f.label)}</span>}
-              <span style={{ fontFamily: 'Outfit', fontWeight: 700 }}>{food[f.key]}</span>
-            </div>
-          ))}
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', alignItems: 'center', borderTop: '1px solid #F0EDE3', paddingTop: 10 }}>
+      {groups.map(({ g, filled, total }) => (
+        <div
+          key={g.name}
+          title={`${g.name}：${filled.map((f) => `${shortLabel(f.label)} ${food[f.key]} 份`).join('、')}`}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <div style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13.5, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
+          <span style={{ fontFamily: 'Outfit', fontSize: 15, fontWeight: 800, color: '#2D3B2D' }}>{total}</span>
         </div>
       ))}
     </div>
