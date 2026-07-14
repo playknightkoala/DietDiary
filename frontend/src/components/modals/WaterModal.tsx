@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { goalsFor, nowHM } from '../../lib/domain';
+import { dstr, goalsFor, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
+import type { DayData } from '../../types';
 import { PickerInput } from '../PickerInput';
 import { CloseButton, ModalShell } from './ModalShell';
 
@@ -12,21 +13,36 @@ export function WaterModal() {
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
   const [input, setInput] = useState('');
+  const [date, setDate] = useState(selected);
   const [time, setTime] = useState(nowHM());
+  // 所選日期的當天資料；改日期時重新載入該天的累計
+  const [target, setTarget] = useState<DayData>(day);
+  const dateRef = useRef(date);
 
-  const { water: waterGoal } = goalsFor(selected, goals);
+  const { water: waterGoal } = goalsFor(date || selected, goals);
+
+  const changeDate = async (d: string) => {
+    setDate(d);
+    dateRef.current = d;
+    if (!d) return;
+    const data = d === selected ? day : await api.getDay(d);
+    if (dateRef.current === d) setTarget(data);
+  };
 
   const addWater = async () => {
     let n = parseFloat(input);
-    if (isNaN(n) || n <= 0) return;
+    if (isNaN(n) || n <= 0 || !date) return;
     n = Math.min(9999, Math.round(n));
-    await api.patchDay(selected, { water: day.water + n, waterTime: time });
+    const updated = await api.patchDay(date, { water: target.water + n, waterTime: time });
+    if (dateRef.current === date) setTarget(updated);
     setInput('');
     await refresh();
   };
 
   const resetWater = async () => {
-    await api.patchDay(selected, { water: 0, waterTime: '' });
+    if (!date) return;
+    const updated = await api.patchDay(date, { water: 0, waterTime: '' });
+    if (dateRef.current === date) setTarget(updated);
     await refresh();
   };
 
@@ -37,19 +53,27 @@ export function WaterModal() {
         <CloseButton onClick={closeModal} />
       </div>
       <div style={{ background: '#F0F5FA', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 13, color: '#5B8DB8', fontWeight: 700 }}>今日累計</span>
+        <span style={{ fontSize: 13, color: '#5B8DB8', fontWeight: 700 }}>{date === dstr(new Date()) ? '今日累計' : '當日累計'}</span>
         <span style={{ fontFamily: 'Outfit', fontSize: 24, fontWeight: 800, color: '#2D3B2D' }}>
-          {day.water} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>/ {waterGoal} ml</span>
+          {target.water} <span style={{ fontSize: 13, fontWeight: 500, color: '#8A9284' }}>/ {waterGoal} ml</span>
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <label style={{ fontSize: 12.5, color: '#6B7565' }}>喝水時間</label>
-        <PickerInput
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          style={{ height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 16, outline: 'none', background: '#FBFAF6' }}
-        />
+        <label style={{ fontSize: 12.5, color: '#6B7565' }}>喝水時間（改日期會記錄到該天）</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <PickerInput
+            type="date"
+            value={date}
+            onChange={(e) => void changeDate(e.target.value)}
+            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          />
+          <PickerInput
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          />
+        </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={{ fontSize: 12.5, color: '#6B7565' }}>本次喝水量（ml，正數自行輸入）</label>

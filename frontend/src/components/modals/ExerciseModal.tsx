@@ -10,6 +10,7 @@ export function ExerciseModal() {
   const selected = useStore((s) => s.selected);
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
+  const [date, setDate] = useState(selected);
   const [min, setMin] = useState(day.ex.min);
   const [desc, setDesc] = useState(day.ex.desc);
   const [time, setTime] = useState(day.exTime || nowHM());
@@ -20,7 +21,7 @@ export function ExerciseModal() {
     if (closing.current) return;
     closing.current = true;
     try {
-      await api.patchDay(selected, { ex: { min: min.trim(), desc }, exTime: time });
+      await api.patchDay(date || selected, { ex: { min: min.trim(), desc }, exTime: time });
       await refresh();
     } finally {
       closeModal();
@@ -34,13 +35,21 @@ export function ExerciseModal() {
         <CloseButton onClick={() => void finish()} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <label style={{ fontSize: 12.5, color: '#6B7565' }}>運動時刻</label>
-        <PickerInput
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          style={{ height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 12px', fontSize: 16, outline: 'none', background: '#FBFAF6' }}
-        />
+        <label style={{ fontSize: 12.5, color: '#6B7565' }}>運動時刻（改日期會記錄到該天）</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <PickerInput
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          />
+          <PickerInput
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          />
+        </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={{ fontSize: 12.5, color: '#6B7565' }}>運動時間（分鐘）</label>
