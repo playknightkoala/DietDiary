@@ -105,18 +105,22 @@ export function countComments(target: string, ownerId?: number): number {
 }
 
 export function listComments(ownerId: number, target: string, viewerId: number): CommentJson[] {
+  // 作者顯示名稱：檢視者（營養師）替作者取的私人暱稱＞作者自訂暱稱＞帳號
   const rows = db
     .prepare(
-      `SELECT c.id, c.body, c.created_at, c.author_id, u.username, u.role
-       FROM entry_comments c JOIN users u ON u.id = c.author_id
+      `SELECT c.id, c.body, c.created_at, c.author_id, u.role,
+              COALESCE(NULLIF(a.alias, ''), NULLIF(u.nickname, ''), u.username) AS display_name
+       FROM entry_comments c
+       JOIN users u ON u.id = c.author_id
+       LEFT JOIN member_aliases a ON a.member_id = c.author_id AND a.dietitian_id = ?
        WHERE c.user_id = ? AND c.target = ? ORDER BY c.id`
     )
-    .all(ownerId, target) as { id: number; body: string; created_at: number; author_id: number; username: string; role: string }[];
+    .all(viewerId, ownerId, target) as { id: number; body: string; created_at: number; author_id: number; display_name: string; role: string }[];
   return rows.map((r) => ({
     id: r.id,
     body: r.body,
     createdAt: r.created_at,
-    author: r.username,
+    author: r.display_name,
     role: r.role,
     mine: r.author_id === viewerId,
   }));

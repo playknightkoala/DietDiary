@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fmtCommentTime } from '../lib/domain';
 import type { EntryComment } from '../types';
+
+// 觸控裝置的 Enter＝換行（用「送出」按鈕送出）；桌機 Enter＝送出、Shift+Enter＝換行
+const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
 const ROLE_BADGES: Record<string, { name: string; color: string; bg: string } | undefined> = {
   dietitian: { name: '營養師', color: '#5B8DB8', bg: '#E5EBF1' },
@@ -24,6 +27,15 @@ export function CommentsThread({ count: initialCount, load, post, remove, initia
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // 輸入框隨內容自動長高（上限 120px，之後改為內部捲動）
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }, [input, open]);
 
   useEffect(() => {
     if (!initialOpen) return;
@@ -120,15 +132,22 @@ export function CommentsThread({ count: initialCount, load, post, remove, initia
             );
           })}
           {error && <div style={{ fontSize: 12, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              type="text"
-              placeholder="寫下留言…"
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+            <textarea
+              ref={taRef}
+              rows={1}
+              placeholder={IS_TOUCH ? '寫下留言…' : '寫下留言…（Enter 送出、Shift+Enter 換行）'}
               value={input}
               maxLength={1000}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void send(); }}
-              style={{ flex: 1, minWidth: 0, height: 38, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 13.5, outline: 'none', background: '#FBFAF6' }}
+              onKeyDown={(e) => {
+                if (IS_TOUCH) return; // 觸控裝置 Enter＝換行
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              style={{ flex: 1, minWidth: 0, minHeight: 38, maxHeight: 120, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '8px 10px', fontSize: 13.5, lineHeight: 1.55, outline: 'none', background: '#FBFAF6', resize: 'none', overflowY: 'auto' }}
             />
             <button
               onClick={() => void send()}
