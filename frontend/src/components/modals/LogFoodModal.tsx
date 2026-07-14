@@ -283,7 +283,7 @@ export function LogFoodModal() {
                   份數指南
                 </button>
               </div>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', flex: 'none' }}>
                 <div style={{ height: 190, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${currentUrl}')` }} />
                 <button
                   onClick={() => void removePhoto(currentUrl)}
@@ -295,7 +295,7 @@ export function LogFoodModal() {
                 <PhotoRatingBadge rating={entry.ratings[currentUrl]} />
               </div>
               {/* 縮圖列：點縮圖跳頁；最後是新增照片 */}
-              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+              <div style={{ flex: 'none', display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                 {photos.map((url, i) => (
                   <button
                     key={url}

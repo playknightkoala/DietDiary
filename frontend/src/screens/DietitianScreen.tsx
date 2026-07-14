@@ -474,20 +474,22 @@ export function DietitianScreen() {
                 const m = MEALS.find((mm) => mm.k === e.meal) || MEALS[0];
                 return (
                   <div key={e.id} id={`pro-post-entry:${e.id}`} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 14, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                      <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: m.color, fontWeight: 900 }}>{m.glyph}</div>
-                      <span style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</span>
-                      <span style={{ fontSize: 12, color: '#8A9284' }}>{e.eatTime || '未填時間'}</span>
-                      <span style={{ fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 700, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
-                      {e.foodEditedAt > 0 && (
-                        <span title={`已於 ${fmtCommentTime(e.foodEditedAt)} 調整`} style={{ fontSize: 10.5, fontWeight: 700, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 99, padding: '2px 8px' }}>
-                          已調整份數
-                        </span>
-                      )}
-                      <span style={{ flex: 1 }} />
+                    {/* 標題列：左側資訊可換行，「編輯份數」固定右上不被擠到下一行 */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                        <div style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, background: m.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: m.color, fontWeight: 900 }}>{m.glyph}</div>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</span>
+                        <span style={{ fontSize: 12, color: '#8A9284' }}>{e.eatTime || '未填時間'}</span>
+                        <span style={{ fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 700, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
+                        {e.foodEditedAt > 0 && (
+                          <span title={`已於 ${fmtCommentTime(e.foodEditedAt)} 調整`} style={{ fontSize: 10.5, fontWeight: 700, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 99, padding: '2px 8px' }}>
+                            已調整份數
+                          </span>
+                        )}
+                      </div>
                       <button
                         onClick={() => openFoodEditor(e)}
-                        style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '3px 12px', cursor: 'pointer', fontWeight: 700, flex: 'none' }}
+                        style={{ border: '1px solid #5B8DB8', color: '#5B8DB8', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '3px 12px', cursor: 'pointer', fontWeight: 700, flex: 'none', whiteSpace: 'nowrap' }}
                       >
                         編輯份數
                       </button>
@@ -569,8 +571,8 @@ export function DietitianScreen() {
                     {kcalOfFood(strToFood(pfStr[foodEditing.photos[foodPage]]))} kcal
                   </span>
                 </div>
-                <div style={{ height: 170, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${foodEditing.photos[foodPage]}')` }} />
-                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+                <div style={{ flex: 'none', height: 170, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${foodEditing.photos[foodPage]}')` }} />
+                <div style={{ flex: 'none', display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                   {foodEditing.photos.map((url, i) => (
                     <button
                       key={url}
