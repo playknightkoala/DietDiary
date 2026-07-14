@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../lib/api';
-import { MEALS, dstr, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, sortEntriesNewestFirst } from '../lib/domain';
+import { MEALS, dstr, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, sortEntriesNewestFirst } from '../lib/domain';
 import { useStore } from '../store';
 import { CommentsThread } from './CommentsThread';
+import { FoodSummaryGrid } from './FoodFields';
 import { Lightbox } from './Lightbox';
 import { PhotoRatingBadge } from './PhotoRatingBadge';
 import type { CommentTarget } from '../types';
@@ -91,6 +92,8 @@ export function DayFeed() {
               ))}
             </div>
           )}
+          {/* 這餐的六大類份數（唯讀，只列有填的欄位；要修改請按「編輯」） */}
+          <FoodSummaryGrid food={e.food} />
           <CommentsThread key={`ec${e.id}`} {...commentProps(`entry:${e.id}`, e.commentCount)} />
         </div>
       ),
@@ -165,7 +168,7 @@ export function DayFeed() {
           index={lightbox.index}
           onClose={() => setLightbox(null)}
           caption={(url) => {
-            const f = lightboxEntry?.photoFoods[url];
+            const f = lightboxEntry ? photoFoodOf(lightboxEntry, url) : null;
             const summary = f ? foodSummary(f) : '';
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

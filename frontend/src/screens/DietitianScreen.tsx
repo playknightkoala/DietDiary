@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTotals, dstr, emptyFood, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, round1, sortEntriesNewestFirst, sumFoods } from '../lib/domain';
+import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, dayFoodTotals, dstr, emptyFood, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, round1, sortEntriesNewestFirst, sumFoods } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
@@ -662,7 +662,7 @@ export function DietitianScreen() {
           index={lightbox.index}
           onClose={() => setLightbox(null)}
           caption={(url) => {
-            const f = lightboxEntry?.photoFoods[url];
+            const f = lightboxEntry ? photoFoodOf(lightboxEntry, url) : null;
             const summary = f ? foodSummary(f) : '';
             const current = lightboxEntry?.ratings[url];
             return (

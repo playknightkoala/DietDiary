@@ -133,6 +133,21 @@ export function foodSummary(f: Food): string {
     .join('、');
 }
 
+// 一張照片實際歸屬的份數：優先用逐張份數；
+// 舊資料（僅整筆 food、無任何逐張份數）視為記在第一張——與記錄視窗的相容邏輯一致
+export function photoFoodOf(
+  entry: Pick<Entry, 'photos' | 'photoFoods' | 'food'>,
+  url: string
+): Food | null {
+  const own = entry.photoFoods[url];
+  if (own && FOOD_KEYS.some((k) => (own[k] || 0) > 0)) return own;
+  const anyPerPhoto = entry.photos.some((u) => FOOD_KEYS.some((k) => (entry.photoFoods[u]?.[k] ?? 0) > 0));
+  if (!anyPerPhoto && entry.photos[0] === url && FOOD_KEYS.some((k) => (entry.food[k] || 0) > 0)) {
+    return entry.food;
+  }
+  return null;
+}
+
 // 日期 key 落在某組目標區間內用該組值（多組重疊時取最新建立的一組），否則用預設
 export function goalsFor(
   key: string,

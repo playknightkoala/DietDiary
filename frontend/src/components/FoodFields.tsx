@@ -1,6 +1,6 @@
 import { GUIDE_DATA } from '../lib/guideData';
 import { useStore } from '../store';
-import type { FoodKey } from '../types';
+import type { Food, FoodKey } from '../types';
 
 export interface FoodInputGroup {
   name: string;
@@ -74,6 +74,34 @@ export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
               onBlur={() => onBlur(f.key)}
               style={{ height: 38, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 8px', fontSize: 14.5, outline: 'none', background: '#FBFAF6', width: '100%', textAlign: 'center' }}
             />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 唯讀版份數格：動態牆貼文用，同輸入表單的三欄版型，但只列出有填數字的分類與欄位
+export function FoodSummaryGrid({ food }: { food: Food }) {
+  const groups = ORDERED_GROUPS
+    .map((g) => ({ g, fields: g.fields.filter((f) => (food[f.key] || 0) > 0) }))
+    .filter((x) => x.fields.length > 0);
+  if (!groups.length) return null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', borderTop: '1px solid #F0EDE3', paddingTop: 12 }}>
+      {groups.map(({ g, fields }) => (
+        <div key={g.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ width: 40, height: 40, borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2D3B2D' }}>{g.name}</span>
+          {fields.map((f) => (
+            <div
+              key={f.key}
+              title={`${f.label}：${food[f.key]} 份`}
+              style={{ height: 34, border: '1.5px solid #EEEAE0', borderRadius: 11, padding: '0 8px', fontSize: 13.5, background: '#FBFAF6', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, color: '#2D3B2D' }}
+            >
+              {g.fields.length > 1 && <span style={{ fontSize: 11.5, color: '#8A9284' }}>{shortLabel(f.label)}</span>}
+              <span style={{ fontFamily: 'Outfit', fontWeight: 700 }}>{food[f.key]}</span>
+            </div>
           ))}
         </div>
       ))}
