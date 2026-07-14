@@ -386,8 +386,9 @@ export function DietitianScreen() {
                 {GROUP_ROWS.map((row) => {
                   const total = round1(row.keys.reduce((a, k) => a + totals[k], 0));
                   const goal = gInfo.vals[row.gkey];
-                  const over = goal > 0 && total > goal * 1.2;
-                  const pct = Math.min(100, goal > 0 ? (total / goal) * 100 : 0) + '%';
+                  // 目標為 0 時吃任何份數都算超標：跑條全滿＋紅字
+                  const over = goal > 0 ? total > goal * 1.2 : total > 0;
+                  const pct = Math.min(100, goal > 0 ? (total / goal) * 100 : total > 0 ? 100 : 0) + '%';
                   return (
                     <div key={row.gkey} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ width: 62, flex: 'none', fontSize: 12.5, fontWeight: 700 }}>{row.name}</span>

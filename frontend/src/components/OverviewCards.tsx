@@ -83,8 +83,9 @@ export function FoodGroupsCard() {
         const total = round1(cfg.keys.reduce((a, k) => a + dayTot[k], 0));
         const kcal = Math.round(cfg.keys.reduce((a, k) => a + dayTot[k] * KCAL[k], 0));
         const goal = gInfo.vals[cfg.gkey];
-        const over = goal > 0 && total > goal * 1.2;
-        const pct = Math.min(100, goal > 0 ? (total / goal) * 100 : 0) + '%';
+        // 目標為 0 時吃任何份數都算超標：跑條全滿＋紅字
+        const over = goal > 0 ? total > goal * 1.2 : total > 0;
+        const pct = Math.min(100, goal > 0 ? (total / goal) * 100 : total > 0 ? 100 : 0) + '%';
         return (
           <div key={cfg.gkey} style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 0 2px', borderTop: '1px solid #F0EDE3' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
