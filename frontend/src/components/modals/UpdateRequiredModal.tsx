@@ -1,11 +1,19 @@
-import { changelogFor } from '../../lib/changelog';
+import { useEffect, useState } from 'react';
+import { changelogFor, fetchChangelogFor, type ChangelogEntry } from '../../lib/changelog';
 import { APP_VERSION } from '../../lib/version';
 import { useStore } from '../../store';
 
 // 改版後強制更新：不可關閉、蓋在所有畫面之上，只能重新整理載入新版
 export function UpdateRequiredModal() {
   const latest = useStore((s) => s.latestVersion);
-  const entry = changelogFor(latest);
+  // 先用打包進 bundle 的資料墊底，再即時抓取伺服器上「新版」的更新內容
+  // （舊 bundle 沒有新版條目，必須向伺服器要）
+  const [entry, setEntry] = useState<ChangelogEntry | null>(() => changelogFor(latest));
+  useEffect(() => {
+    let alive = true;
+    void fetchChangelogFor(latest).then((e) => { if (alive && e) setEntry(e); });
+    return () => { alive = false; };
+  }, [latest]);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(45,59,45,.55)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: '#fff', borderRadius: 22, width: '100%', maxWidth: 380, maxHeight: '85vh', overflowY: 'auto', padding: 26, textAlign: 'center', boxShadow: '0 24px 60px rgba(45,59,45,.3)', display: 'flex', flexDirection: 'column', gap: 14, animation: 'popIn .25s ease both' }}>

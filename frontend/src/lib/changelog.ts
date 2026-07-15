@@ -1,53 +1,36 @@
-// 版本更新紀錄（單一來源）：強制更新視窗與底部「版本紀錄」共用。
-// 每次改版（bump 版號）時，在最前面新增一筆；newest first。
+// 版本更新紀錄（單一來源）：資料放在 public/changelog.json，
+// 由 nginx 靜態提供（永遠是最新部署的版本）。此檔同時被打包進 bundle 供
+// 底部「版本紀錄」使用；強制更新視窗則會即時抓取 /changelog.json，
+// 這樣舊 bundle 的使用者也能看到「新版」的更新內容。
+// 每次改版時，只需在 changelog.json 最前面新增一筆（newest first）。
+import changelogData from '../../public/changelog.json';
+
 export interface ChangelogEntry {
   version: string;
   date: string; // YYYY-MM-DD
   notes: string[];
 }
 
-export const CHANGELOG: ChangelogEntry[] = [
-  {
-    version: '1.0.3',
-    date: '2026-07-15',
-    notes: [
-      '瀏覽器分頁新增網站圖示（favicon）',
-      '註冊新增「確認 Email 認證碼」步驟，確認正確後才能完成註冊',
-      '登入頁 logo 改為與網站圖示一致的樣式',
-      '管理者後台的會員列表新增顯示每位會員的「最後使用時間」',
-    ],
-  },
-  {
-    version: '1.0.2',
-    date: '2026-07-15',
-    notes: [
-      '強制更新視窗會列出「這次更新內容」，直接看到新版更新了什麼',
-      '頁面底部新增「版本紀錄」，可查看歷來各版本的更新內容',
-    ],
-  },
-  {
-    version: '1.0.1',
-    date: '2026-07-15',
-    notes: [
-      '「從歷史加入」改成餐別分頁切換（早餐／午餐／晚餐／宵夜／點心）',
-      '歷史紀錄一次顯示筆數提高到 30 筆',
-      '記錄餐點視窗的照片可點擊放大檢視',
-      '營養師「編輯份數」視窗的照片也可點擊放大',
-    ],
-  },
-  {
-    version: '1.0.0',
-    date: '2026-07-15',
-    notes: [
-      '導入版號與「改版後強制更新」機制',
-      '頁面底部顯示目前版號',
-      '「從歷史加入」：可快速帶入記過的照片與六大類份數',
-    ],
-  },
-];
+export const CHANGELOG: ChangelogEntry[] = changelogData as ChangelogEntry[];
 
 // 取得某版本的更新內容（找不到回傳 null）
 export function changelogFor(version: string | null): ChangelogEntry | null {
   if (!version) return null;
   return CHANGELOG.find((c) => c.version === version) ?? null;
+}
+
+// 即時抓取伺服器上最新的 changelog（供強制更新視窗使用）。
+// 帶版號當快取破壞參數，避免拿到 nginx 快取的舊檔；失敗時回傳打包進 bundle 的版本。
+export async function fetchChangelogFor(version: string | null): Promise<ChangelogEntry | null> {
+  if (!version) return null;
+  try {
+    const res = await fetch(`/changelog.json?v=${encodeURIComponent(version)}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const list = (await res.json()) as ChangelogEntry[];
+    const entry = list.find((c) => c.version === version);
+    if (entry) return entry;
+  } catch {
+    /* 抓取失敗時退回打包版本 */
+  }
+  return changelogFor(version);
 }
