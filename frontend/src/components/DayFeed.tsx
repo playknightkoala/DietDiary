@@ -45,6 +45,7 @@ export function DayFeed() {
     count,
     load: () => api.getComments(target),
     post: (body: string) => api.postComment(target, body),
+    edit: (id: number, body: string) => api.editComment(id, body),
     remove: (id: number) => api.deleteComment(id),
   });
 

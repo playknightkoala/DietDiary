@@ -219,6 +219,7 @@ export function DietitianScreen() {
     count,
     load: () => api.proComments(memberId as number, target),
     post: (body: string) => api.proPostComment(memberId as number, target, body),
+    edit: (id: number, body: string) => api.proEditComment(memberId as number, id, body),
     remove: (id: number) => api.proDeleteComment(memberId as number, id),
   });
 

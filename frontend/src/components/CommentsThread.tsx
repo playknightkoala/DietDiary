@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { fmtCommentTime } from '../lib/domain';
 import type { EntryComment } from '../types';
 
@@ -10,23 +10,32 @@ const ROLE_BADGES: Record<string, { name: string; color: string; bg: string } | 
   admin: { name: '管理者', color: '#C77B4A', bg: '#F3E7D8' },
 };
 
+const menuItemStyle: CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'transparent',
+  padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+};
+
 interface CommentsThreadProps {
   count: number;
   load: () => Promise<EntryComment[]>;
   post: (body: string) => Promise<EntryComment[]>;
+  edit: (id: number, body: string) => Promise<EntryComment[]>;
   remove: (id: number) => Promise<void>;
   initialOpen?: boolean;
 }
 
 // 收合式留言串：點開才載入並顯示內容，會員與營養師頁面共用
 // initialOpen：掛載時即展開並載入（營養師由通知跳轉至該貼文時使用）
-export function CommentsThread({ count: initialCount, load, post, remove, initialOpen }: CommentsThreadProps) {
+export function CommentsThread({ count: initialCount, load, post, edit, remove, initialOpen }: CommentsThreadProps) {
   const [open, setOpen] = useState(!!initialOpen);
   const [comments, setComments] = useState<EntryComment[] | null>(null);
   const [count, setCount] = useState(initialCount);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [menuId, setMenuId] = useState<number | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // 輸入框隨內容自動長高（上限 120px，之後改為內部捲動）
@@ -95,6 +104,34 @@ export function CommentsThread({ count: initialCount, load, post, remove, initia
     }
   };
 
+  const startEdit = (c: EntryComment) => {
+    setError('');
+    setEditingId(c.id);
+    setEditDraft(c.body);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft('');
+  };
+
+  const saveEdit = async (id: number) => {
+    const body = editDraft.trim();
+    if (!body || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const list = await edit(id, body);
+      setComments(list);
+      setCount(list.length);
+      cancelEdit();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '編輯留言失敗，請再試一次');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <button
@@ -121,13 +158,62 @@ export function CommentsThread({ count: initialCount, load, post, remove, initia
                   )}
                   <span style={{ fontSize: 11, color: '#8A9284' }}>{fmtCommentTime(c.createdAt)}</span>
                   <span style={{ flex: 1 }} />
-                  {c.mine && (
-                    <button onClick={() => void del(c.id)} title="刪除留言" style={{ border: 'none', background: 'transparent', color: '#C0564A', fontSize: 11, cursor: 'pointer', padding: 0 }}>
-                      刪除
-                    </button>
+                  {c.mine && editingId !== c.id && (
+                    <div style={{ position: 'relative', flex: 'none' }}>
+                      <button
+                        onClick={() => setMenuId(menuId === c.id ? null : c.id)}
+                        title="更多"
+                        aria-label="更多"
+                        style={{ border: 'none', background: menuId === c.id ? '#ECE8DD' : 'transparent', color: '#8A9284', cursor: 'pointer', padding: '2px 5px', borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+                      </button>
+                      {menuId === c.id && (
+                        <>
+                          <div onClick={() => setMenuId(null)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+                          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21, background: '#fff', border: '1px solid #E4DFD2', borderRadius: 10, boxShadow: '0 8px 24px rgba(45,59,45,.15)', overflow: 'hidden', minWidth: 92 }}>
+                            <button className="hv-cream" onClick={() => { setMenuId(null); startEdit(c); }} style={{ ...menuItemStyle, color: '#4A5A4A' }}>
+                              編輯
+                            </button>
+                            <button className="hv-cream" onClick={() => { setMenuId(null); void del(c.id); }} style={{ ...menuItemStyle, color: '#C0564A' }}>
+                              刪除
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
+                {editingId === c.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <textarea
+                      rows={2}
+                      value={editDraft}
+                      maxLength={1000}
+                      autoFocus
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return; }
+                        if (IS_TOUCH) return;
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          void saveEdit(c.id);
+                        }
+                      }}
+                      style={{ width: '100%', minHeight: 40, maxHeight: 160, border: '1.5px solid #DDD8CA', borderRadius: 10, padding: '7px 9px', fontSize: 13, lineHeight: 1.55, outline: 'none', background: '#fff', resize: 'none', overflowY: 'auto', boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <button onClick={cancelEdit} disabled={busy} style={{ height: 30, padding: '0 12px', border: '1px solid #DDD8CA', borderRadius: 9, background: '#fff', color: '#6B7565', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        取消
+                      </button>
+                      <button onClick={() => void saveEdit(c.id)} disabled={busy || !editDraft.trim()} className="hv-green" style={{ height: 30, padding: '0 14px', border: 'none', borderRadius: 9, background: '#4A7C59', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: busy || !editDraft.trim() ? 0.55 : 1 }}>
+                        儲存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
+                )}
               </div>
             );
           })}

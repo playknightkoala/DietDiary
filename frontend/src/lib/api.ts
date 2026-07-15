@@ -159,6 +159,8 @@ export const api = {
     request<EntryComment[]>(`/api/comments?target=${encodeURIComponent(target)}`),
   postComment: (target: CommentTarget, body: string) =>
     request<EntryComment[]>('/api/comments', { method: 'POST', body: JSON.stringify({ target, body }) }),
+  editComment: (id: number, body: string) =>
+    request<EntryComment[]>(`/api/comments/${id}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   deleteComment: (id: number) => request<void>(`/api/comments/${id}`, { method: 'DELETE' }),
 
   // 通知（營養師留言／照片評分／調整份數）
@@ -206,6 +208,8 @@ export const api = {
     request<EntryComment[]>(`/api/pro/members/${memberId}/comments?target=${encodeURIComponent(target)}`),
   proPostComment: (memberId: number, target: CommentTarget, body: string) =>
     request<EntryComment[]>(`/api/pro/members/${memberId}/comments`, { method: 'POST', body: JSON.stringify({ target, body }) }),
+  proEditComment: (memberId: number, id: number, body: string) =>
+    request<EntryComment[]>(`/api/pro/members/${memberId}/comments/${id}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   proDeleteComment: (memberId: number, id: number) =>
     request<void>(`/api/pro/members/${memberId}/comments/${id}`, { method: 'DELETE' }),
   proGoals: (memberId: number) => request<Goal[]>(`/api/pro/members/${memberId}/goals`),

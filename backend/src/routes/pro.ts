@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, followSchema, foodSchema, goalsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
+import { COMMENT_TARGET_RE, DATE_RE, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
 import { commentTargetOwned, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, parsePhotos, pushNotification, sumFoods, type EntryRow } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
@@ -166,6 +166,25 @@ proRouter.post('/members/:id/comments', (req, res) => {
   createComment(member.id, target, req.userId, body);
   pushNotification(member.id, 'comment', target);
   return res.status(201).json(listComments(member.id, target, req.userId));
+});
+
+// 營養師只能編輯自己寫的留言
+proRouter.patch('/members/:id/comments/:cid', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const parsed = commentEditSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入留言內容（最多 1000 字）' });
+  const row = db
+    .prepare('SELECT target FROM entry_comments WHERE id = ? AND author_id = ? AND user_id = ?')
+    .get(req.params.cid, req.userId, member.id) as { target: string } | undefined;
+  if (!row) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE entry_comments SET body = ? WHERE id = ? AND author_id = ? AND user_id = ?').run(
+    parsed.data.body,
+    req.params.cid,
+    req.userId,
+    member.id
+  );
+  return res.json(listComments(member.id, row.target, req.userId));
 });
 
 // 營養師只能刪自己寫的留言

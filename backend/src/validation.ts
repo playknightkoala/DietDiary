@@ -113,6 +113,11 @@ export const commentCreateSchema = z.object({
   body: z.string().trim().min(1).max(1000),
 });
 
+// 編輯留言：只改內容
+export const commentEditSchema = z.object({
+  body: z.string().trim().min(1).max(1000),
+});
+
 export const changePasswordSchema = z
   .object({
     oldPassword: z.string().min(1).max(200),
