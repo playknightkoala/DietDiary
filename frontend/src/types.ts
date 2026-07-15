@@ -28,6 +28,15 @@ export interface Entry {
   foodEditedAt: number;
 }
 
+// 從歷史加入：一張記過份數的照片＋其六大類份數（快速帶入用）
+export interface HistoryItem {
+  photo: string;
+  food: Food;
+  desc: string;
+  meal: MealKey;
+  date: string;
+}
+
 // 留言對象：某筆飲食（entry:<id>）、某天的喝水（water:<date>）或運動（ex:<date>）
 export type CommentTarget = `entry:${number}` | `water:${string}` | `ex:${string}`;
 

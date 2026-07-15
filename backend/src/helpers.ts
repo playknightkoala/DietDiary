@@ -97,6 +97,69 @@ export function entryToJson(e: EntryRow) {
   };
 }
 
+// 最近記過份數的照片（新→舊），供「從歷史加入」快速帶入照片＋份數
+export interface HistoryItem {
+  photo: string;
+  food: Food;
+  desc: string;
+  meal: string;
+  date: string;
+}
+
+// 相同餐點只保留最新一張；只回傳有記份數的照片。
+// 去重規則：有敘述者以「敘述＋份數」為指紋；無敘述者若份數已被某個「有敘述」的餐點涵蓋，
+// 則視為同一餐點（避免同一份餐點因為一筆有敘述、一筆沒敘述而被列成兩筆）。
+export function getEntryHistory(userId: number, limit: number, excludeId?: number): HistoryItem[] {
+  const rows = db
+    .prepare(
+      `SELECT id, date, meal, desc, photos, food, photo_foods FROM entries
+       WHERE user_id = ? AND photos != '[]' AND id != ? ORDER BY date DESC, id DESC LIMIT 300`
+    )
+    .all(userId, excludeId ?? -1) as (EntryRow & { date: string })[];
+
+  // 先把所有照片攤平成候選（新→舊），並算出各自的份數指紋
+  const cands: (HistoryItem & { foodSig: string })[] = [];
+  const describedFoodSigs = new Set<string>();
+  for (const row of rows) {
+    const photos = parsePhotos(row.photos);
+    if (!photos.length) continue;
+    const pf = parsePhotoFoods(row.photo_foods);
+    const entryFood = parseFood(row.food);
+    const anyPerPhoto = photos.some((u) => FOOD_KEYS.some((k) => (pf[u]?.[k] ?? 0) > 0));
+    for (const url of photos) {
+      let food = pf[url];
+      const hasOwn = food && FOOD_KEYS.some((k) => (food![k] || 0) > 0);
+      if (!hasOwn) {
+        // 舊資料（無逐張份數）：整筆份數視為記在第一張
+        if (!anyPerPhoto && url === photos[0] && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) food = entryFood;
+        else continue;
+      }
+      const norm = { ...emptyFood(), ...food } as Food;
+      const foodSig = FOOD_KEYS.map((k) => norm[k] || 0).join(',');
+      if (row.desc) describedFoodSigs.add(foodSig);
+      cands.push({ photo: url, food: norm, desc: row.desc, meal: row.meal as HistoryItem['meal'], date: row.date, foodSig });
+    }
+  }
+
+  const items: HistoryItem[] = [];
+  const seenDescFood = new Set<string>(); // 有敘述：敘述＋份數
+  const seenEmptyFood = new Set<string>(); // 無敘述：僅份數
+  for (const c of cands) {
+    if (c.desc) {
+      const key = c.desc + '|' + c.foodSig;
+      if (seenDescFood.has(key)) continue;
+      seenDescFood.add(key);
+    } else {
+      // 無敘述：份數已被有敘述的餐點涵蓋，或已出現過相同份數的無敘述照片 → 視為重複
+      if (describedFoodSigs.has(c.foodSig) || seenEmptyFood.has(c.foodSig)) continue;
+      seenEmptyFood.add(c.foodSig);
+    }
+    items.push({ photo: c.photo, food: c.food, desc: c.desc, meal: c.meal, date: c.date });
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
 export type PhotoRating = 'green' | 'yellow' | 'red';
 
 export function getPhotoRatings(entryId: number): Record<string, PhotoRating> {

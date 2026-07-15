@@ -3,10 +3,11 @@ import { api } from '../../lib/api';
 import { compressImage } from '../../lib/photo';
 import { FOOD_KEYS, MEALS, clampPortion, emptyFood, entryHasData, fmtCommentTime, kcalOfFood, sumFoods } from '../../lib/domain';
 import { useStore } from '../../store';
-import type { Food, FoodKey } from '../../types';
+import type { Food, FoodKey, HistoryItem } from '../../types';
 import { FoodFields } from '../FoodFields';
 import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { PickerInput } from '../PickerInput';
+import { HistoryPickerSheet } from './HistoryPickerSheet';
 import { CloseButton, ModalShell } from './ModalShell';
 
 type FoodStr = Record<FoodKey, string>;
@@ -65,7 +66,10 @@ export function LogFoodModal() {
   // 新建流程（尚無任何內容）先選擇「新增照片或略過」；編輯既有紀錄直接進入記錄頁
   const isNew = !!entry && !entryHasData(entry);
   const [step, setStep] = useState<'photos' | 'detail'>(isNew && (entry?.photos.length ?? 0) === 0 ? 'photos' : 'detail');
+  const [showHistory, setShowHistory] = useState(false);
   const closing = useRef(false);
+  // 開啟視窗當下就有的照片；用來區分「這次視窗內新增的照片」（取消時要還原）
+  const initialPhotos = useRef<string[]>(entry?.photos ?? []);
 
   if (!entry || editingId === null) return null;
   const mealDef = MEALS.find((m) => m.k === entry.meal) || MEALS[0];
@@ -106,6 +110,25 @@ export function LogFoodModal() {
   // 從「＋」剛建立的空白紀錄不顯示刪除鈕（關閉即自動刪除）；編輯既有紀錄才顯示
   const isExisting = entryHasData(entry);
 
+  // 取消（按 ✕）：不儲存這次視窗內的變更。
+  // 新建立的空白紀錄整筆刪除（連同這次加入／上傳的照片）；既有紀錄只移除這次新增的照片，
+  // 份數／敘述的修改因為只在「完成」時才寫入，所以會自動被捨棄。
+  const cancel = async () => {
+    if (closing.current) return;
+    closing.current = true;
+    try {
+      const added = photos.filter((p) => !initialPhotos.current.includes(p));
+      if (!isExisting) {
+        await api.deleteEntry(entry.id);
+      } else if (added.length) {
+        await api.patchEntry(entry.id, { photos: photos.filter((p) => initialPhotos.current.includes(p)) });
+      }
+      await refresh();
+    } finally {
+      closeModal();
+    }
+  };
+
   const remove = async () => {
     if (closing.current) return;
     if (!window.confirm('確定要刪除這筆紀錄？留言與照片會一併刪除。')) return;
@@ -143,6 +166,21 @@ export function LogFoodModal() {
       /* 壓縮或上傳失敗時維持原狀 */
     } finally {
       setUploading(false);
+    }
+  };
+
+  // 從歷史加入：複製該照片到這筆紀錄，並把它的份數帶入該張（總和自動更新）
+  const addFromHistory = async (item: HistoryItem): Promise<boolean> => {
+    if (photos.length >= MAX_PHOTOS) return false;
+    try {
+      const { photos: urls, photo: newUrl } = await api.copyPhoto(entry.id, item.photo);
+      setPhotoFoodsStr((s) => ({ ...s, [newUrl]: foodToStr(item.food) }));
+      setPhotos(urls);
+      setPage(urls.length - 1); // 跳到剛加入的這張
+      if (step === 'photos') setStep('detail');
+      return true;
+    } catch {
+      return false;
     }
   };
 
@@ -189,22 +227,44 @@ export function LogFoodModal() {
     </label>
   );
 
+  // 「從歷史加入」按鈕（照片未達上限才顯示）與歷史選擇視窗
+  const historyButton = photos.length < MAX_PHOTOS && (
+    <button
+      onClick={() => setShowHistory(true)}
+      className="hv-cream"
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 42, flex: 'none', border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff', color: '#4A5A4A', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+    >
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 106 5.3L3 8" /><path d="M12 7v5l3 2" /></svg>
+      從歷史紀錄加入
+    </button>
+  );
+  const historySheet = showHistory && (
+    <HistoryPickerSheet
+      excludeId={entry.id}
+      remaining={MAX_PHOTOS - photos.length}
+      onPick={addFromHistory}
+      onClose={() => setShowHistory(false)}
+    />
+  );
+
   // 步驟一：先新增照片或略過
   if (step === 'photos') {
     return (
+      <>
       <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 17, fontWeight: 900 }}>記錄{mealDef.name}</div>
-          <CloseButton onClick={() => void finish()} />
+          <CloseButton onClick={() => void cancel()} />
         </div>
         <div style={{ padding: '14px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontSize: 13.5, color: '#6B7565', lineHeight: 1.7 }}>
-            先幫這餐拍幾張照片（最多 {MAX_PHOTOS} 張，可一次選多張），接下來會<b>逐張記錄六大類份數</b>；也可以略過照片直接記錄。
+            先幫這餐拍幾張照片（最多 {MAX_PHOTOS} 張，可一次選多張），接下來會<b>逐張記錄六大類份數</b>；也可以略過照片直接記錄，或<b>從歷史紀錄加入</b>吃過的餐點。
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
             {photos.map(photoGridCell)}
             {photos.length < MAX_PHOTOS && addPhotoCell('新增照片')}
           </div>
+          {historyButton}
           {photos.length > 0 ? (
             <button onClick={() => setStep('detail')} className="hv-green" style={{ height: 48, flex: 'none', border: 'none', borderRadius: 13, background: '#4A7C59', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
               開始記錄份數（共 {photos.length} 張）
@@ -216,16 +276,19 @@ export function LogFoodModal() {
           )}
         </div>
       </ModalShell>
+      {historySheet}
+      </>
     );
   }
 
   const hasPhotos = photos.length > 0;
 
   return (
+    <>
     <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>記錄{mealDef.name}</div>
-        <CloseButton onClick={() => void finish()} />
+        <CloseButton onClick={() => void cancel()} />
       </div>
       <div style={{ padding: '14px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* 這餐熱量（各照片份數的總和） */}
@@ -264,6 +327,8 @@ export function LogFoodModal() {
             style={{ border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '10px 12px', fontSize: 14.5, outline: 'none', background: '#FBFAF6', resize: 'none' }}
           />
         </div>
+
+        {historyButton}
 
         {entry.foodEditedAt > 0 && (
           <div style={{ fontSize: 12.5, color: '#5B8DB8', background: '#E5EBF1', borderRadius: 10, padding: '8px 12px', lineHeight: 1.6, fontWeight: 700 }}>
@@ -365,5 +430,7 @@ export function LogFoodModal() {
         )}
       </div>
     </ModalShell>
+    {historySheet}
+    </>
   );
 }

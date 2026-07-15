@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { MAX_PHOTOS, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { MAX_PHOTOS, copyPhotoSchema, entryPatchSchema } from '../validation.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -25,6 +25,42 @@ function getOwnedEntry(userId: number, id: string | number) {
     .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ? AND user_id = ?')
     .get(id, userId) as EntryRow | undefined;
 }
+
+// 最近記過份數的照片（新→舊），供「從歷史加入」；exclude 排除目前編輯中的紀錄
+entriesRouter.get('/history', (req, res) => {
+  const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 15));
+  const exclude = req.query.exclude ? Number(req.query.exclude) : undefined;
+  return res.json(getEntryHistory(req.userId, limit, exclude));
+});
+
+// 從歷史加入：把自己既有的一張照片複製成新檔案，加進目前這筆紀錄（份數由前端於完成時寫入）
+entriesRouter.post('/:id/photos/copy', (req, res) => {
+  const entry = getOwnedEntry(req.userId, req.params.id);
+  if (!entry) return res.status(404).json({ error: 'not found' });
+  const parsed = copyPhotoSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const src = parsed.data.photo;
+  if (!src.startsWith('/uploads/')) return res.status(400).json({ error: 'invalid photo' });
+  // 只能複製屬於自己的照片
+  const owns = db
+    .prepare('SELECT 1 FROM entries e, json_each(e.photos) je WHERE e.user_id = ? AND je.value = ? LIMIT 1')
+    .get(req.userId, src);
+  if (!owns) return res.status(404).json({ error: 'photo not found' });
+
+  const current = parsePhotos(entry.photos);
+  if (current.length >= MAX_PHOTOS) return res.status(400).json({ error: `每筆紀錄最多 ${MAX_PHOTOS} 張照片` });
+  const srcPath = path.join(UPLOAD_DIR, path.basename(src));
+  if (!fs.existsSync(srcPath)) return res.status(404).json({ error: 'photo file missing' });
+
+  const filename = `e${entry.id}-${Date.now()}-copy.jpg`;
+  fs.copyFileSync(srcPath, path.join(UPLOAD_DIR, filename));
+  const newUrl = `/uploads/${filename}`;
+  const photos = [...current, newUrl];
+  db.prepare('UPDATE entries SET photos = ? WHERE id = ?').run(JSON.stringify(photos), entry.id);
+  // 空白紀錄因加入照片而有內容＝發布新貼文
+  if (!entryHasData(entryToJson(entry))) notifyFollowers(req.userId, `entry:${entry.id}`);
+  return res.json({ photos, photo: newUrl });
+});
 
 entriesRouter.patch('/:id', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);

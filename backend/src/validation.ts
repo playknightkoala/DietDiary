@@ -97,6 +97,9 @@ export const entryPatchSchema = z.object({
   eatTime: eatTimeSchema.optional(),
 });
 
+// 從歷史加入：複製自己既有的照片到目前這筆紀錄
+export const copyPhotoSchema = z.object({ photo: z.string().max(300) });
+
 // 留言對象：某筆飲食（entry:<id>）、某天的喝水（water:<date>）或運動（ex:<date>）
 export const COMMENT_TARGET_RE = /^(entry:\d{1,10}|water:\d{4}-\d{2}-\d{2}|ex:\d{4}-\d{2}-\d{2})$/;
 
