@@ -37,6 +37,23 @@ docker compose up -d --build
 - `backend`：資料持久化於 `./docker-data/db`（SQLite）與 `./docker-data/uploads`（照片）
 - 停止：`docker compose down`（資料保留在 docker-data/）
 
+## 版號與強制更新
+
+版號從 `1.0.0` 起算，同時記於 `frontend/package.json` 與 `backend/package.json`（兩邊必須一致）。
+
+- 前端建置時把版號嵌入 bundle；後端以 `GET /api/version` 回報目前部署的版號。
+- 前端每 60 秒（及開啟時）比對；當**伺服器版號嚴格大於**這份前端的版號，會蓋上不可關閉的「有新版本」視窗，使用者按「立即更新」重新整理即載入新版。
+- 只在「較新」時觸發（相等或較舊都不觸發），避免重整迴圈。
+
+改版步驟：
+
+```bash
+# 一次更新兩邊版號（避免不一致造成迴圈）
+node scripts/bump-version.mjs 1.0.1
+# 重新建置部署，前後端同步生效
+docker compose up -d --build
+```
+
 ## 帳號、角色與開通
 
 角色分四種：`member`（一般會員）、`citizen`（駒駒國民，權限與一般會員完全相同）、`dietitian`（營養師）、`admin`（管理者）。

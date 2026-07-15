@@ -88,6 +88,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // 目前部署的版號（供強制更新機制比對）
+  getVersion: () => request<{ version: string }>('/api/version'),
+
   getCaptcha: () => request<{ id: string; svg: string }>('/api/auth/captcha'),
   verifyCaptcha: (captchaId: string, captchaAnswer: string) =>
     request<{ ok: true }>('/api/auth/verify-captcha', {

@@ -9,12 +9,15 @@ import { adminRouter } from './routes/admin.js';
 import { proRouter } from './routes/pro.js';
 import { commentsRouter } from './routes/comments.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { APP_VERSION } from './version.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+// 目前部署的版號；前端輪詢比對，較舊者會被要求更新
+app.get('/api/version', (_req, res) => res.json({ version: APP_VERSION }));
 app.use('/api/auth', authRouter);
 app.use('/api/days', daysRouter);
 app.use('/api/entries', entriesRouter);

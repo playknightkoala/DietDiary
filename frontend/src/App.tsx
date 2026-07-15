@@ -6,6 +6,7 @@ import { AdminScreen } from './screens/AdminScreen';
 import { DietitianScreen } from './screens/DietitianScreen';
 import { GuideModal } from './components/modals/GuideModal';
 import { NicknameModal } from './components/modals/NicknameModal';
+import { UpdateRequiredModal } from './components/modals/UpdateRequiredModal';
 
 export default function App() {
   const token = useStore((s) => s.token);
@@ -15,6 +16,8 @@ export default function App() {
   const nickname = useStore((s) => s.nickname);
   const loadAll = useStore((s) => s.loadAll);
   const loadNotifications = useStore((s) => s.loadNotifications);
+  const updateRequired = useStore((s) => s.updateRequired);
+  const checkVersion = useStore((s) => s.checkVersion);
 
   useEffect(() => {
     if (token) void loadAll();
@@ -29,6 +32,15 @@ export default function App() {
     return () => clearInterval(timer);
   }, [token, loadNotifications]);
 
+  // 版號檢查（不分登入與否）：改版後強制更新
+  useEffect(() => {
+    void checkVersion();
+    const timer = setInterval(() => void checkVersion(), 60_000);
+    return () => clearInterval(timer);
+  }, [checkVersion]);
+
+  // 需要強制更新：蓋在登入前後任何畫面之上
+  if (updateRequired) return <UpdateRequiredModal />;
   if (!token) return <LoginScreen />;
   const screen =
     view === 'admin' && role === 'admin' ? <AdminScreen />

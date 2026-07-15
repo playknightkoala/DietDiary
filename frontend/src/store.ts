@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
+import { isOutdated } from './lib/version';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
 import type { BodyKey, DayData, Goal, NotificationItem, Role, TrendPoint } from './types';
 
@@ -37,6 +38,11 @@ interface AppState {
   trendPoints: TrendPoint[];
   notifications: NotificationItem[];
   unreadCount: number;
+
+  // 改版後強制更新：伺服器版號較新時為 true，App 會蓋上不可關閉的更新視窗
+  updateRequired: boolean;
+  latestVersion: string | null;
+  checkVersion: () => Promise<void>;
 
   loginSuccess: (token: string, username: string, role: Role, persist: boolean) => void;
   logout: () => void;
@@ -98,6 +104,16 @@ export const useStore = create<AppState>((set, get) => ({
   trendPoints: [],
   notifications: [],
   unreadCount: 0,
+
+  updateRequired: false,
+  latestVersion: null,
+  checkVersion: async () => {
+    if (get().updateRequired) return; // 已判定需更新就不再打擾
+    try {
+      const { version } = await api.getVersion();
+      if (isOutdated(version)) set({ updateRequired: true, latestVersion: version });
+    } catch { /* 靜默失敗，下次輪詢再試 */ }
+  },
 
   loginSuccess: (token, username, role, persist) => {
     saveAuth(token, username, role, persist);
