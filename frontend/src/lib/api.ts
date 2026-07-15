@@ -140,7 +140,7 @@ export const api = {
     return request<{ photos: string[] }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
   // 從歷史加入：最近記過份數的照片（新→舊）
-  entryHistory: (excludeId?: number, limit = 15) =>
+  entryHistory: (excludeId?: number, limit = 30) =>
     request<HistoryItem[]>(`/api/entries/history?limit=${limit}${excludeId ? `&exclude=${excludeId}` : ''}`),
   // 把一張歷史照片複製到目前這筆紀錄，回傳更新後的照片清單與新照片 URL
   copyPhoto: (id: number, photo: string) =>

@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { compressImage } from '../../lib/photo';
-import { FOOD_KEYS, MEALS, clampPortion, emptyFood, entryHasData, fmtCommentTime, kcalOfFood, sumFoods } from '../../lib/domain';
+import { FOOD_KEYS, MEALS, clampPortion, emptyFood, entryHasData, fmtCommentTime, foodSummary, kcalOfFood, sumFoods } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { Food, FoodKey, HistoryItem } from '../../types';
 import { FoodFields } from '../FoodFields';
+import { Lightbox } from '../Lightbox';
 import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { PickerInput } from '../PickerInput';
 import { HistoryPickerSheet } from './HistoryPickerSheet';
@@ -67,6 +68,8 @@ export function LogFoodModal() {
   const isNew = !!entry && !entryHasData(entry);
   const [step, setStep] = useState<'photos' | 'detail'>(isNew && (entry?.photos.length ?? 0) === 0 ? 'photos' : 'detail');
   const [showHistory, setShowHistory] = useState(false);
+  // 點照片放大檢視（燈箱）；存放要開啟的照片索引
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const closing = useRef(false);
   // 開啟視窗當下就有的照片；用來區分「這次視窗內新增的照片」（取消時要還原）
   const initialPhotos = useRef<string[]>(entry?.photos ?? []);
@@ -349,7 +352,11 @@ export function LogFoodModal() {
                 </button>
               </div>
               <div style={{ position: 'relative', flex: 'none' }}>
-                <div style={{ height: 190, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${currentUrl}')` }} />
+                <button
+                  onClick={() => setLightboxIndex(Math.min(page, photos.length - 1))}
+                  title="點擊放大檢視"
+                  style={{ display: 'block', width: '100%', height: 190, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${currentUrl}')`, cursor: 'zoom-in', padding: 0 }}
+                />
                 <button
                   onClick={() => void removePhoto(currentUrl)}
                   title="移除這張照片"
@@ -430,6 +437,23 @@ export function LogFoodModal() {
         )}
       </div>
     </ModalShell>
+    {lightboxIndex !== null && (
+      <Lightbox
+        photos={photos}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        caption={(url) => {
+          const f = photoFood(url);
+          const summary = foodSummary(f);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#B8CDBB' }}>這張照片的份數・{kcalOfFood(f)} kcal</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{summary || '尚未記錄這張照片的份數'}</div>
+            </div>
+          );
+        }}
+      />
+    )}
     {historySheet}
     </>
   );

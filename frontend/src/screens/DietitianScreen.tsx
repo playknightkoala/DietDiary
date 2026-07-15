@@ -573,7 +573,11 @@ export function DietitianScreen() {
                     {kcalOfFood(strToFood(pfStr[foodEditing.photos[foodPage]]))} kcal
                   </span>
                 </div>
-                <div style={{ flex: 'none', height: 170, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${foodEditing.photos[foodPage]}')` }} />
+                <button
+                  onClick={() => setLightbox({ entryId: foodEditing.id, photos: foodEditing.photos, index: foodPage })}
+                  title="點擊放大檢視"
+                  style={{ display: 'block', width: '100%', flex: 'none', height: 170, borderRadius: 14, border: '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundImage: `url('${foodEditing.photos[foodPage]}')`, cursor: 'zoom-in', padding: 0 }}
+                />
                 <div style={{ flex: 'none', display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                   {foodEditing.photos.map((url, i) => (
                     <button

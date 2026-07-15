@@ -28,7 +28,7 @@ function getOwnedEntry(userId: number, id: string | number) {
 
 // 最近記過份數的照片（新→舊），供「從歷史加入」；exclude 排除目前編輯中的紀錄
 entriesRouter.get('/history', (req, res) => {
-  const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 15));
+  const limit = Math.min(30, Math.max(1, Number(req.query.limit) || 30));
   const exclude = req.query.exclude ? Number(req.query.exclude) : undefined;
   return res.json(getEntryHistory(req.userId, limit, exclude));
 });
