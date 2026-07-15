@@ -18,6 +18,7 @@ export default function App() {
   const loadNotifications = useStore((s) => s.loadNotifications);
   const updateRequired = useStore((s) => s.updateRequired);
   const checkVersion = useStore((s) => s.checkVersion);
+  const modal = useStore((s) => s.modal);
 
   useEffect(() => {
     if (token) void loadAll();
@@ -39,8 +40,10 @@ export default function App() {
     return () => clearInterval(timer);
   }, [checkVersion]);
 
-  // 需要強制更新：蓋在登入前後任何畫面之上
-  if (updateRequired) return <UpdateRequiredModal />;
+  // 需要強制更新：蓋在登入前後任何畫面之上。
+  // 但若使用者正開著編輯視窗（記餐／喝水／運動／身體／目標／會員中心等），先不打斷——
+  // 等他關閉視窗（存好資料）後再強制，避免尚未儲存的輸入遺失。
+  if (updateRequired && modal === null) return <UpdateRequiredModal />;
   if (!token) return <LoginScreen />;
   const screen =
     view === 'admin' && role === 'admin' ? <AdminScreen />
