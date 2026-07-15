@@ -1,6 +1,6 @@
 import { useStore } from '../store';
-import { APP_VERSION } from '../lib/version';
 import { TopBar } from '../components/TopBar';
+import { VersionFooter } from '../components/VersionFooter';
 import { WeekStrip } from '../components/WeekStrip';
 import { KcalWaterRow, FoodGroupsCard } from '../components/OverviewCards';
 import { BodyCard } from '../components/BodyCard';
@@ -37,10 +37,8 @@ export function MainScreen() {
       {/* 動態牆：飲食（新→舊）＋喝水＋運動，可展開留言 */}
       <DayFeed />
 
-      {/* 版號 */}
-      <div style={{ textAlign: 'center', padding: '24px 0 8px', fontFamily: 'Outfit', fontSize: 11.5, color: '#B8BDB2' }}>
-        均衡日記 v{APP_VERSION}
-      </div>
+      {/* 版號 ＋ 版本紀錄 */}
+      <VersionFooter style={{ padding: '24px 0 8px' }} />
 
       {/* FAB */}
       <button

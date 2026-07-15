@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { api, getRememberedAccount, setRememberedAccount } from '../lib/api';
-import { APP_VERSION } from '../lib/version';
+import { VersionFooter } from '../components/VersionFooter';
 import { useStore } from '../store';
 
 const inputStyle: CSSProperties = {
@@ -172,9 +172,7 @@ export function LoginScreen() {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(160deg, #EDF2E6 0%, #F4F1EA 55%, #E8EEE0 100%)', padding: 24 }}>
-      <div style={{ position: 'absolute', bottom: 14, left: 0, right: 0, textAlign: 'center', fontFamily: 'Outfit', fontSize: 11.5, color: '#A7AE9F' }}>
-        均衡日記 v{APP_VERSION}
-      </div>
+      <VersionFooter style={{ position: 'absolute', bottom: 14, left: 0, right: 0 }} />
       <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 28, animation: 'fadeUp .5s ease both' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 72, height: 72, borderRadius: 22, background: '#4A7C59', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(74,124,89,.3)' }}>
