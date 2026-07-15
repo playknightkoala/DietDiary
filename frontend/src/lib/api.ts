@@ -102,6 +102,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, captchaId }),
     }),
+  verifyCode: (email: string, code: string) =>
+    request<{ ok: true }>('/api/auth/verify-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
   register: (username: string, password: string, confirmPassword: string, code: string) =>
     request<{ pending: true; message: string }>('/api/auth/register', {
       method: 'POST',

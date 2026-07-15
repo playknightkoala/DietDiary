@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
 import { db, promoteAdminIfConfigured } from '../db.js';
 import { JWT_SECRET, requireAuth, type Role } from '../middleware/auth.js';
-import { authSchema, changePasswordSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema } from '../validation.js';
+import { authSchema, changePasswordSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema, verifyCodeSchema } from '../validation.js';
 import { mailerConfigured, sendVerifyCode } from '../mailer.js';
 
 export const authRouter = Router();
@@ -98,6 +98,29 @@ authRouter.post('/send-code', async (req, res) => {
     `INSERT INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, 0)
      ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, sent_at = excluded.sent_at, attempts = 0`
   ).run(email, code, now + CODE_TTL_MS, now);
+  return res.json({ ok: true });
+});
+
+// 確認 Email 認證碼是否正確（不消耗、不建立帳號）；供註冊前先驗證，正確後才開放「完成註冊」
+authRouter.post('/verify-code', (req, res) => {
+  const parsed = verifyCodeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入正確的 Email 與 6 位數認證碼' });
+  const { email, code } = parsed.data;
+
+  const row = db
+    .prepare('SELECT code, expires_at, attempts FROM email_codes WHERE email = ?')
+    .get(email) as { code: string; expires_at: number; attempts: number } | undefined;
+  if (!row || Date.now() > row.expires_at) {
+    return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
+  }
+  if (row.attempts >= CODE_MAX_ATTEMPTS) {
+    db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
+    return res.status(400).json({ error: '認證碼錯誤次數過多，請重新取得認證碼' });
+  }
+  if (row.code !== code) {
+    db.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE email = ?').run(email);
+    return res.status(400).json({ error: '認證碼錯誤' });
+  }
   return res.json({ ok: true });
 });
 

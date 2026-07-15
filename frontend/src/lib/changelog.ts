@@ -8,6 +8,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.0.3',
+    date: '2026-07-15',
+    notes: [
+      '瀏覽器分頁新增網站圖示（favicon）',
+      '註冊新增「確認 Email 認證碼」步驟，確認正確後才能完成註冊',
+      '登入頁 logo 改為與網站圖示一致的樣式',
+      '管理者後台的會員列表新增顯示每位會員的「最後使用時間」',
+    ],
+  },
+  {
     version: '1.0.2',
     date: '2026-07-15',
     notes: [

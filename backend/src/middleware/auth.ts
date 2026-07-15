@@ -14,6 +14,21 @@ declare module 'express-serve-static-core' {
   }
 }
 
+// 記錄會員最後使用時間；為避免每個請求都寫入 DB，同一人 60 秒內只寫一次（記憶體節流）
+const lastSeenThrottle = new Map<number, number>();
+const LAST_SEEN_THROTTLE_MS = 60 * 1000;
+function touchLastSeen(uid: number) {
+  const now = Date.now();
+  const prev = lastSeenThrottle.get(uid) ?? 0;
+  if (now - prev < LAST_SEEN_THROTTLE_MS) return;
+  lastSeenThrottle.set(uid, now);
+  try {
+    db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now, uid);
+  } catch {
+    /* 不影響請求流程 */
+  }
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -21,6 +36,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { uid: number };
     req.userId = payload.uid;
+    touchLastSeen(payload.uid);
     next();
   } catch {
     return res.status(401).json({ error: 'unauthorized' });

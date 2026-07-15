@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member','citizen','dietitian','admin')),
   nickname TEXT NOT NULL DEFAULT '',
   approval_token TEXT,
+  last_seen_at INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -169,6 +170,10 @@ if (!usersSql.includes('citizen')) {
 const userCols2 = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
 if (!userCols2.includes('nickname')) {
   db.exec(`ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''`);
+}
+// 最後使用時間（epoch 毫秒；NULL＝從未登入使用過），供管理者後台顯示
+if (!userCols2.includes('last_seen_at')) {
+  db.exec(`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`);
 }
 
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);

@@ -12,17 +12,25 @@ interface AdminUserRow {
   id: number;
   username: string;
   status: 'pending' | 'active';
-  role: 'member' | 'dietitian' | 'admin';
+  role: 'member' | 'citizen' | 'dietitian' | 'admin';
+  last_seen_at: number | null;
   created_at: string;
 }
 
 function userToJson(u: AdminUserRow) {
-  return { id: u.id, username: u.username, status: u.status, role: u.role, createdAt: u.created_at };
+  return {
+    id: u.id,
+    username: u.username,
+    status: u.status,
+    role: u.role,
+    lastSeenAt: u.last_seen_at ?? null,
+    createdAt: u.created_at,
+  };
 }
 
 adminRouter.get('/users', (_req, res) => {
   const rows = db
-    .prepare(`SELECT id, username, status, role, created_at FROM users ORDER BY status = 'pending' DESC, created_at DESC`)
+    .prepare(`SELECT id, username, status, role, last_seen_at, created_at FROM users ORDER BY status = 'pending' DESC, created_at DESC`)
     .all() as AdminUserRow[];
   return res.json(rows.map(userToJson));
 });
@@ -44,7 +52,7 @@ adminRouter.post('/users/:id/approve', async (req, res) => {
     }
   }
   const row = db
-    .prepare('SELECT id, username, status, role, created_at FROM users WHERE id = ?')
+    .prepare('SELECT id, username, status, role, last_seen_at, created_at FROM users WHERE id = ?')
     .get(user.id) as AdminUserRow;
   return res.json(userToJson(row));
 });
@@ -63,7 +71,7 @@ adminRouter.patch('/users/:id', (req, res) => {
   if (role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
   if (status) db.prepare('UPDATE users SET status = ? WHERE id = ?').run(status, user.id);
   const row = db
-    .prepare('SELECT id, username, status, role, created_at FROM users WHERE id = ?')
+    .prepare('SELECT id, username, status, role, last_seen_at, created_at FROM users WHERE id = ?')
     .get(user.id) as AdminUserRow;
   return res.json(userToJson(row));
 });

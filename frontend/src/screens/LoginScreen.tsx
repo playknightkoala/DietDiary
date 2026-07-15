@@ -32,6 +32,8 @@ export function LoginScreen() {
   const [captchaVerified, setCaptchaVerified] = useState(false);
   const [verifyingCaptcha, setVerifyingCaptcha] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
@@ -78,6 +80,7 @@ export function LoginScreen() {
     setCaptchaAnswer('');
     setCaptchaVerified(false);
     setCodeSent(false);
+    setCodeVerified(false);
   };
 
   const verifyCaptcha = async () => {
@@ -109,6 +112,8 @@ export function LoginScreen() {
     try {
       await api.sendCode(username.trim(), captchaId);
       setCodeSent(true);
+      setCode('');
+      setCodeVerified(false);
       setNotice('認證碼已寄出，請至信箱查收（10 分鐘內有效）');
       startCooldown(60);
     } catch (e) {
@@ -117,6 +122,26 @@ export function LoginScreen() {
       if (msg.includes('圖形驗證碼')) void loadCaptcha(); // 驗證碼失效需重新驗證
     } finally {
       setSendingCode(false);
+    }
+  };
+
+  const verifyCode = async () => {
+    if (verifyingCode || codeVerified || !codeSent) return;
+    setError('');
+    setNotice('');
+    if (!/^\d{6}$/.test(code.trim())) {
+      setError('請輸入 6 位數認證碼');
+      return;
+    }
+    setVerifyingCode(true);
+    try {
+      await api.verifyCode(username.trim(), code.trim());
+      setCodeVerified(true);
+      setNotice('認證碼確認成功，請按下方「註冊」完成');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '認證碼確認失敗，請再試一次');
+    } finally {
+      setVerifyingCode(false);
     }
   };
 
@@ -144,6 +169,10 @@ export function LoginScreen() {
       }
       if (!/^\d{6}$/.test(code.trim())) {
         setError('請輸入 6 位數認證碼');
+        return;
+      }
+      if (!codeVerified) {
+        setError('請先按「確認」驗證 Email 認證碼');
         return;
       }
     }
@@ -176,7 +205,7 @@ export function LoginScreen() {
       <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 28, animation: 'fadeUp .5s ease both' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 72, height: 72, borderRadius: 22, background: '#4A7C59', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(74,124,89,.3)' }}>
-            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21c4.5 0 8-3.5 8-9V5l-8-2-8 2v7c0 5.5 3.5 9 8 9z" /><path d="M9 11.5c1-1.5 5-1.5 6 0" /><path d="M12 7v4" /></svg>
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#F4F1EA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21c4.5 0 8-3.5 8-9V5l-8-2-8 2v7c0 5.5 3.5 9 8 9z" /></svg>
           </div>
           <div style={{ fontFamily: 'Outfit', fontSize: 30, fontWeight: 800, letterSpacing: '-.5px', color: '#2D3B2D' }}>均衡日記</div>
           <div style={{ fontSize: 14, color: '#6B7565' }}>六大類飲食・運動・身體數據，一天一頁</div>
@@ -288,32 +317,67 @@ export function LoginScreen() {
                     : '請先填寫 Email 與兩次相同的密碼（至少 6 碼）'}
                 </div>
               </div>
-              {(captchaVerified || codeSent) && (
+              {captchaVerified && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Email 認證碼</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    placeholder="6 位數認證碼"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void sendCode()}
-                    disabled={!prereqsOk || !captchaVerified || sendingCode || cooldown > 0}
-                    style={{
-                      flex: 'none', height: 48, padding: '0 14px', border: '1.5px solid #4A7C59', borderRadius: 12,
-                      background: '#fff', color: '#4A7C59', fontSize: 13.5, fontWeight: 700,
-                      cursor: !prereqsOk || !captchaVerified || sendingCode || cooldown > 0 ? 'default' : 'pointer',
-                      opacity: !prereqsOk || !captchaVerified || sendingCode || cooldown > 0 ? 0.55 : 1,
-                    }}
-                  >
-                    {cooldown > 0 ? `重新寄送（${cooldown}s）` : sendingCode ? '寄送中…' : '寄送認證碼'}
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => void sendCode()}
+                  disabled={!prereqsOk || !captchaVerified || sendingCode || cooldown > 0}
+                  style={{
+                    height: 48, padding: '0 14px', border: '1.5px solid #4A7C59', borderRadius: 12,
+                    background: '#fff', color: '#4A7C59', fontSize: 13.5, fontWeight: 700,
+                    cursor: !prereqsOk || !captchaVerified || sendingCode || cooldown > 0 ? 'default' : 'pointer',
+                    opacity: !prereqsOk || !captchaVerified || sendingCode || cooldown > 0 ? 0.55 : 1,
+                  }}
+                >
+                  {cooldown > 0
+                    ? `重新寄送（${cooldown}s）`
+                    : sendingCode
+                      ? '寄送中…'
+                      : codeSent
+                        ? '重新寄送認證碼'
+                        : '寄送認證碼'}
+                </button>
+                {codeSent && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6 位數認證碼"
+                      value={code}
+                      onChange={(e) => {
+                        setCode(e.target.value.replace(/\D/g, ''));
+                        setCodeVerified(false);
+                      }}
+                      disabled={codeVerified}
+                      style={{ ...inputStyle, flex: 1, minWidth: 0, opacity: codeVerified ? 0.55 : 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void verifyCode()}
+                      disabled={codeVerified || verifyingCode || code.trim().length !== 6}
+                      style={{
+                        flex: 'none', height: 48, padding: '0 14px', borderRadius: 12,
+                        border: '1.5px solid #4A7C59',
+                        background: codeVerified ? '#4A7C59' : '#fff',
+                        color: codeVerified ? '#fff' : '#4A7C59',
+                        fontSize: 13.5, fontWeight: 700,
+                        cursor: codeVerified || verifyingCode || code.trim().length !== 6 ? 'default' : 'pointer',
+                        opacity: !codeVerified && (verifyingCode || code.trim().length !== 6) ? 0.55 : 1,
+                      }}
+                    >
+                      {codeVerified ? '✓ 已驗證' : verifyingCode ? '確認中…' : '確認'}
+                    </button>
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: '#6B7565' }}>
+                  {codeVerified
+                    ? 'Email 認證碼已確認，可按下方「註冊」完成'
+                    : codeSent
+                      ? '請輸入信箱收到的 6 位數認證碼並按「確認」'
+                      : '請按「寄送認證碼」，認證碼將寄到你的 Email'}
                 </div>
               </div>
               )}
@@ -322,14 +386,19 @@ export function LoginScreen() {
           {error && <div style={{ fontSize: 13, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
           {notice && <div style={{ fontSize: 13, color: '#4A7C59', fontWeight: 700 }}>{notice}</div>}
           {mode === 'register' && <div style={{ fontSize: 12.5, color: '#6B7565' }}>密碼至少 6 碼。註冊後需等待管理員開通帳號，開通後才能登入。</div>}
-          <button
-            type="submit"
-            className="hv-green"
-            disabled={busy}
-            style={{ height: 50, border: 'none', borderRadius: 14, background: '#4A7C59', color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginTop: 4, boxShadow: '0 6px 16px rgba(74,124,89,.28)', opacity: busy ? 0.7 : 1 }}
-          >
-            {mode === 'login' ? '登入' : '註冊'}
-          </button>
+          {(() => {
+            const disabled = busy || (mode === 'register' && !codeVerified);
+            return (
+              <button
+                type="submit"
+                className="hv-green"
+                disabled={disabled}
+                style={{ height: 50, border: 'none', borderRadius: 14, background: '#4A7C59', color: '#fff', fontSize: 16, fontWeight: 700, cursor: disabled ? 'default' : 'pointer', marginTop: 4, boxShadow: '0 6px 16px rgba(74,124,89,.28)', opacity: disabled ? 0.55 : 1 }}
+              >
+                {mode === 'login' ? '登入' : '註冊'}
+              </button>
+            );
+          })()}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
             <a href="#" onClick={(e) => { e.preventDefault(); setNotice(''); setError('請聯絡管理員重設密碼'); }} style={{ textDecoration: 'none' }}>忘記密碼？</a>
             <a

@@ -5,6 +5,14 @@ import type { AdminUser, Role } from '../types';
 
 const ROLE_NAMES: Record<Role, string> = { member: '一般會員', citizen: '駒駒國民', dietitian: '營養師', admin: '管理者' };
 
+// 最後使用時間：顯示為 YYYY-MM-DD HH:MM（本地時區）；null＝從未使用
+function formatLastSeen(ts: number | null): string {
+  if (!ts) return '尚未使用';
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const backBtnStyle: CSSProperties = {
   height: 38, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff',
   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, color: '#4A5A4A',
@@ -96,7 +104,11 @@ export function AdminScreen() {
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#4A7C59', background: '#EDF2E6', borderRadius: 99, padding: '2px 8px' }}>已開通</span>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: '#8A9284', marginTop: 2 }}>註冊於 {u.createdAt.slice(0, 10)}</div>
+                <div style={{ fontSize: 12, color: '#8A9284', marginTop: 2 }}>
+                  註冊於 {u.createdAt.slice(0, 10)}
+                  <span style={{ margin: '0 6px', color: '#CBCFC3' }}>·</span>
+                  最後使用 {formatLastSeen(u.lastSeenAt)}
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <select

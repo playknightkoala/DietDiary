@@ -90,6 +90,7 @@ export interface AdminUser {
   username: string;
   status: 'pending' | 'active';
   role: Role;
+  lastSeenAt: number | null;
   createdAt: string;
 }
 

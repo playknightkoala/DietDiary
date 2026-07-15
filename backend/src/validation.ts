@@ -39,6 +39,11 @@ export const sendCodeSchema = z.object({
   captchaId: z.string().uuid(),
 });
 
+export const verifyCodeSchema = z.object({
+  email: emailSchema,
+  code: z.string().trim().regex(/^\d{6}$/),
+});
+
 export const registerSchema = z
   .object({
     username: emailSchema,
