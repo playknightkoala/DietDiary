@@ -12,11 +12,13 @@ import {
   type Food,
 } from '../helpers.js';
 import {
+  COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
   COMMENT_USE_PHOTO,
+  OCR_FALLBACK_MODEL,
   OCR_MODEL,
   aiConfigured,
-  chat,
+  chatWithFallback,
   extractJson,
   imagePart,
   photoDataUri,
@@ -154,8 +156,8 @@ aiRouter.post('/ocr', async (req, res) => {
     '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0}';
 
   try {
-    const text = await chat({
-      model: OCR_MODEL,
+    // 主模型（31b）壞掉時自動退回備援（e4b），並回傳實際使用的模型讓前端顯示
+    const { text, model } = await chatWithFallback([OCR_MODEL, OCR_FALLBACK_MODEL], {
       json: true,
       temperature: 0.2,
       maxTokens: 300,
@@ -170,7 +172,7 @@ aiRouter.post('/ocr', async (req, res) => {
     food.oil = clampPortion(raw.oil);
     food.fruit = clampPortion(raw.fruit);
     food.milkLow = clampPortion(raw.milk);
-    return res.json({ food });
+    return res.json({ food, model });
   } catch (e) {
     console.error('ai ocr failed:', e);
     return res.status(502).json({ error: 'AI 判斷失敗，請稍後再試' });
@@ -222,9 +224,10 @@ aiRouter.post('/comment', async (req, res) => {
     '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
   try {
-    // 含照片時改用視覺模型（此 gateway 上文字模型 gemma-4-12b 不吃圖）；純文字則用文字模型
-    const text = await chat({
-      model: images.length ? OCR_MODEL : COMMENT_MODEL,
+    // 含照片時走視覺模型鏈（31b → e4b）；純文字走文字模型鏈（12b → e4b）。
+    // 主模型壞掉自動退回備援，實際使用的模型會存進留言讓使用者看到。
+    const models = images.length ? [OCR_MODEL, OCR_FALLBACK_MODEL] : [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
+    const { text, model } = await chatWithFallback(models, {
       temperature: 0.6,
       maxTokens: 500,
       messages: [
@@ -233,7 +236,7 @@ aiRouter.post('/comment', async (req, res) => {
       ],
     });
     const body = text.replace(/\s+$/,'').slice(0, 1000);
-    createComment(req.userId, target, req.userId, body, true);
+    createComment(req.userId, target, req.userId, body, true, model);
     return res.status(201).json(listComments(req.userId, target, req.userId));
   } catch (e) {
     console.error('ai comment failed:', e);

@@ -185,6 +185,10 @@ const commentCols = (db.pragma('table_info(entry_comments)') as { name: string }
 if (!commentCols.includes('is_ai')) {
   db.exec(`ALTER TABLE entry_comments ADD COLUMN is_ai INTEGER NOT NULL DEFAULT 0`);
 }
+// AI 評語記錄實際產生的模型（主模型壞掉退回備援時，讓使用者知道結果來自哪個模型）
+if (!commentCols.includes('ai_model')) {
+  db.exec(`ALTER TABLE entry_comments ADD COLUMN ai_model TEXT NOT NULL DEFAULT ''`);
+}
 
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {

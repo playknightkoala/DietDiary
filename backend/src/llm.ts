@@ -15,10 +15,12 @@ const LLM_TOKEN = (process.env.LLM_TOKEN || '').trim();
 const BASE_URL = (process.env.LLM_BASE_URL || 'https://eigw.elandai.cloud').replace(/\/$/, '');
 const CHAT_URL = process.env.LLM_CHAT_URL || `${BASE_URL}/v1/chat/completions`;
 
-// 看圖任務（OCR、含照片的評語）用的視覺模型
+// 看圖任務（OCR、含照片的評語）用的視覺模型；主模型（31b）壞掉時自動退回備援（e4b）
 export const OCR_MODEL = process.env.LLM_OCR_MODEL || 'gemma-4-31b';
-// 純文字評語用的模型
+export const OCR_FALLBACK_MODEL = process.env.LLM_OCR_FALLBACK_MODEL || 'gemma-4-e4b';
+// 純文字評語用的模型；主模型（12b）壞掉時自動退回備援（e4b）
 export const COMMENT_MODEL = process.env.LLM_COMMENT_MODEL || 'gemma-4-12b';
+export const COMMENT_FALLBACK_MODEL = process.env.LLM_COMMENT_FALLBACK_MODEL || 'gemma-4-e4b';
 
 // AI 評語是否附上照片（送進視覺模型）。31b 修復後預設「開啟」：
 // 評語會參考貼文的全部照片；設 LLM_COMMENT_USE_PHOTO=false 可退回純文字模式（省視覺模型負載）。
@@ -97,6 +99,26 @@ export async function chat(opts: ChatOptions): Promise<string> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// 依序嘗試多個模型（主模型 → 備援模型），回傳成功的回覆與「實際使用的模型」。
+// 模型偶爾會整組壞掉（如 31b 曾看圖 500），任何錯誤（HTTP 錯誤／逾時／空回覆）都換下一個；全部失敗才丟錯。
+export async function chatWithFallback(
+  models: string[],
+  opts: Omit<ChatOptions, 'model'>
+): Promise<{ text: string; model: string }> {
+  const chain = [...new Set(models.filter(Boolean))];
+  let lastError: unknown = new Error('沒有可用的模型');
+  for (const model of chain) {
+    try {
+      const text = await chat({ ...opts, model });
+      return { text, model };
+    } catch (e) {
+      lastError = e;
+      console.error(`LLM model ${model} failed, trying next:`, e instanceof Error ? e.message : e);
+    }
+  }
+  throw lastError;
 }
 
 // 從模型回覆中抽出第一個 JSON 物件（容忍 ```json 圍欄或前後多餘文字）

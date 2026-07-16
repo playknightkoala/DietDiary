@@ -176,6 +176,9 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
                   {badge && (
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: badge.color, background: badge.bg, borderRadius: 99, padding: '1px 7px' }}>{badge.name}</span>
                   )}
+                  {c.ai && c.aiModel && (
+                    <span title="產生這則評語的 AI 模型" style={{ fontSize: 10.5, color: '#8A9284', fontFamily: 'Outfit' }}>{c.aiModel}</span>
+                  )}
                   <span style={{ fontSize: 11, color: '#8A9284' }}>{fmtCommentTime(c.createdAt)}</span>
                   <span style={{ flex: 1 }} />
                   {/* 本人留言：可編輯／刪除；自己貼文下的 AI 評語：只可刪除（aiComment 存在＝擁有者的 AI 檢視） */}

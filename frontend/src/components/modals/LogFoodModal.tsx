@@ -49,6 +49,7 @@ export function LogFoodModal() {
   // AI 判斷這張照片的營養素份數
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [aiModel, setAiModel] = useState(''); // 最近一次 AI 判斷實際使用的模型
   // 用餐時間：預設為目前檢視的日期＋紀錄上的時間；改日期會把這筆移到該天
   const [eatDate, setEatDate] = useState(selected);
   const [eatTime, setEatTime] = useState(entry?.eatTime ?? '');
@@ -99,9 +100,11 @@ export function LogFoodModal() {
     if (!currentUrl || aiBusy) return;
     setAiBusy(true);
     setAiError('');
+    setAiModel('');
     try {
-      const { food } = await api.aiOcr(entry.id, currentUrl);
+      const { food, model } = await api.aiOcr(entry.id, currentUrl);
       setPhotoFoodsStr((s) => ({ ...s, [currentUrl]: foodToStr(food) }));
+      setAiModel(model);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'AI 判斷失敗，請再試一次');
     } finally {
@@ -407,7 +410,8 @@ export function LogFoodModal() {
                     {aiBusy ? 'AI 判斷中…' : 'AI 判斷這張照片的營養素'}
                   </button>
                   <div style={{ fontSize: 11.5, color: aiError ? '#C0564A' : '#8A9284', lineHeight: 1.5 }}>
-                    {aiError || 'AI 會估算份數並填入下方（肉類預設中脂、乳品預設低脂），可再自行微調。'}
+                    {aiError
+                      || (aiModel ? `已由模型 ${aiModel} 估算填入，可再自行微調。` : 'AI 會估算份數並填入下方（肉類預設中脂、乳品預設低脂），可再自行微調。')}
                   </div>
                 </div>
               )}

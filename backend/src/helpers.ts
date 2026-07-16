@@ -184,6 +184,7 @@ export interface CommentJson {
   role: string;
   mine: boolean;
   ai: boolean; // true＝AI 產生的評語（顯示 AI 標籤、不可編輯）
+  aiModel: string; // AI 評語實際使用的模型（非 AI 留言為空字串）
 }
 
 // AI 評語在留言串內的顯示名稱
@@ -201,14 +202,14 @@ export function listComments(ownerId: number, target: string, viewerId: number):
   // 作者顯示名稱：檢視者（營養師）替作者取的私人暱稱＞作者自訂暱稱＞帳號
   const rows = db
     .prepare(
-      `SELECT c.id, c.body, c.created_at, c.author_id, c.is_ai, u.role,
+      `SELECT c.id, c.body, c.created_at, c.author_id, c.is_ai, c.ai_model, u.role,
               COALESCE(NULLIF(a.alias, ''), NULLIF(u.nickname, ''), u.username) AS display_name
        FROM entry_comments c
        JOIN users u ON u.id = c.author_id
        LEFT JOIN member_aliases a ON a.member_id = c.author_id AND a.dietitian_id = ?
        WHERE c.user_id = ? AND c.target = ? ORDER BY c.id`
     )
-    .all(viewerId, ownerId, target) as { id: number; body: string; created_at: number; author_id: number; is_ai: number; display_name: string; role: string }[];
+    .all(viewerId, ownerId, target) as { id: number; body: string; created_at: number; author_id: number; is_ai: number; ai_model: string; display_name: string; role: string }[];
   return rows.map((r) => ({
     id: r.id,
     body: r.body,
@@ -218,18 +219,14 @@ export function listComments(ownerId: number, target: string, viewerId: number):
     // AI 評語不屬於任何人（不顯示編輯／刪除選單）
     mine: !r.is_ai && r.author_id === viewerId,
     ai: !!r.is_ai,
+    aiModel: r.is_ai ? r.ai_model || '' : '',
   }));
 }
 
-export function createComment(ownerId: number, target: string, authorId: number, body: string, isAi = false) {
-  db.prepare('INSERT INTO entry_comments (user_id, target, author_id, body, created_at, is_ai) VALUES (?, ?, ?, ?, ?, ?)').run(
-    ownerId,
-    target,
-    authorId,
-    body,
-    Date.now(),
-    isAi ? 1 : 0
-  );
+export function createComment(ownerId: number, target: string, authorId: number, body: string, isAi = false, aiModel = '') {
+  db.prepare(
+    'INSERT INTO entry_comments (user_id, target, author_id, body, created_at, is_ai, ai_model) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(ownerId, target, authorId, body, Date.now(), isAi ? 1 : 0, aiModel);
 }
 
 // ---- 通知（營養師留言／照片評分／調整份數時通知會員）----

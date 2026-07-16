@@ -49,6 +49,8 @@ export interface EntryComment {
   mine: boolean;
   // true＝AI 產生的評語（顯示 AI 標籤；本人無法編輯，但可刪除自己貼文下的 AI 評語）
   ai: boolean;
+  // AI 評語實際使用的模型（非 AI 留言為空字串）
+  aiModel: string;
 }
 
 export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';

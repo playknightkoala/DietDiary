@@ -17,8 +17,11 @@ services:
       - LLM_TOKEN=${LLM_TOKEN:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://eigw.elandai.cloud}
       # OCR／看圖用視覺模型：gemma-4-31b（已修復、單次可吃多張圖）；純文字評語用 gemma-4-12b
+      # 主模型壞掉時自動退回備援模型（預設 gemma-4-e4b），留言／結果會標示實際使用的模型
       - LLM_OCR_MODEL=${LLM_OCR_MODEL:-gemma-4-31b}
+      - LLM_OCR_FALLBACK_MODEL=${LLM_OCR_FALLBACK_MODEL:-gemma-4-e4b}
       - LLM_COMMENT_MODEL=${LLM_COMMENT_MODEL:-gemma-4-12b}
+      - LLM_COMMENT_FALLBACK_MODEL=${LLM_COMMENT_FALLBACK_MODEL:-gemma-4-e4b}
       # AI 評語是否附上照片（送進視覺模型）。預設 true＝附上貼文全部照片一併參考；
       # 設 false 可退回純文字模式（省視覺模型負載）。
       - LLM_COMMENT_USE_PHOTO=${LLM_COMMENT_USE_PHOTO:-true}
