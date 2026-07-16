@@ -33,7 +33,7 @@ export function aiConfigured(): boolean {
 }
 
 // OpenAI 相容的訊息內容：純文字或（文字＋圖片）陣列
-type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string | ContentPart[];

@@ -18,11 +18,13 @@ import {
   OCR_FALLBACK_MODEL,
   OCR_MODEL,
   aiConfigured,
+  chat,
   chatWithFallback,
   extractJson,
   imagePart,
   photoDataUri,
   textPart,
+  type ContentPart,
 } from '../llm.js';
 
 export const aiRouter = Router();
@@ -196,8 +198,7 @@ aiRouter.post('/comment', async (req, res) => {
   const mealName = MEAL_NAMES[entry.meal] || '這餐';
 
   // 是否附上照片由 LLM_COMMENT_USE_PHOTO 控制（預設開啟）。
-  // 31b 已實測單次請求可吃多張圖，因此附上這則貼文的「全部」照片一併參考。
-  const images = COMMENT_USE_PHOTO
+  const allImages: ContentPart[] = COMMENT_USE_PHOTO
     ? photos
         .map(photoDataUri)
         .filter((u): u is string => !!u)
@@ -207,13 +208,13 @@ aiRouter.post('/comment', async (req, res) => {
   // 給模型的完整脈絡：哪一餐＋用餐時間＋敘述＋這餐總份數＋當天累計份數＋當日目標
   const dayFood = dayTotalFood(req.userId, entry.date);
   const goalVals = goalValsFor(req.userId, entry.date);
-  const context =
+  const contextFor = (imageCount: number) =>
     `這是使用者的「${mealName}」飲食紀錄（日期：${entry.date}${entry.eat_time ? `，用餐時間：${entry.eat_time}` : ''}）。\n` +
     `使用者的敘述：${entry.desc ? entry.desc : '（未填寫）'}\n` +
     `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n` +
     `使用者今天目前累計（含這餐）：${foodSummaryZh(dayFood)}（約 ${kcalOfFood(dayFood)} 大卡）\n` +
     `使用者當日的目標份數：${goalSummaryZh(goalVals)}\n` +
-    (images.length ? `並附上這餐的全部 ${images.length} 張照片，請一併參考照片中的實際食物內容。\n` : '');
+    (imageCount ? `並附上這餐的 ${imageCount} 張照片，請一併參考照片中的實際食物內容。\n` : '');
 
   const system =
     '你是一位親切、專業的營養師，正在均衡飲食日記 App 中回覆使用者的餐點紀錄。' +
@@ -223,23 +224,56 @@ aiRouter.post('/comment', async (req, res) => {
     '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1～2 個具體、好執行的小建議。' +
     '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
-  try {
-    // 含照片時走視覺模型鏈（31b → e4b）；純文字走文字模型鏈（12b → e4b）。
-    // 主模型壞掉自動退回備援，實際使用的模型會存進留言讓使用者看到。
-    const models = images.length ? [OCR_MODEL, OCR_FALLBACK_MODEL] : [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
-    const { text, model } = await chatWithFallback(models, {
-      temperature: 0.6,
-      maxTokens: 500,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: [textPart(context), ...images] },
-      ],
-    });
-    const body = text.replace(/\s+$/,'').slice(0, 1000);
-    createComment(req.userId, target, req.userId, body, true, model);
-    return res.status(201).json(listComments(req.userId, target, req.userId));
-  } catch (e) {
-    console.error('ai comment failed:', e);
-    return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
+  // 階梯式降級：視覺模型偶爾整批 500（31b 尤其間歇性不穩），一路退到純文字也要給出評語。
+  // 含照片：31b(全部照片) → e4b(全部照片) → e4b(第一張) → 12b(純文字)
+  // 純文字：12b → e4b
+  const attempts: { model: string; images: ContentPart[] }[] = allImages.length
+    ? [
+        { model: OCR_MODEL, images: allImages },
+        { model: OCR_FALLBACK_MODEL, images: allImages },
+        { model: OCR_FALLBACK_MODEL, images: allImages.slice(0, 1) },
+        { model: COMMENT_MODEL, images: [] },
+      ]
+    : [
+        { model: COMMENT_MODEL, images: [] },
+        { model: COMMENT_FALLBACK_MODEL, images: [] },
+      ];
+  // 去掉重複的嘗試（例如只有一張照片時 e4b(全部) 與 e4b(第一張) 相同）
+  const seen = new Set<string>();
+  const chain = attempts.filter((a) => {
+    const key = `${a.model}#${a.images.length}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  let lastError: unknown = null;
+  for (const attempt of chain) {
+    try {
+      const text = await chat({
+        model: attempt.model,
+        temperature: 0.6,
+        maxTokens: 500,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: [textPart(contextFor(attempt.images.length)), ...attempt.images] },
+        ],
+      });
+      const body = text.replace(/\s+$/, '').slice(0, 1000);
+      // 模型標示：降級到「沒看到全部照片」時如實註明，讓使用者知道這則評語參考了什麼
+      const label =
+        allImages.length && attempt.images.length === 0
+          ? `${attempt.model}（未參考照片）`
+          : allImages.length && attempt.images.length < allImages.length
+            ? `${attempt.model}（僅參考第 1 張照片）`
+            : attempt.model;
+      createComment(req.userId, target, req.userId, body, true, label);
+      return res.status(201).json(listComments(req.userId, target, req.userId));
+    } catch (e) {
+      lastError = e;
+      console.error(`ai comment attempt failed (${attempt.model}, ${attempt.images.length} images), trying next:`, e instanceof Error ? e.message : e);
+    }
   }
+  console.error('ai comment failed (all attempts):', lastError);
+  return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
 });
