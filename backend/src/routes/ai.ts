@@ -15,11 +15,9 @@ import {
   COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
   COMMENT_USE_PHOTO,
-  OCR_FALLBACK_MODEL,
   OCR_MODEL,
   aiConfigured,
   chat,
-  chatWithFallback,
   extractJson,
   imagePart,
   photoDataUri,
@@ -158,8 +156,10 @@ aiRouter.post('/ocr', async (req, res) => {
     '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0}';
 
   try {
-    // 主模型（31b）壞掉時自動退回備援（e4b），並回傳實際使用的模型讓前端顯示
-    const { text, model } = await chatWithFallback([OCR_MODEL, OCR_FALLBACK_MODEL], {
+    // 只用 31b 看圖（e4b 判斷品質不佳，不作視覺備援）；壞掉就直接回報稍後再試
+    const model = OCR_MODEL;
+    const text = await chat({
+      model,
       json: true,
       temperature: 0.2,
       maxTokens: 300,
@@ -177,7 +177,7 @@ aiRouter.post('/ocr', async (req, res) => {
     return res.json({ food, model });
   } catch (e) {
     console.error('ai ocr failed:', e);
-    return res.status(502).json({ error: 'AI 判斷失敗，請稍後再試' });
+    return res.status(502).json({ error: 'AI 判斷失敗（視覺模型暫時無法使用），請稍後再試' });
   }
 });
 
@@ -224,15 +224,15 @@ aiRouter.post('/comment', async (req, res) => {
     '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1～2 個具體、好執行的小建議。' +
     '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
-  // 階梯式降級：視覺模型偶爾整批 500（31b 尤其間歇性不穩），一路退到純文字也要給出評語。
-  // 含照片：31b(全部照片) → e4b(全部照片) → e4b(第一張) → 12b(純文字)
+  // 階梯式降級：31b 偶爾整批 500（間歇性），退到純文字也要給出評語。
+  // e4b 看圖品質不佳且僅能讀一張，不作視覺備援、只當純文字備援。
+  // 含照片：31b(全部照片) → 12b(純文字) → e4b(純文字)
   // 純文字：12b → e4b
   const attempts: { model: string; images: ContentPart[] }[] = allImages.length
     ? [
         { model: OCR_MODEL, images: allImages },
-        { model: OCR_FALLBACK_MODEL, images: allImages },
-        { model: OCR_FALLBACK_MODEL, images: allImages.slice(0, 1) },
         { model: COMMENT_MODEL, images: [] },
+        { model: COMMENT_FALLBACK_MODEL, images: [] },
       ]
     : [
         { model: COMMENT_MODEL, images: [] },
@@ -260,13 +260,9 @@ aiRouter.post('/comment', async (req, res) => {
         ],
       });
       const body = text.replace(/\s+$/, '').slice(0, 1000);
-      // 模型標示：降級到「沒看到全部照片」時如實註明，讓使用者知道這則評語參考了什麼
+      // 模型標示：降級到純文字時如實註明，讓使用者知道這則評語沒有參考照片
       const label =
-        allImages.length && attempt.images.length === 0
-          ? `${attempt.model}（未參考照片）`
-          : allImages.length && attempt.images.length < allImages.length
-            ? `${attempt.model}（僅參考第 1 張照片）`
-            : attempt.model;
+        allImages.length && attempt.images.length === 0 ? `${attempt.model}（未參考照片）` : attempt.model;
       createComment(req.userId, target, req.userId, body, true, label);
       return res.status(201).json(listComments(req.userId, target, req.userId));
     } catch (e) {

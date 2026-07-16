@@ -16,10 +16,9 @@ services:
       # AI 功能（eland LLM Gateway，LiteLLM，OpenAI 相容）；LLM_TOKEN 未設定時 AI 功能自動停用
       - LLM_TOKEN=${LLM_TOKEN:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://eigw.elandai.cloud}
-      # OCR／看圖用視覺模型：gemma-4-31b（已修復、單次可吃多張圖）；純文字評語用 gemma-4-12b
-      # 主模型壞掉時自動退回備援模型（預設 gemma-4-e4b），留言／結果會標示實際使用的模型
+      # 看圖只用 gemma-4-31b（e4b 看圖品質不佳且僅能讀一張，不作視覺備援）；純文字評語用 gemma-4-12b
+      # 31b 故障時：評語降級為純文字（12b → e4b）並標示「未參考照片」；OCR 回報稍後再試
       - LLM_OCR_MODEL=${LLM_OCR_MODEL:-gemma-4-31b}
-      - LLM_OCR_FALLBACK_MODEL=${LLM_OCR_FALLBACK_MODEL:-gemma-4-e4b}
       - LLM_COMMENT_MODEL=${LLM_COMMENT_MODEL:-gemma-4-12b}
       - LLM_COMMENT_FALLBACK_MODEL=${LLM_COMMENT_FALLBACK_MODEL:-gemma-4-e4b}
       # AI 評語是否附上照片（送進視覺模型）。預設 true＝附上貼文全部照片一併參考；

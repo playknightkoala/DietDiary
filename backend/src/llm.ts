@@ -8,17 +8,17 @@ import { UPLOAD_DIR } from './helpers.js';
 //   LLM_BASE_URL     （選填）預設 https://eigw.elandai.cloud
 //   LLM_CHAT_URL     （選填）完整的 chat completions 端點，未設定時由 BASE_URL 推導
 //   LLM_OCR_MODEL    （選填）判斷營養素／看圖用的「視覺」模型，預設 gemma-4-31b
-//                    （已實測：gemma-4-31b 看圖正常、且單次請求可吃多張圖（10 張 OK）；
-//                     gemma-4-12b 為純文字部署、不吃圖；gemma-4-e4b、olmocr 亦可看圖作為備援）
+//                    （唯一的看圖模型：e4b 看圖品質不佳且僅能讀一張，不作視覺備援；
+//                     31b 偶爾整批 500（間歇性），評語會降級為純文字、OCR 則回報稍後再試）
 //   LLM_COMMENT_MODEL（選填）純文字 AI 評語用的模型，預設 gemma-4-12b；貼文含照片時改用視覺模型
 const LLM_TOKEN = (process.env.LLM_TOKEN || '').trim();
 const BASE_URL = (process.env.LLM_BASE_URL || 'https://eigw.elandai.cloud').replace(/\/$/, '');
 const CHAT_URL = process.env.LLM_CHAT_URL || `${BASE_URL}/v1/chat/completions`;
 
-// 看圖任務（OCR、含照片的評語）用的視覺模型；主模型（31b）壞掉時自動退回備援（e4b）
+// 看圖任務（OCR、含照片的評語）用的視覺模型——唯一會看圖的模型，沒有視覺備援
+// （e4b 看圖品質不佳且僅能讀一張圖，只作「純文字」備援使用）
 export const OCR_MODEL = process.env.LLM_OCR_MODEL || 'gemma-4-31b';
-export const OCR_FALLBACK_MODEL = process.env.LLM_OCR_FALLBACK_MODEL || 'gemma-4-e4b';
-// 純文字評語用的模型；主模型（12b）壞掉時自動退回備援（e4b）
+// 純文字評語用的模型；主模型（12b）壞掉時自動退回備援（e4b，純文字）
 export const COMMENT_MODEL = process.env.LLM_COMMENT_MODEL || 'gemma-4-12b';
 export const COMMENT_FALLBACK_MODEL = process.env.LLM_COMMENT_FALLBACK_MODEL || 'gemma-4-e4b';
 
@@ -103,26 +103,6 @@ export async function chat(opts: ChatOptions): Promise<string> {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-// 依序嘗試多個模型（主模型 → 備援模型），回傳成功的回覆與「實際使用的模型」。
-// 模型偶爾會整組壞掉（如 31b 曾看圖 500），任何錯誤（HTTP 錯誤／逾時／空回覆）都換下一個；全部失敗才丟錯。
-export async function chatWithFallback(
-  models: string[],
-  opts: Omit<ChatOptions, 'model'>
-): Promise<{ text: string; model: string }> {
-  const chain = [...new Set(models.filter(Boolean))];
-  let lastError: unknown = new Error('沒有可用的模型');
-  for (const model of chain) {
-    try {
-      const text = await chat({ ...opts, model });
-      return { text, model };
-    } catch (e) {
-      lastError = e;
-      console.error(`LLM model ${model} failed, trying next:`, e instanceof Error ? e.message : e);
-    }
-  }
-  throw lastError;
 }
 
 // 從模型回覆中抽出第一個 JSON 物件（容忍 ```json 圍欄或前後多餘文字）
