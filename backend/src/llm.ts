@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { UPLOAD_DIR } from './helpers.js';
+import sharp from 'sharp';
+import { UPLOAD_DIR, stripJpegExif } from './helpers.js';
 
 // 對接 eland LLM Gateway（LiteLLM，OpenAI 相容）。Token 只存在後端，絕不外流到前端。
 // 需要的環境變數：
@@ -48,16 +49,52 @@ interface ChatOptions {
   json?: boolean;
 }
 
-// 讀取 uploads 內的照片並轉成 data URI（供視覺模型使用）
-export function photoDataUri(photoUrl: string): string | null {
+// gateway 對「整個請求」的圖片總量有上限（實測 base64 約 10 萬字元、原始檔總計約 75KB，超過整個請求 500；
+// 單張或多張都算在同一個總量內）。送給視覺模型前把照片縮小重壓到預算以內。
+export const MAX_IMAGES_TOTAL_BYTES = Math.max(20_000, Number(process.env.LLM_MAX_IMAGE_BYTES) || 68_000);
+
+async function shrinkJpeg(buf: Buffer, maxBytes: number): Promise<Buffer> {
+  let out = buf;
+  for (const { size, quality } of [
+    { size: 640, quality: 75 },
+    { size: 640, quality: 60 },
+    { size: 512, quality: 60 },
+    { size: 384, quality: 55 },
+    { size: 320, quality: 50 },
+    { size: 256, quality: 50 },
+    { size: 192, quality: 45 },
+  ]) {
+    out = await sharp(buf)
+      .resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer();
+    if (out.length <= maxBytes) return out;
+  }
+  return out; // 極端情況仍超標：回傳最小版本，交由上層總量檢查捨去
+}
+
+// 讀取 uploads 內的照片，處理成可安全送給視覺模型的 JPEG buffer：
+// 1) 去除 EXIF（gateway 解析帶 EXIF 的 JPEG 會 500）；2) 超過 maxBytes 則縮小重壓（涵蓋既有舊照片）
+export async function photoBufferForLlm(photoUrl: string, maxBytes: number): Promise<Buffer | null> {
   if (!photoUrl.startsWith('/uploads/')) return null;
   const file = path.join(UPLOAD_DIR, path.basename(photoUrl));
   try {
-    const buf = fs.readFileSync(file);
-    return `data:image/jpeg;base64,${buf.toString('base64')}`;
+    let buf = stripJpegExif(fs.readFileSync(file));
+    if (buf.length > maxBytes) buf = await shrinkJpeg(buf, maxBytes);
+    return buf;
   } catch {
     return null;
   }
+}
+
+export function bufferDataUri(buf: Buffer): string {
+  return `data:image/jpeg;base64,${buf.toString('base64')}`;
+}
+
+// 單張照片版（OCR 用）：整個請求只有這一張，可用完整總量預算
+export async function photoDataUri(photoUrl: string): Promise<string | null> {
+  const buf = await photoBufferForLlm(photoUrl, MAX_IMAGES_TOTAL_BYTES);
+  return buf ? bufferDataUri(buf) : null;
 }
 
 export function imagePart(dataUri: string): ContentPart {

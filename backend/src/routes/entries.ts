@@ -5,7 +5,7 @@ import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, copyPhotoSchema, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, stripJpegExif, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
 
 export { UPLOAD_DIR };
 
@@ -147,7 +147,8 @@ entriesRouter.post('/:id/photos', upload.array('photos', MAX_PHOTOS), (req, res)
   }
   const urls = files.map((file, i) => {
     const filename = `e${entry.id}-${Date.now()}-${i}.jpg`;
-    fs.writeFileSync(path.join(UPLOAD_DIR, filename), file.buffer);
+    // 存檔前去除 EXIF（部分手機瀏覽器壓縮後仍保留；會讓 LLM gateway 解析 500，也可能夾帶 GPS 隱私）
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), stripJpegExif(file.buffer));
     return `/uploads/${filename}`;
   });
   const photos = [...current, ...urls];

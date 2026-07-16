@@ -78,6 +78,25 @@ export function parsePhotos(json: string): string[] {
   }
 }
 
+// 移除 JPEG 的 APP1（EXIF）段：
+// 1) LLM gateway 的圖片解析器遇到帶 EXIF 的 JPEG 會 500（實測同一張照片去 EXIF 即正常）
+// 2) 部分手機瀏覽器壓縮後仍留 EXIF，可能夾帶 GPS 等隱私資訊，存檔前一併去除
+export function stripJpegExif(buf: Buffer): Buffer {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return buf;
+  const out: Buffer[] = [buf.subarray(0, 2)];
+  let i = 2;
+  while (i + 4 <= buf.length && buf[i] === 0xff) {
+    const marker = buf[i + 1];
+    if (marker === 0xda) break; // SOS：其後為壓縮影像資料，整段保留
+    const len = buf.readUInt16BE(i + 2) + 2;
+    if (i + len > buf.length) break; // 段長異常，放棄處理
+    if (marker !== 0xe1) out.push(buf.subarray(i, i + len)); // 丟棄 APP1（EXIF）
+    i += len;
+  }
+  out.push(buf.subarray(i));
+  return Buffer.concat(out);
+}
+
 export function unlinkPhoto(photoUrl: string) {
   if (!photoUrl.startsWith('/uploads/')) return;
   const file = path.join(UPLOAD_DIR, path.basename(photoUrl));

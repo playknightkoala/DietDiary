@@ -26,6 +26,8 @@ services:
       - LLM_COMMENT_USE_PHOTO=${LLM_COMMENT_USE_PHOTO:-true}
       # 單次模型呼叫逾時（毫秒）；主模型卡住逾時後會換備援模型再試一次
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-45000}
+      # 送給視覺模型的圖片「總量」上限（bytes）：gateway 實測約 75KB（base64 十萬字元）會 500，超過會自動縮圖
+      - LLM_MAX_IMAGE_BYTES=${LLM_MAX_IMAGE_BYTES:-68000}
     volumes:
       - ./docker-data/db:/app/data
       - ./docker-data/uploads:/app/uploads

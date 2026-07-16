@@ -15,11 +15,14 @@ import {
   COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
   COMMENT_USE_PHOTO,
+  MAX_IMAGES_TOTAL_BYTES,
   OCR_MODEL,
   aiConfigured,
+  bufferDataUri,
   chat,
   extractJson,
   imagePart,
+  photoBufferForLlm,
   photoDataUri,
   textPart,
   type ContentPart,
@@ -145,7 +148,7 @@ aiRouter.post('/ocr', async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   if (!parsePhotos(entry.photos).includes(photo)) return res.status(404).json({ error: 'photo not found' });
 
-  const dataUri = photoDataUri(photo);
+  const dataUri = await photoDataUri(photo);
   if (!dataUri) return res.status(404).json({ error: 'photo file missing' });
 
   const prompt =
@@ -198,12 +201,24 @@ aiRouter.post('/comment', async (req, res) => {
   const mealName = MEAL_NAMES[entry.meal] || '這餐';
 
   // 是否附上照片由 LLM_COMMENT_USE_PHOTO 控制（預設開啟）。
-  const allImages: ContentPart[] = COMMENT_USE_PHOTO
-    ? photos
-        .map(photoDataUri)
-        .filter((u): u is string => !!u)
-        .map(imagePart)
-    : [];
+  // gateway 對整個請求的圖片「總量」有上限：把預算分給每張照片縮圖，仍超出總量的照片捨去（會如實標示張數）。
+  let allImages: ContentPart[] = [];
+  let usedPhotoCount = 0;
+  if (COMMENT_USE_PHOTO && photos.length) {
+    const perPhotoBudget = Math.max(8_000, Math.floor(MAX_IMAGES_TOTAL_BYTES / photos.length));
+    const bufs = (await Promise.all(photos.map((p) => photoBufferForLlm(p, perPhotoBudget)))).filter(
+      (b): b is Buffer => !!b
+    );
+    let total = 0;
+    const used: Buffer[] = [];
+    for (const b of bufs) {
+      if (total + b.length > MAX_IMAGES_TOTAL_BYTES) break;
+      used.push(b);
+      total += b.length;
+    }
+    usedPhotoCount = used.length;
+    allImages = used.map((b) => imagePart(bufferDataUri(b)));
+  }
 
   // 給模型的完整脈絡：哪一餐＋用餐時間＋敘述＋這餐總份數＋當天累計份數＋當日目標
   const dayFood = dayTotalFood(req.userId, entry.date);
@@ -260,9 +275,13 @@ aiRouter.post('/comment', async (req, res) => {
         ],
       });
       const body = text.replace(/\s+$/, '').slice(0, 1000);
-      // 模型標示：降級到純文字時如實註明，讓使用者知道這則評語沒有參考照片
+      // 模型標示：降級或部分參考時如實註明，讓使用者知道這則評語參考了什麼
       const label =
-        allImages.length && attempt.images.length === 0 ? `${attempt.model}（未參考照片）` : attempt.model;
+        photos.length && attempt.images.length === 0
+          ? `${attempt.model}（未參考照片）`
+          : attempt.images.length && usedPhotoCount < photos.length
+            ? `${attempt.model}（參考 ${usedPhotoCount}/${photos.length} 張照片）`
+            : attempt.model;
       createComment(req.userId, target, req.userId, body, true, label);
       return res.status(201).json(listComments(req.userId, target, req.userId));
     } catch (e) {
