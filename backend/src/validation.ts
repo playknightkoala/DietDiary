@@ -142,6 +142,18 @@ export const photoRatingSchema = z.object({
 export const adminPatchUserSchema = z.object({
   role: z.enum(ROLES).optional(),
   status: z.enum(['pending', 'active']).optional(),
+  aiEnabled: z.boolean().optional(),
+});
+
+// AI：判斷單張照片的營養素份數
+export const aiOcrSchema = z.object({
+  entryId: z.number().int().positive(),
+  photo: z.string().max(300),
+});
+
+// AI 評語：目前僅支援飲食貼文（entry:<id>）
+export const aiCommentSchema = z.object({
+  target: z.string().regex(/^entry:\d{1,10}$/),
 });
 
 export const goalsSchema = z.object({

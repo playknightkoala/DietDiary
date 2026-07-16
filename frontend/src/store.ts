@@ -17,6 +17,8 @@ interface AppState {
   role: Role;
   // null＝尚未載入（loadMe 完成前不觸發強制設定暱稱）；''＝未設定
   nickname: string | null;
+  // 目前登入者是否被開放 AI 功能（由 loadMe 取得）
+  aiEnabled: boolean;
   view: ViewKey;
 
   selected: string;
@@ -85,6 +87,7 @@ export const useStore = create<AppState>((set, get) => ({
   username: getUsername(),
   role: getRole(),
   nickname: null,
+  aiEnabled: false,
   view: 'diary',
 
   selected: dstr(new Date()),
@@ -117,13 +120,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   loginSuccess: (token, username, role, persist) => {
     saveAuth(token, username, role, persist);
-    set({ token, username, role, nickname: null, view: 'diary' });
+    set({ token, username, role, nickname: null, aiEnabled: false, view: 'diary' });
     void get().loadAll();
   },
   logout: () => {
     clearAuth();
     set({
-      token: null, username: null, role: 'member', nickname: null, view: 'diary', modal: null, editingId: null,
+      token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
       day: emptyDay(), marks: {}, goals: [], trendPoints: [], notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
@@ -213,7 +216,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const me = await api.me();
       saveRole(me.role);
-      set({ role: me.role, username: me.username, nickname: me.nickname });
+      set({ role: me.role, username: me.username, nickname: me.nickname, aiEnabled: me.aiEnabled });
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {

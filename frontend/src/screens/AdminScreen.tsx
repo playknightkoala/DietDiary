@@ -56,6 +56,7 @@ export function AdminScreen() {
 
   const approve = (u: AdminUser) => run(u.id, async () => { await api.adminApprove(u.id); });
   const setRole = (u: AdminUser, role: Role) => run(u.id, async () => { await api.adminPatchUser(u.id, { role }); });
+  const setAi = (u: AdminUser, aiEnabled: boolean) => run(u.id, async () => { await api.adminPatchUser(u.id, { aiEnabled }); });
   const suspend = (u: AdminUser) =>
     run(u.id, async () => {
       if (!window.confirm(`確定要停用 ${u.username}？停用後該帳號將無法登入，需重新開通。`)) return;
@@ -83,7 +84,7 @@ export function AdminScreen() {
       </div>
 
       <div style={{ fontSize: 12.5, color: '#6B7565' }}>
-        新註冊的帳號需在此開通後才能登入。也可以在這裡調整會員身分（一般會員／營養師／管理者）、停用或刪除會員。
+        新註冊的帳號需在此開通後才能登入。也可以在這裡調整會員身分（一般會員／營養師／管理者）、停用或刪除會員，或逐一開放「AI 功能」（AI 判斷營養素、AI 評語）。
       </div>
       {error && <div style={{ fontSize: 13, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
       {loading && <div style={{ padding: 30, textAlign: 'center', color: '#8A9284' }}>載入中…</div>}
@@ -122,6 +123,23 @@ export function AdminScreen() {
                     <option key={r} value={r}>{ROLE_NAMES[r]}</option>
                   ))}
                 </select>
+                {u.status === 'active' && (
+                  <button
+                    onClick={() => void setAi(u, !u.aiEnabled)}
+                    disabled={busy}
+                    title={u.aiEnabled ? '點擊關閉此會員的 AI 功能' : '點擊開放此會員的 AI 功能'}
+                    style={{
+                      height: 34, padding: '0 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      border: u.aiEnabled ? '1.5px solid #D9CEEA' : '1px solid #DDD8CA',
+                      background: u.aiEnabled ? '#F6F3FB' : '#fff',
+                      color: u.aiEnabled ? '#7A5AB8' : '#8A9284',
+                    }}
+                  >
+                    <span style={{ fontSize: 13 }}>✨</span>
+                    {u.aiEnabled ? 'AI 已開放' : 'AI 未開放'}
+                  </button>
+                )}
                 {u.status === 'pending' ? (
                   <button onClick={() => void approve(u)} disabled={busy} className="hv-green" style={{ height: 34, padding: '0 16px', border: 'none', borderRadius: 10, background: '#4A7C59', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                     開通

@@ -117,7 +117,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password, remember }),
     }),
-  me: () => request<{ username: string; role: Role; nickname: string; createdAt: string }>('/api/auth/me'),
+  me: () => request<{ username: string; role: Role; nickname: string; aiEnabled: boolean; createdAt: string }>('/api/auth/me'),
   setNickname: (nickname: string) =>
     request<{ ok: true; nickname: string }>('/api/auth/nickname', { method: 'POST', body: JSON.stringify({ nickname }) }),
   changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) =>
@@ -181,8 +181,14 @@ export const api = {
   // 管理者後台
   adminUsers: () => request<AdminUser[]>('/api/admin/users'),
   adminApprove: (id: number) => request<AdminUser>(`/api/admin/users/${id}/approve`, { method: 'POST' }),
-  adminPatchUser: (id: number, patch: { role?: Role; status?: 'pending' | 'active' }) =>
+  adminPatchUser: (id: number, patch: { role?: Role; status?: 'pending' | 'active'; aiEnabled?: boolean }) =>
     request<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  // AI 功能（需管理者開放）：判斷單張照片的營養素份數、對貼文產生 AI 評語
+  aiOcr: (entryId: number, photo: string) =>
+    request<{ food: Food }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
+  aiComment: (target: CommentTarget) =>
+    request<EntryComment[]>('/api/ai/comment', { method: 'POST', body: JSON.stringify({ target }) }),
   adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
   // 營養師

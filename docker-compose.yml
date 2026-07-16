@@ -13,6 +13,15 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       # 對外網址（帳號開通完成通知信會用到）
       - APP_URL=${APP_URL:-http://localhost:8080}
+      # AI 功能（eland LLM Gateway，LiteLLM，OpenAI 相容）；LLM_TOKEN 未設定時 AI 功能自動停用
+      - LLM_TOKEN=${LLM_TOKEN:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://eigw.elandai.cloud}
+      # OCR／看圖用視覺模型（此 gateway 可看圖的是 gemma-4-e4b、olmocr）；純文字評語用 gemma-4-12b
+      - LLM_OCR_MODEL=${LLM_OCR_MODEL:-gemma-4-e4b}
+      - LLM_COMMENT_MODEL=${LLM_COMMENT_MODEL:-gemma-4-12b}
+      # AI 評語是否附上照片（送進視覺模型）。預設 false＝省重模型負載，評語只依敘述＋份數走純文字。
+      # 待 gemma-4-31b 等更強視覺模型上線後可設 true 讓評語也看圖。
+      - LLM_COMMENT_USE_PHOTO=${LLM_COMMENT_USE_PHOTO:-false}
     volumes:
       - ./docker-data/db:/app/data
       - ./docker-data/uploads:/app/uploads

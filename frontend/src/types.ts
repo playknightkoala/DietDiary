@@ -47,6 +47,8 @@ export interface EntryComment {
   author: string;
   role: Role;
   mine: boolean;
+  // true＝AI 產生的評語（顯示 AI 標籤；本人無法編輯，但可刪除自己貼文下的 AI 評語）
+  ai: boolean;
 }
 
 export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';
@@ -90,6 +92,8 @@ export interface AdminUser {
   username: string;
   status: 'pending' | 'active';
   role: Role;
+  // 是否已開放 AI 功能（由管理者逐一開關）
+  aiEnabled: boolean;
   lastSeenAt: number | null;
   createdAt: string;
 }

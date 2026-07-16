@@ -183,7 +183,11 @@ export interface CommentJson {
   author: string;
   role: string;
   mine: boolean;
+  ai: boolean; // true＝AI 產生的評語（顯示 AI 標籤、不可編輯）
 }
+
+// AI 評語在留言串內的顯示名稱
+export const AI_AUTHOR_NAME = 'AI 助手';
 
 // entry:<id> 全域唯一；water:/ex: 需連 owner 一起查
 export function countComments(target: string, ownerId?: number): number {
@@ -197,31 +201,34 @@ export function listComments(ownerId: number, target: string, viewerId: number):
   // 作者顯示名稱：檢視者（營養師）替作者取的私人暱稱＞作者自訂暱稱＞帳號
   const rows = db
     .prepare(
-      `SELECT c.id, c.body, c.created_at, c.author_id, u.role,
+      `SELECT c.id, c.body, c.created_at, c.author_id, c.is_ai, u.role,
               COALESCE(NULLIF(a.alias, ''), NULLIF(u.nickname, ''), u.username) AS display_name
        FROM entry_comments c
        JOIN users u ON u.id = c.author_id
        LEFT JOIN member_aliases a ON a.member_id = c.author_id AND a.dietitian_id = ?
        WHERE c.user_id = ? AND c.target = ? ORDER BY c.id`
     )
-    .all(viewerId, ownerId, target) as { id: number; body: string; created_at: number; author_id: number; display_name: string; role: string }[];
+    .all(viewerId, ownerId, target) as { id: number; body: string; created_at: number; author_id: number; is_ai: number; display_name: string; role: string }[];
   return rows.map((r) => ({
     id: r.id,
     body: r.body,
     createdAt: r.created_at,
-    author: r.display_name,
+    author: r.is_ai ? AI_AUTHOR_NAME : r.display_name,
     role: r.role,
-    mine: r.author_id === viewerId,
+    // AI 評語不屬於任何人（不顯示編輯／刪除選單）
+    mine: !r.is_ai && r.author_id === viewerId,
+    ai: !!r.is_ai,
   }));
 }
 
-export function createComment(ownerId: number, target: string, authorId: number, body: string) {
-  db.prepare('INSERT INTO entry_comments (user_id, target, author_id, body, created_at) VALUES (?, ?, ?, ?, ?)').run(
+export function createComment(ownerId: number, target: string, authorId: number, body: string, isAi = false) {
+  db.prepare('INSERT INTO entry_comments (user_id, target, author_id, body, created_at, is_ai) VALUES (?, ?, ?, ?, ?, ?)').run(
     ownerId,
     target,
     authorId,
     body,
-    Date.now()
+    Date.now(),
+    isAi ? 1 : 0
   );
 }
 

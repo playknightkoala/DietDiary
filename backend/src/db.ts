@@ -175,6 +175,16 @@ if (!userCols2.includes('nickname')) {
 if (!userCols2.includes('last_seen_at')) {
   db.exec(`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`);
 }
+// AI 功能權限（0＝關閉、1＝開啟）：由管理者於後台逐一開放，非全體可用
+if (!userCols2.includes('ai_enabled')) {
+  db.exec(`ALTER TABLE users ADD COLUMN ai_enabled INTEGER NOT NULL DEFAULT 0`);
+}
+
+// entry_comments 增加 is_ai 標記（1＝AI 產生的評語）：顯示 AI 標籤、不可被當成本人留言編輯
+const commentCols = (db.pragma('table_info(entry_comments)') as { name: string }[]).map((c) => c.name);
+if (!commentCols.includes('is_ai')) {
+  db.exec(`ALTER TABLE entry_comments ADD COLUMN is_ai INTEGER NOT NULL DEFAULT 0`);
+}
 
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {

@@ -9,6 +9,7 @@ import { adminRouter } from './routes/admin.js';
 import { proRouter } from './routes/pro.js';
 import { commentsRouter } from './routes/comments.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { aiRouter } from './routes/ai.js';
 import { APP_VERSION } from './version.js';
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/pro', proRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/ai', aiRouter);
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

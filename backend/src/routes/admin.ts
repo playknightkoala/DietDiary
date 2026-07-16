@@ -13,6 +13,7 @@ interface AdminUserRow {
   username: string;
   status: 'pending' | 'active';
   role: 'member' | 'citizen' | 'dietitian' | 'admin';
+  ai_enabled: number;
   last_seen_at: number | null;
   created_at: string;
 }
@@ -23,14 +24,17 @@ function userToJson(u: AdminUserRow) {
     username: u.username,
     status: u.status,
     role: u.role,
+    aiEnabled: !!u.ai_enabled,
     lastSeenAt: u.last_seen_at ?? null,
     createdAt: u.created_at,
   };
 }
 
+const USER_COLS = 'id, username, status, role, ai_enabled, last_seen_at, created_at';
+
 adminRouter.get('/users', (_req, res) => {
   const rows = db
-    .prepare(`SELECT id, username, status, role, last_seen_at, created_at FROM users ORDER BY status = 'pending' DESC, created_at DESC`)
+    .prepare(`SELECT ${USER_COLS} FROM users ORDER BY status = 'pending' DESC, created_at DESC`)
     .all() as AdminUserRow[];
   return res.json(rows.map(userToJson));
 });
@@ -51,28 +55,25 @@ adminRouter.post('/users/:id/approve', async (req, res) => {
       }
     }
   }
-  const row = db
-    .prepare('SELECT id, username, status, role, last_seen_at, created_at FROM users WHERE id = ?')
-    .get(user.id) as AdminUserRow;
+  const row = db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(user.id) as AdminUserRow;
   return res.json(userToJson(row));
 });
 
-// 變更角色 / 狀態（停用＝改回 pending）
+// 變更角色 / 狀態（停用＝改回 pending）/ AI 功能權限
 adminRouter.patch('/users/:id', (req, res) => {
   const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id) as { id: number } | undefined;
   if (!user) return res.status(404).json({ error: 'not found' });
   const parsed = adminPatchUserSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { role, status } = parsed.data;
+  const { role, status, aiEnabled } = parsed.data;
   // 避免管理者把自己降級／停用而失去後台存取權
   if (user.id === req.userId && ((role && role !== 'admin') || (status && status !== 'active'))) {
     return res.status(400).json({ error: '無法變更自己的角色或狀態' });
   }
   if (role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
   if (status) db.prepare('UPDATE users SET status = ? WHERE id = ?').run(status, user.id);
-  const row = db
-    .prepare('SELECT id, username, status, role, last_seen_at, created_at FROM users WHERE id = ?')
-    .get(user.id) as AdminUserRow;
+  if (aiEnabled !== undefined) db.prepare('UPDATE users SET ai_enabled = ? WHERE id = ?').run(aiEnabled ? 1 : 0, user.id);
+  const row = db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(user.id) as AdminUserRow;
   return res.json(userToJson(row));
 });
 

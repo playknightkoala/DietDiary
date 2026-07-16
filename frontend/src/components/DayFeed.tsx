@@ -33,6 +33,7 @@ export function DayFeed() {
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
   const openLogFood = useStore((s) => s.openLogFood);
+  const aiEnabled = useStore((s) => s.aiEnabled);
   const [lightbox, setLightbox] = useState<{ entryId: number; photos: string[]; index: number } | null>(null);
   const lightboxEntry = lightbox ? day.entries.find((e) => e.id === lightbox.entryId) : null;
 
@@ -95,7 +96,11 @@ export function DayFeed() {
           )}
           {/* 這餐的六大類份數（唯讀，只列有填的欄位；要修改請按「編輯」） */}
           <FoodSummaryGrid food={e.food} />
-          <CommentsThread key={`ec${e.id}`} {...commentProps(`entry:${e.id}`, e.commentCount)} />
+          <CommentsThread
+            key={`ec${e.id}`}
+            {...commentProps(`entry:${e.id}`, e.commentCount)}
+            aiComment={aiEnabled ? () => api.aiComment(`entry:${e.id}`) : undefined}
+          />
         </div>
       ),
     };

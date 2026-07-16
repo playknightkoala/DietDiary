@@ -9,6 +9,7 @@ const ROLE_BADGES: Record<string, { name: string; color: string; bg: string } | 
   dietitian: { name: '營養師', color: '#5B8DB8', bg: '#E5EBF1' },
   admin: { name: '管理者', color: '#C77B4A', bg: '#F3E7D8' },
 };
+const AI_BADGE = { name: 'AI 助手', color: '#7A5AB8', bg: '#EDE7F6' };
 
 const menuItemStyle: CSSProperties = {
   display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'transparent',
@@ -22,11 +23,13 @@ interface CommentsThreadProps {
   edit: (id: number, body: string) => Promise<EntryComment[]>;
   remove: (id: number) => Promise<void>;
   initialOpen?: boolean;
+  // 提供時顯示「AI 評語」按鈕，點擊會產生並張貼一則 AI 留言（回傳更新後的留言串）
+  aiComment?: () => Promise<EntryComment[]>;
 }
 
 // 收合式留言串：點開才載入並顯示內容，會員與營養師頁面共用
 // initialOpen：掛載時即展開並載入（營養師由通知跳轉至該貼文時使用）
-export function CommentsThread({ count: initialCount, load, post, edit, remove, initialOpen }: CommentsThreadProps) {
+export function CommentsThread({ count: initialCount, load, post, edit, remove, initialOpen, aiComment }: CommentsThreadProps) {
   const [open, setOpen] = useState(!!initialOpen);
   const [comments, setComments] = useState<EntryComment[] | null>(null);
   const [count, setCount] = useState(initialCount);
@@ -36,6 +39,7 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [menuId, setMenuId] = useState<number | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // 輸入框隨內容自動長高（上限 120px，之後改為內部捲動）
@@ -86,6 +90,22 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
       setError(e instanceof Error ? e.message : '留言失敗，請再試一次');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const runAi = async () => {
+    if (!aiComment || aiBusy || busy) return;
+    setOpen(true);
+    setAiBusy(true);
+    setError('');
+    try {
+      const list = await aiComment();
+      setComments(list);
+      setCount(list.length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI 評語產生失敗，請再試一次');
+    } finally {
+      setAiBusy(false);
     }
   };
 
@@ -148,9 +168,9 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
           {comments === null && <div style={{ fontSize: 12.5, color: '#8A9284' }}>載入中…</div>}
           {comments?.length === 0 && <div style={{ fontSize: 12.5, color: '#8A9284' }}>還沒有留言。</div>}
           {comments?.map((c) => {
-            const badge = ROLE_BADGES[c.role];
+            const badge = c.ai ? AI_BADGE : ROLE_BADGES[c.role];
             return (
-              <div key={c.id} style={{ background: badge ? '#F4F7FA' : '#F7F5EF', borderRadius: 12, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div key={c.id} style={{ background: c.ai ? '#F6F3FB' : badge ? '#F4F7FA' : '#F7F5EF', borderRadius: 12, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#2D3B2D', wordBreak: 'break-all' }}>{c.author}</span>
                   {badge && (
@@ -158,7 +178,8 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
                   )}
                   <span style={{ fontSize: 11, color: '#8A9284' }}>{fmtCommentTime(c.createdAt)}</span>
                   <span style={{ flex: 1 }} />
-                  {c.mine && editingId !== c.id && (
+                  {/* 本人留言：可編輯／刪除；自己貼文下的 AI 評語：只可刪除（aiComment 存在＝擁有者的 AI 檢視） */}
+                  {((c.mine) || (c.ai && !!aiComment)) && editingId !== c.id && (
                     <div style={{ position: 'relative', flex: 'none' }}>
                       <button
                         onClick={() => setMenuId(menuId === c.id ? null : c.id)}
@@ -172,9 +193,11 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
                         <>
                           <div onClick={() => setMenuId(null)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
                           <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21, background: '#fff', border: '1px solid #E4DFD2', borderRadius: 10, boxShadow: '0 8px 24px rgba(45,59,45,.15)', overflow: 'hidden', minWidth: 92 }}>
-                            <button className="hv-cream" onClick={() => { setMenuId(null); startEdit(c); }} style={{ ...menuItemStyle, color: '#4A5A4A' }}>
-                              編輯
-                            </button>
+                            {c.mine && (
+                              <button className="hv-cream" onClick={() => { setMenuId(null); startEdit(c); }} style={{ ...menuItemStyle, color: '#4A5A4A' }}>
+                                編輯
+                              </button>
+                            )}
                             <button className="hv-cream" onClick={() => { setMenuId(null); void del(c.id); }} style={{ ...menuItemStyle, color: '#C0564A' }}>
                               刪除
                             </button>
@@ -218,6 +241,17 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
             );
           })}
           {error && <div style={{ fontSize: 12, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
+          {aiComment && (
+            <button
+              onClick={() => void runAi()}
+              disabled={aiBusy || busy}
+              className="hv-cream"
+              style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', border: '1.5px solid #D9CEEA', borderRadius: 10, background: '#F6F3FB', color: '#7A5AB8', fontSize: 12.5, fontWeight: 700, cursor: aiBusy || busy ? 'default' : 'pointer', opacity: aiBusy || busy ? 0.6 : 1 }}
+            >
+              <span style={{ fontSize: 13 }}>✨</span>
+              {aiBusy ? 'AI 撰寫中…' : '請 AI 給評語'}
+            </button>
+          )}
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
             <textarea
               ref={taRef}

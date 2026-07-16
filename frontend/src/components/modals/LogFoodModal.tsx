@@ -39,12 +39,16 @@ export function LogFoodModal() {
   const refresh = useStore((s) => s.refresh);
   const closeModal = useStore((s) => s.closeModal);
   const openGuide = useStore((s) => s.openGuide);
+  const aiEnabled = useStore((s) => s.aiEnabled);
 
   const entry = useMemo(() => day.entries.find((e) => e.id === editingId) ?? null, [day.entries, editingId]);
 
   const [desc, setDesc] = useState(entry?.desc ?? '');
   const [photos, setPhotos] = useState<string[]>(entry?.photos ?? []);
   const [uploading, setUploading] = useState(false);
+  // AI 判斷這張照片的營養素份數
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
   // 用餐時間：預設為目前檢視的日期＋紀錄上的時間；改日期會把這筆移到該天
   const [eatDate, setEatDate] = useState(selected);
   const [eatTime, setEatTime] = useState(entry?.eatTime ?? '');
@@ -89,6 +93,21 @@ export function LogFoodModal() {
       const v = clampPortion(s[url]?.[key] ?? '');
       return { ...s, [url]: { ...(s[url] ?? emptyFoodStr()), [key]: v ? String(v) : '' } };
     });
+
+  // AI 判斷目前這張照片的六大類份數，填入輸入框（肉類預設中脂、乳品預設低脂，可再自行微調）
+  const runOcr = async () => {
+    if (!currentUrl || aiBusy) return;
+    setAiBusy(true);
+    setAiError('');
+    try {
+      const { food } = await api.aiOcr(entry.id, currentUrl);
+      setPhotoFoodsStr((s) => ({ ...s, [currentUrl]: foodToStr(food) }));
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'AI 判斷失敗，請再試一次');
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   // 關閉（完成或 ✕）：有資料 → 儲存；空白 entry → 自動刪除
   const finish = async () => {
@@ -250,10 +269,14 @@ export function LogFoodModal() {
     />
   );
 
-  // 步驟一：先新增照片或略過
-  if (step === 'photos') {
-    return (
-      <>
+  const hasPhotos = photos.length > 0;
+
+  // 單一 return：步驟一（照片）與步驟二（詳細）共用同一棵樹，讓 historySheet／Lightbox
+  // 位置固定，切換步驟時不會被 React 卸載重建（否則歷史視窗會閃一下並跳回第一個餐別分頁）
+  return (
+    <>
+    {step === 'photos' ? (
+      // 步驟一：先新增照片或略過
       <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 17, fontWeight: 900 }}>記錄{mealDef.name}</div>
@@ -279,16 +302,8 @@ export function LogFoodModal() {
           )}
         </div>
       </ModalShell>
-      {historySheet}
-      </>
-    );
-  }
-
-  const hasPhotos = photos.length > 0;
-
-  return (
-    <>
-    <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    ) : (
+      <ModalShell maxWidth={520} cardStyle={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 17, fontWeight: 900 }}>記錄{mealDef.name}</div>
         <CloseButton onClick={() => void cancel()} />
@@ -380,6 +395,22 @@ export function LogFoodModal() {
                 )}
               </div>
               <div style={{ fontSize: 12.5, color: '#6B7565' }}>輸入<b>這張照片</b>的六大類份數（0.1 ～ 99），記好一張換下一張。</div>
+              {aiEnabled && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <button
+                    onClick={() => void runOcr()}
+                    disabled={aiBusy}
+                    className="hv-cream"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 42, border: '1.5px solid #D9CEEA', borderRadius: 12, background: '#F6F3FB', color: '#7A5AB8', fontSize: 14, fontWeight: 700, cursor: aiBusy ? 'default' : 'pointer', opacity: aiBusy ? 0.65 : 1 }}
+                  >
+                    <span style={{ fontSize: 15 }}>✨</span>
+                    {aiBusy ? 'AI 判斷中…' : 'AI 判斷這張照片的營養素'}
+                  </button>
+                  <div style={{ fontSize: 11.5, color: aiError ? '#C0564A' : '#8A9284', lineHeight: 1.5 }}>
+                    {aiError || 'AI 會估算份數並填入下方（肉類預設中脂、乳品預設低脂），可再自行微調。'}
+                  </div>
+                </div>
+              )}
               <FoodFields
                 key={currentUrl}
                 foodStr={photoFoodsStr[currentUrl] ?? emptyFoodStr()}
@@ -437,6 +468,7 @@ export function LogFoodModal() {
         )}
       </div>
     </ModalShell>
+    )}
     {lightboxIndex !== null && (
       <Lightbox
         photos={photos}

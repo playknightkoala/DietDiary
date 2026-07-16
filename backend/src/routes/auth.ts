@@ -187,10 +187,18 @@ authRouter.post('/login', async (req, res) => {
 // 會員中心：目前登入者資訊
 authRouter.get('/me', requireAuth, (req, res) => {
   const user = db
-    .prepare('SELECT username, role, status, nickname, created_at FROM users WHERE id = ?')
-    .get(req.userId) as { username: string; role: Role; status: string; nickname: string; created_at: string } | undefined;
+    .prepare('SELECT username, role, status, nickname, ai_enabled, created_at FROM users WHERE id = ?')
+    .get(req.userId) as
+    | { username: string; role: Role; status: string; nickname: string; ai_enabled: number; created_at: string }
+    | undefined;
   if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
-  return res.json({ username: user.username, role: user.role, nickname: user.nickname, createdAt: user.created_at });
+  return res.json({
+    username: user.username,
+    role: user.role,
+    nickname: user.nickname,
+    aiEnabled: !!user.ai_enabled,
+    createdAt: user.created_at,
+  });
 });
 
 // 設定／變更自己的暱稱（1～20 字）
