@@ -67,11 +67,15 @@ export function textPart(text: string): ContentPart {
   return { type: 'text', text };
 }
 
+// 單次模型呼叫的逾時（毫秒）。主模型卡住時要留時間換備援：
+// 兩段嘗試合計需小於 nginx 對 /api/ai/ 的 proxy_read_timeout（150s），預設 45s×2＝90s。
+const TIMEOUT_MS = Math.max(5_000, Number(process.env.LLM_TIMEOUT_MS) || 45_000);
+
 // 呼叫 gateway 取得單一回覆文字；逾時、非 2xx 或格式異常皆丟出錯誤（由呼叫端轉成 502/503）
 export async function chat(opts: ChatOptions): Promise<string> {
   if (!aiConfigured()) throw new Error('AI 服務尚未設定');
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(CHAT_URL, {
       method: 'POST',

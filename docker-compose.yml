@@ -25,6 +25,8 @@ services:
       # AI 評語是否附上照片（送進視覺模型）。預設 true＝附上貼文全部照片一併參考；
       # 設 false 可退回純文字模式（省視覺模型負載）。
       - LLM_COMMENT_USE_PHOTO=${LLM_COMMENT_USE_PHOTO:-true}
+      # 單次模型呼叫逾時（毫秒）；主模型卡住逾時後會換備援模型再試一次
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-45000}
     volumes:
       - ./docker-data/db:/app/data
       - ./docker-data/uploads:/app/uploads
