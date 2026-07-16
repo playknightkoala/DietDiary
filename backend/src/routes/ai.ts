@@ -89,11 +89,46 @@ function kcalOfFood(food: Food): number {
 
 interface EntryFull {
   id: number;
+  date: string;
   meal: string;
   desc: string;
   photos: string;
+  eat_time: string;
   food: string;
   photo_foods: string;
+}
+
+// 未設定目標時的預設每日份數（與前端 domain.DEFAULT_GOALS 一致）
+const DEFAULT_GOAL_VALS = { meat: 7, veg: 3, grain: 10, oil: 3, fruit: 2, milk: 2 };
+
+// 該日期適用的目標份數（多組重疊取最新一組；無涵蓋則用預設）
+function goalValsFor(userId: number, date: string): Record<string, number> {
+  const row = db
+    .prepare('SELECT vals FROM goal_periods WHERE user_id = ? AND start <= ? AND end >= ? ORDER BY id DESC LIMIT 1')
+    .get(userId, date, date) as { vals: string } | undefined;
+  if (!row) return DEFAULT_GOAL_VALS;
+  try {
+    return { ...DEFAULT_GOAL_VALS, ...JSON.parse(row.vals) };
+  } catch {
+    return DEFAULT_GOAL_VALS;
+  }
+}
+
+function goalSummaryZh(vals: Record<string, number>): string {
+  return `蛋豆魚肉 ${vals.meat} 份、蔬菜 ${vals.veg} 份、全穀雜糧 ${vals.grain} 份、油脂堅果 ${vals.oil} 份、水果 ${vals.fruit} 份、乳品 ${vals.milk} 份`;
+}
+
+// 使用者某天所有飲食紀錄的六大類加總
+function dayTotalFood(userId: number, date: string): Food {
+  const rows = db
+    .prepare('SELECT food FROM entries WHERE user_id = ? AND date = ?')
+    .all(userId, date) as { food: string }[];
+  const total = emptyFood();
+  for (const r of rows) {
+    const f = parseFood(r.food);
+    for (const k of FOOD_KEYS) total[k] = round1(total[k] + (f[k] || 0));
+  }
+  return total;
 }
 
 // ---- 判斷單張照片的營養素份數 ----
@@ -150,7 +185,7 @@ aiRouter.post('/comment', async (req, res) => {
   const entryId = Number(target.slice('entry:'.length));
 
   const entry = db
-    .prepare('SELECT id, meal, desc, photos, food, photo_foods FROM entries WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, date, meal, desc, photos, eat_time, food, photo_foods FROM entries WHERE id = ? AND user_id = ?')
     .get(entryId, req.userId) as EntryFull | undefined;
   if (!entry) return res.status(404).json({ error: 'not found' });
 
@@ -158,26 +193,33 @@ aiRouter.post('/comment', async (req, res) => {
   const photos = parsePhotos(entry.photos);
   const mealName = MEAL_NAMES[entry.meal] || '這餐';
 
-  // 是否附上照片由 LLM_COMMENT_USE_PHOTO 控制（預設關閉＝省重模型負載，評語只依敘述＋份數）。
-  // 開啟時：此 gateway 的視覺模型每次請求僅接受 1 張圖（多張會 500），故取第一張具代表性的照片。
+  // 是否附上照片由 LLM_COMMENT_USE_PHOTO 控制（預設開啟）。
+  // 31b 已實測單次請求可吃多張圖，因此附上這則貼文的「全部」照片一併參考。
   const images = COMMENT_USE_PHOTO
     ? photos
-        .slice(0, 1)
         .map(photoDataUri)
         .filter((u): u is string => !!u)
         .map(imagePart)
     : [];
 
+  // 給模型的完整脈絡：哪一餐＋用餐時間＋敘述＋這餐總份數＋當天累計份數＋當日目標
+  const dayFood = dayTotalFood(req.userId, entry.date);
+  const goalVals = goalValsFor(req.userId, entry.date);
   const context =
-    `這是使用者的「${mealName}」飲食紀錄。\n` +
+    `這是使用者的「${mealName}」飲食紀錄（日期：${entry.date}${entry.eat_time ? `，用餐時間：${entry.eat_time}` : ''}）。\n` +
     `使用者的敘述：${entry.desc ? entry.desc : '（未填寫）'}\n` +
-    `已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n` +
-    (images.length ? `另附上這餐的照片，請一併參考照片內容。\n` : '');
+    `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n` +
+    `使用者今天目前累計（含這餐）：${foodSummaryZh(dayFood)}（約 ${kcalOfFood(dayFood)} 大卡）\n` +
+    `使用者當日的目標份數：${goalSummaryZh(goalVals)}\n` +
+    (images.length ? `並附上這餐的全部 ${images.length} 張照片，請一併參考照片中的實際食物內容。\n` : '');
 
   const system =
     '你是一位親切、專業的營養師，正在均衡飲食日記 App 中回覆使用者的餐點紀錄。' +
-    '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1 個具體、好執行的小建議。' +
-    '請直接寫評語內容，不要加標題或條列，不要重複使用者的份數數字，總長度約 60～150 字。';
+    '請綜合考量：這餐吃了什麼（照片與敘述）、是哪一餐與用餐時間點、今天目前累計的份數與當日目標的差距，' +
+    '給出「此時此刻」最適合的評語。例如：某類已達標就提醒接下來收斂、還差很多就建議在今天剩下的餐次補足；' +
+    '宵夜或太晚的正餐可溫和提醒時間點。' +
+    '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1～2 個具體、好執行的小建議。' +
+    '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
   try {
     // 含照片時改用視覺模型（此 gateway 上文字模型 gemma-4-12b 不吃圖）；純文字則用文字模型

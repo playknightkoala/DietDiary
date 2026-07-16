@@ -7,23 +7,24 @@ import { UPLOAD_DIR } from './helpers.js';
 //   LLM_TOKEN        （必填）呼叫 gateway 的 Bearer token
 //   LLM_BASE_URL     （選填）預設 https://eigw.elandai.cloud
 //   LLM_CHAT_URL     （選填）完整的 chat completions 端點，未設定時由 BASE_URL 推導
-//   LLM_OCR_MODEL    （選填）判斷營養素／看圖用的「視覺」模型，預設 gemma-4-e4b
-//                    （此 gateway 上 gemma-4-12b 為純文字部署、不吃圖；gemma-4-31b 看圖會 500，
-//                     可看圖的是 gemma-4-e4b 與 olmocr）
+//   LLM_OCR_MODEL    （選填）判斷營養素／看圖用的「視覺」模型，預設 gemma-4-31b
+//                    （已實測：gemma-4-31b 看圖正常、且單次請求可吃多張圖（10 張 OK）；
+//                     gemma-4-12b 為純文字部署、不吃圖；gemma-4-e4b、olmocr 亦可看圖作為備援）
 //   LLM_COMMENT_MODEL（選填）純文字 AI 評語用的模型，預設 gemma-4-12b；貼文含照片時改用視覺模型
 const LLM_TOKEN = (process.env.LLM_TOKEN || '').trim();
 const BASE_URL = (process.env.LLM_BASE_URL || 'https://eigw.elandai.cloud').replace(/\/$/, '');
 const CHAT_URL = process.env.LLM_CHAT_URL || `${BASE_URL}/v1/chat/completions`;
 
 // 看圖任務（OCR、含照片的評語）用的視覺模型
-export const OCR_MODEL = process.env.LLM_OCR_MODEL || 'gemma-4-e4b';
+export const OCR_MODEL = process.env.LLM_OCR_MODEL || 'gemma-4-31b';
 // 純文字評語用的模型
 export const COMMENT_MODEL = process.env.LLM_COMMENT_MODEL || 'gemma-4-12b';
 
-// AI 評語是否附上照片（送進視覺模型）。
-// 自架環境為省重模型負載預設「關閉」：評語只依敘述＋已記錄份數，一律走純文字模型（COMMENT_MODEL）。
-// 待更強的視覺模型（如 gemma-4-31b）修復上線後，設為 true 讓評語也參考照片。
-export const COMMENT_USE_PHOTO = /^(1|true|yes|on)$/i.test((process.env.LLM_COMMENT_USE_PHOTO || '').trim());
+// AI 評語是否附上照片（送進視覺模型）。31b 修復後預設「開啟」：
+// 評語會參考貼文的全部照片；設 LLM_COMMENT_USE_PHOTO=false 可退回純文字模式（省視覺模型負載）。
+const COMMENT_USE_PHOTO_RAW = (process.env.LLM_COMMENT_USE_PHOTO || '').trim();
+export const COMMENT_USE_PHOTO =
+  COMMENT_USE_PHOTO_RAW === '' ? true : /^(1|true|yes|on)$/i.test(COMMENT_USE_PHOTO_RAW);
 
 export function aiConfigured(): boolean {
   return !!LLM_TOKEN;
