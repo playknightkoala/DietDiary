@@ -457,6 +457,20 @@ export function DietitianScreen() {
               </div>
             </div>
 
+            {/* AI 今日總評（會員按鈕產生，營養師唯讀檢視） */}
+            {day?.aiSummary && (
+              <div style={{ ...cardStyle, border: '1.5px solid #E0D6F0', background: '#FBF9FE' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <div style={{ width: 34, height: 34, flex: 'none', borderRadius: 10, background: '#EFE8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>✨</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 900 }}>AI 今日總評</div>
+                    <div style={{ fontSize: 11.5, color: '#8A9284' }}>{day.aiSummary.model}・{fmtCommentTime(day.aiSummary.createdAt)}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{day.aiSummary.body}</div>
+              </div>
+            )}
+
             <div style={cardStyle}>
               <div style={{ fontSize: 16, fontWeight: 900 }}>當日飲食（{entries.length} 筆）</div>
               <div style={{ fontSize: 11.5, color: '#8A9284', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

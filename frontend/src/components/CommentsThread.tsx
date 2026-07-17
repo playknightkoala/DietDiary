@@ -25,11 +25,13 @@ interface CommentsThreadProps {
   initialOpen?: boolean;
   // 提供時顯示「AI 評語」按鈕，點擊會產生並張貼一則 AI 留言（回傳更新後的留言串）
   aiComment?: () => Promise<EntryComment[]>;
+  // 提供時（擁有者本人）AI 評語下方顯示讚／倒讚；vote 0＝取消
+  voteAi?: (commentId: number, vote: 1 | 0 | -1) => Promise<void>;
 }
 
 // 收合式留言串：點開才載入並顯示內容，會員與營養師頁面共用
 // initialOpen：掛載時即展開並載入（營養師由通知跳轉至該貼文時使用）
-export function CommentsThread({ count: initialCount, load, post, edit, remove, initialOpen, aiComment }: CommentsThreadProps) {
+export function CommentsThread({ count: initialCount, load, post, edit, remove, initialOpen, aiComment, voteAi }: CommentsThreadProps) {
   const [open, setOpen] = useState(!!initialOpen);
   const [comments, setComments] = useState<EntryComment[] | null>(null);
   const [count, setCount] = useState(initialCount);
@@ -121,6 +123,18 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
       setError('刪除留言失敗');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // 讚／倒讚 AI 評語：再按同一鍵＝取消（vote 0）；樂觀更新，失敗回復
+  const vote = async (c: EntryComment, v: 1 | -1) => {
+    if (!voteAi) return;
+    const next = (c.feedback === v ? 0 : v) as 1 | 0 | -1;
+    setComments((list) => list?.map((x) => (x.id === c.id ? { ...x, feedback: next } : x)) ?? list);
+    try {
+      await voteAi(c.id, next);
+    } catch {
+      setComments((list) => list?.map((x) => (x.id === c.id ? { ...x, feedback: c.feedback } : x)) ?? list);
     }
   };
 
@@ -239,6 +253,25 @@ export function CommentsThread({ count: initialCount, load, post, edit, remove, 
                   </div>
                 ) : (
                   <div style={{ fontSize: 13, color: '#4A5A4A', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
+                )}
+                {/* AI 評語的讚／倒讚（僅擁有者本人）；倒讚會成為下次產生評語的依據 */}
+                {c.ai && voteAi && editingId !== c.id && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    <button
+                      onClick={() => void vote(c, 1)}
+                      title="讚"
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${c.feedback === 1 ? '#4A7C59' : '#DDD8CA'}`, background: c.feedback === 1 ? '#E3EBD9' : '#fff', color: c.feedback === 1 ? '#3B6647' : '#8A9284', borderRadius: 99, padding: '2px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      <span style={{ fontSize: 12 }}>👍</span>讚
+                    </button>
+                    <button
+                      onClick={() => void vote(c, -1)}
+                      title="倒讚（下次產生評語會換個角度）"
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${c.feedback === -1 ? '#C0564A' : '#DDD8CA'}`, background: c.feedback === -1 ? '#F5E3DB' : '#fff', color: c.feedback === -1 ? '#A8433A' : '#8A9284', borderRadius: 99, padding: '2px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      <span style={{ fontSize: 12 }}>👎</span>倒讚
+                    </button>
+                  </div>
                 )}
               </div>
             );

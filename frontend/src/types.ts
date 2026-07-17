@@ -51,9 +51,19 @@ export interface EntryComment {
   ai: boolean;
   // AI 評語實際使用的模型（非 AI 留言為空字串）
   aiModel: string;
+  // 擁有者對這則 AI 評語的評價（1＝讚、-1＝倒讚、0＝未評；非 AI 留言為 0）
+  feedback: number;
 }
 
 export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';
+
+// AI 今日總評：整天的綜合評語（每天一份，重新產生會覆蓋；null＝尚未產生）
+export interface DailySummary {
+  body: string;
+  model: string;
+  createdAt: number; // Unix ms
+  feedback: number; // 擁有者的評價（1＝讚、-1＝倒讚、0＝未評）
+}
 
 export interface DayData {
   water: number;
@@ -65,6 +75,8 @@ export interface DayData {
   entries: Entry[];
   // 喝水／運動貼文的留言數
   commentCounts: { water: number; ex: number };
+  // AI 今日總評（尚未產生為 null）
+  aiSummary: DailySummary | null;
 }
 
 export type GoalKey = 'meat' | 'veg' | 'grain' | 'oil' | 'fruit' | 'milk';

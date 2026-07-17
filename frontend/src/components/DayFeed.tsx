@@ -34,7 +34,11 @@ export function DayFeed() {
   const goals = useStore((s) => s.goals);
   const openLogFood = useStore((s) => s.openLogFood);
   const aiEnabled = useStore((s) => s.aiEnabled);
+  const loadDay = useStore((s) => s.loadDay);
   const [lightbox, setLightbox] = useState<{ entryId: number; photos: string[]; index: number } | null>(null);
+  // AI 今日總評（使用者按鈕觸發，產生後存成當天一則 AI 動態）
+  const [dailyBusy, setDailyBusy] = useState(false);
+  const [dailyError, setDailyError] = useState('');
   const lightboxEntry = lightbox ? day.entries.find((e) => e.id === lightbox.entryId) : null;
 
   const entries = sortEntriesNewestFirst(day.entries.filter(entryHasData));
@@ -50,7 +54,36 @@ export function DayFeed() {
     remove: (id: number) => api.deleteComment(id),
   });
 
+  const hasBody = Object.values(day.body).some((v) => v !== '');
   const empty = entries.length === 0 && !hasEx && day.water <= 0;
+  // 有任何當天資料才給按「今日總評」（純身體數據也算）
+  const canSummarize = aiEnabled && (!empty || hasBody);
+
+  const runDaily = async () => {
+    if (dailyBusy) return;
+    setDailyBusy(true);
+    setDailyError('');
+    try {
+      await api.aiDaily(selected);
+      await loadDay();
+    } catch (e) {
+      setDailyError(e instanceof Error ? e.message : 'AI 今日總評產生失敗，請再試一次');
+    } finally {
+      setDailyBusy(false);
+    }
+  };
+
+  // 讚／倒讚今日總評：再按同鍵＝取消；樂觀更新 store，失敗回復。倒讚會成為下次重新產生的依據
+  const voteDaily = async (v: 1 | -1) => {
+    const cur = day.aiSummary?.feedback ?? 0;
+    const next = (cur === v ? 0 : v) as 1 | 0 | -1;
+    useStore.setState((s) => (s.day.aiSummary ? { day: { ...s.day, aiSummary: { ...s.day.aiSummary, feedback: next } } } : {}));
+    try {
+      await api.aiFeedback('daily', selected, next);
+    } catch {
+      useStore.setState((s) => (s.day.aiSummary ? { day: { ...s.day, aiSummary: { ...s.day.aiSummary, feedback: cur } } } : {}));
+    }
+  };
 
   // 統一排序：飲食（用餐時間）、喝水（最後喝水時間）、運動（運動時刻）混排，新→舊；沒填時間的墊後
   const posts: { key: string; time: string; node: ReactNode }[] = entries.map((e) => {
@@ -100,6 +133,7 @@ export function DayFeed() {
             key={`ec${e.id}`}
             {...commentProps(`entry:${e.id}`, e.commentCount)}
             aiComment={aiEnabled ? () => api.aiComment(`entry:${e.id}`) : undefined}
+            voteAi={aiEnabled ? (id, v) => api.aiFeedback('comment', String(id), v).then(() => {}) : undefined}
           />
         </div>
       ),
@@ -155,10 +189,56 @@ export function DayFeed() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 16px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 16, fontWeight: 900 }}>{isToday ? '今日動態' : '當日動態'}</div>
         <div style={{ fontSize: 12, color: '#8A9284' }}>由新到舊・點「留言」可查看或回覆</div>
+        <span style={{ flex: 1 }} />
+        {canSummarize && (
+          <button
+            onClick={() => void runDaily()}
+            disabled={dailyBusy}
+            className="hv-cream"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', border: '1.5px solid #D9CEEA', borderRadius: 99, background: '#F6F3FB', color: '#7A5AB8', fontSize: 12.5, fontWeight: 700, padding: '6px 14px', cursor: dailyBusy ? 'default' : 'pointer', opacity: dailyBusy ? 0.65 : 1 }}
+          >
+            <span style={{ fontSize: 14 }}>✨</span>
+            {dailyBusy ? 'AI 撰寫中…' : day.aiSummary ? '重新產生總評' : `AI ${isToday ? '今日' : '當日'}總評`}
+          </button>
+        )}
       </div>
+
+      {dailyError && <div style={{ fontSize: 12.5, color: '#C0564A', padding: '0 2px' }}>{dailyError}</div>}
+
+      {/* AI 今日總評：整天綜合評語（本人與營養師皆可見），置於動態最上方 */}
+      {day.aiSummary && (
+        <div style={{ ...postStyle, borderColor: '#E0D6F0', background: '#FBF9FE' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 38, height: 38, flex: 'none', borderRadius: 12, background: '#EFE8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✨</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 900, color: '#2D3B2D' }}>AI 今日總評</div>
+              <div style={{ fontSize: 11.5, color: '#8A9284' }}>{day.aiSummary.model}・{fmtCommentTime(day.aiSummary.createdAt)}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 13.5, color: '#4A5A4A', lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{day.aiSummary.body}</div>
+          {aiEnabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => void voteDaily(1)}
+                title="讚"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${day.aiSummary.feedback === 1 ? '#4A7C59' : '#DDD8CA'}`, background: day.aiSummary.feedback === 1 ? '#E3EBD9' : '#fff', color: day.aiSummary.feedback === 1 ? '#3B6647' : '#8A9284', borderRadius: 99, padding: '3px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                <span>👍</span>讚
+              </button>
+              <button
+                onClick={() => void voteDaily(-1)}
+                title="倒讚（下次重新產生會換個角度）"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, border: `1px solid ${day.aiSummary.feedback === -1 ? '#C0564A' : '#DDD8CA'}`, background: day.aiSummary.feedback === -1 ? '#F5E3DB' : '#fff', color: day.aiSummary.feedback === -1 ? '#A8433A' : '#8A9284', borderRadius: 99, padding: '3px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                <span>👎</span>倒讚
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {empty && (
         <div style={{ ...postStyle, alignItems: 'center', color: '#8A9284', fontSize: 13.5, padding: '26px 16px' }}>

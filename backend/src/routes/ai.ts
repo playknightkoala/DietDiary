@@ -2,13 +2,18 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { aiOcrSchema, aiCommentSchema, FOOD_KEYS } from '../validation.js';
+import { aiOcrSchema, aiCommentSchema, aiDailySchema, aiFeedbackSchema, FOOD_KEYS } from '../validation.js';
 import {
   createComment,
+  currentAiBody,
   emptyFood,
+  getDayJson,
+  getFeedbackExamples,
   listComments,
   parseFood,
   parsePhotos,
+  setAiFeedback,
+  upsertDailySummary,
   type Food,
 } from '../helpers.js';
 import {
@@ -37,11 +42,47 @@ function requireAI(req: Request, res: Response, next: NextFunction) {
   if (!aiConfigured()) return res.status(503).json({ error: 'AI 服務尚未設定，請聯絡管理員' });
   next();
 }
+
+// ---- AI 評價（讚／倒讚）----
+// 只需登入即可記錄（不經 requireAI，gateway 暫時故障也能投票）；投票以本人身分儲存。
+aiRouter.post('/feedback', (req, res) => {
+  const parsed = aiFeedbackSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { kind, ref, vote } = parsed.data;
+  // 擷取被評價當下的內容快照，日後當「好範例／反例」餵回模型
+  const body = vote === 0 ? '' : currentAiBody(req.userId, kind, ref);
+  setAiFeedback(req.userId, kind, ref, vote, body);
+  return res.json({ vote });
+});
+
 aiRouter.use(requireAI);
 
 const MEAL_NAMES: Record<string, string> = {
   breakfast: '早餐', lunch: '午餐', dinner: '晚餐', night: '宵夜', snack: '點心',
 };
+
+// 依讚／倒讚組出「偏好提示」注入 system（混合）：
+// 這位使用者自己的評價優先，其他所有使用者的評價當次要基準。讚＝好範例、倒讚＝反例。
+// 讓評價能累積、跨項地影響往後每一次生成，兼顧個人化與全體品質。
+function preferenceHint(userId: number): string {
+  const { personal, global } = getFeedbackExamples(userId);
+  const has = (b: { liked: string[]; disliked: string[] }) => b.liked.length || b.disliked.length;
+  if (!has(personal) && !has(global)) return '';
+  const clip = (s: string) => s.replace(/\s+/g, ' ').slice(0, 160);
+  const lines = (arr: string[]) => arr.map((b) => `・「${clip(b)}」`).join('\n');
+  let out = '\n以下是使用者對 AI 回答的評價，請據此調整這次回答的風格、方向與具體程度（以「這位使用者自己」的偏好為優先）：\n';
+  if (has(personal)) {
+    out += '【這位使用者自己（優先參考）】\n';
+    if (personal.liked.length) out += '喜歡這種回答：\n' + lines(personal.liked) + '\n';
+    if (personal.disliked.length) out += '不喜歡這種回答（請避免類似寫法、角度或空泛程度）：\n' + lines(personal.disliked) + '\n';
+  }
+  if (has(global)) {
+    out += '【其他使用者普遍（次要基準）】\n';
+    if (global.liked.length) out += '普遍受歡迎：\n' + lines(global.liked) + '\n';
+    if (global.disliked.length) out += '普遍不受歡迎：\n' + lines(global.disliked) + '\n';
+  }
+  return out;
+}
 
 // 六大類的每份熱量（與前端 domain.KCAL 一致），供計算與提示詞使用
 const KCAL: Record<string, number> = {
@@ -87,6 +128,57 @@ function kcalOfFood(food: Food): number {
   return Math.round(FOOD_KEYS.reduce((a, k) => a + (food[k] || 0) * (KCAL[k] || 0), 0));
 }
 
+// ---- 今日總評用：目標與身體數據 ----
+
+// 未設定目標時的預設每日份數與喝水量（與前端 domain 一致）
+const DEFAULT_GOAL_VALS = { meat: 7, veg: 3, grain: 10, oil: 3, fruit: 2, milk: 2 };
+const DEFAULT_WATER = 2000;
+
+// 該日期適用的目標（六大類份數＋喝水；多組重疊取最新一組，無涵蓋用預設）
+function goalForDate(userId: number, date: string): { vals: Record<string, number>; water: number } {
+  const row = db
+    .prepare('SELECT vals, water FROM goal_periods WHERE user_id = ? AND start <= ? AND end >= ? ORDER BY id DESC LIMIT 1')
+    .get(userId, date, date) as { vals: string; water: number } | undefined;
+  if (!row) return { vals: DEFAULT_GOAL_VALS, water: DEFAULT_WATER };
+  let vals = DEFAULT_GOAL_VALS;
+  try {
+    vals = { ...DEFAULT_GOAL_VALS, ...JSON.parse(row.vals) };
+  } catch { /* 用預設 */ }
+  return { vals, water: row.water || DEFAULT_WATER };
+}
+
+function goalSummaryZh(vals: Record<string, number>): string {
+  return `蛋豆魚肉 ${vals.meat} 份、蔬菜 ${vals.veg} 份、全穀雜糧 ${vals.grain} 份、油脂堅果 ${vals.oil} 份、水果 ${vals.fruit} 份、乳品 ${vals.milk} 份`;
+}
+
+const BODY_LABELS: [key: string, name: string, unit: string][] = [
+  ['weight', '體重', 'kg'], ['fat', '體脂率', '%'], ['waist', '腰圍', 'cm'],
+  ['muscle', '肌肉重', 'kg'], ['fatkg', '體脂重', 'kg'],
+];
+
+function bodyStrFrom(b: Record<string, string>): string {
+  return BODY_LABELS.filter(([k]) => (b[k] ?? '') !== '').map(([k, n, u]) => `${n} ${b[k]} ${u}`).join('、');
+}
+
+// 身體數據：優先用當天，否則找 date 當天或之前「最近一次」有量測的紀錄（都沒有回 '未記錄'）
+function bodyLineFor(userId: number, date: string, dayBody: Record<string, string>, dayBodyTime: string): string {
+  const today = bodyStrFrom(dayBody);
+  if (today) return today + (dayBodyTime ? `（${dayBodyTime}）` : '');
+  const row = db
+    .prepare(
+      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+       WHERE user_id = ? AND date <= ?
+         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+       ORDER BY date DESC LIMIT 1`
+    )
+    .get(userId, date) as
+    | { date: string; body_weight: string; body_fat: string; body_waist: string; body_muscle: string; body_fatkg: string }
+    | undefined;
+  if (!row) return '未記錄';
+  const s = bodyStrFrom({ weight: row.body_weight, fat: row.body_fat, waist: row.body_waist, muscle: row.body_muscle, fatkg: row.body_fatkg });
+  return s ? `${s}（最近一次量測：${row.date}）` : '未記錄';
+}
+
 interface EntryFull {
   id: number;
   date: string;
@@ -120,6 +212,8 @@ aiRouter.post('/ocr', async (req, res) => {
     '像使用者自己隨手記錄的口吻（例：「滷雞腿便當，白飯約八分滿，配燙青菜」），不要列出份數數字、不要加標點以外的符號。\n' +
     '六大類與每份參考：蛋豆魚肉（一份約手掌大小的肉/一顆蛋）、蔬菜（一份約煮熟半碗）、全穀雜糧（一份約四分之一碗飯）、' +
     '油脂堅果（一份約一茶匙油）、水果（一份約一個拳頭）、乳品（一份約240ml牛奶）。\n' +
+    '重要：只描述你「明確看得到」的食物，不確定或被其他食物遮住看不清楚的就不要編造（例如被蓋住的配菜、看不清的肉種都不要猜）；' +
+    '寧可少寫，也不要寫出照片裡看不到的東西。\n' +
     '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk（值為份數，可含一位小數，沒有就填 0）與 caption（字串），不要有其他文字。\n' +
     '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0,"caption":"滷雞腿便當，白飯約八分滿，配燙青菜"}';
 
@@ -183,6 +277,9 @@ aiRouter.post('/comment', async (req, res) => {
     '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1～2 個具體、好執行的小建議。' +
     '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
+  // 評價當作依據：注入使用者過去讚／倒讚的偏好，讓這次回答貼近他的喜好
+  const systemFull = system + preferenceHint(req.userId);
+
   // 純文字降級：主模型（12b）整批故障時退到備援（e4b）也要給出評語
   const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
 
@@ -194,7 +291,7 @@ aiRouter.post('/comment', async (req, res) => {
         temperature: 0.6,
         maxTokens: 500,
         messages: [
-          { role: 'system', content: system },
+          { role: 'system', content: systemFull },
           { role: 'user', content: context },
         ],
       });
@@ -208,4 +305,85 @@ aiRouter.post('/comment', async (req, res) => {
   }
   console.error('ai comment failed (all attempts):', lastError);
   return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
+});
+
+// ---- AI 今日總評（純文字：擷取當天所有動態＋六大類總份數＋熱量喝水＋身體數據＋當日目標，
+//      產生一則整天綜合評語，存為當天一則「AI 動態」，本人與營養師皆可見；使用者按鈕才觸發）----
+aiRouter.post('/daily', async (req, res) => {
+  const parsed = aiDailySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const { date } = parsed.data;
+
+  const day = getDayJson(req.userId, date);
+  const entries = day.entries.filter(
+    (e) => e.desc || e.photos.length || FOOD_KEYS.some((k) => (e.food[k] || 0) > 0)
+  );
+  const hasEx = (day.ex.min && Number(day.ex.min) > 0) || !!day.ex.desc;
+  const hasBodyToday = !!bodyStrFrom(day.body);
+  if (!entries.length && !(day.water > 0) && !hasEx && !hasBodyToday) {
+    return res.status(400).json({ error: '這天還沒有任何紀錄，先記錄後再產生今日總評' });
+  }
+
+  // 當天六大類總份數（各餐加總）
+  const dayTotal = emptyFood();
+  for (const e of entries) for (const k of FOOD_KEYS) dayTotal[k] = round1(dayTotal[k] + (e.food[k] || 0));
+  const goal = goalForDate(req.userId, date);
+
+  const mealLines = entries.length
+    ? entries
+        .map((e) => {
+          const mn = MEAL_NAMES[e.meal] || '這餐';
+          const t = e.eatTime ? ` ${e.eatTime}` : '';
+          const d = e.desc ? e.desc : '（未填敘述）';
+          return `・${mn}${t}：${d}（${foodSummaryZh(e.food)}，約 ${kcalOfFood(e.food)} 大卡）`;
+        })
+        .join('\n')
+    : '（今天沒有飲食紀錄）';
+  const exStr = hasEx
+    ? `${day.ex.min && Number(day.ex.min) > 0 ? `${day.ex.min} 分鐘` : ''}${day.ex.min && day.ex.desc ? '・' : ''}${day.ex.desc}${day.exTime ? `（${day.exTime}）` : ''}`
+    : '未記錄';
+  const bodyStr = bodyLineFor(req.userId, date, day.body, day.bodyTime);
+
+  const context =
+    `以下是使用者在 ${date} 這一天的完整飲食與健康紀錄，請據此給出「一整天」的綜合總評。\n\n` +
+    `【當天各餐】\n${mealLines}\n\n` +
+    `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal)} 大卡）\n` +
+    `【當日六大類目標】${goalSummaryZh(goal.vals)}\n` +
+    `【喝水】${day.water} / ${goal.water} ml\n` +
+    `【運動】${exStr}\n` +
+    `【身體數據】${bodyStr}\n`;
+
+  const system =
+    '你是一位親切、專業的營養師，正在均衡飲食日記 App 中替使用者做「一整天」的飲食與健康總評。' +
+    '請綜合當天所有餐點、六大類總份數與當日目標的達成情形、喝水量、運動、以及身體數據，給出整體評估。' +
+    '先肯定當天做得好的地方，再指出 1～3 個最值得調整的重點（例如某類明顯超標或不足、水分不夠、太晚進食等），並給具體、好執行的建議。' +
+    '某類接近或超過目標可提醒收斂，不足則建議如何補足；身體數據若只有較早日期的紀錄，當作參考背景即可，不要當成今天的數字。' +
+    '請用繁體中文、溫暖鼓勵的口吻，寫成通順的 3～5 句短文（約 120～250 字），直接寫內容，不要用標題或條列、不要逐項複述所有數字。';
+
+  // 評價當作依據：注入使用者過去讚／倒讚的偏好，讓這份總評貼近他的喜好
+  const systemFull = system + preferenceHint(req.userId);
+
+  const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
+  let lastError: unknown = null;
+  for (const model of chain) {
+    try {
+      const text = await chat({
+        model,
+        temperature: 0.6,
+        maxTokens: 700,
+        messages: [
+          { role: 'system', content: systemFull },
+          { role: 'user', content: context },
+        ],
+      });
+      const body = text.replace(/\s+$/, '').slice(0, 2000);
+      upsertDailySummary(req.userId, date, body, model);
+      return res.status(201).json(getDayJson(req.userId, date));
+    } catch (e) {
+      lastError = e;
+      console.error(`ai daily attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
+    }
+  }
+  console.error('ai daily failed (all attempts):', lastError);
+  return res.status(502).json({ error: 'AI 今日總評產生失敗，請稍後再試' });
 });

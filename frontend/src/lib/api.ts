@@ -189,6 +189,12 @@ export const api = {
     request<{ food: Food; caption: string; model: string }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
   aiComment: (target: CommentTarget) =>
     request<EntryComment[]>('/api/ai/comment', { method: 'POST', body: JSON.stringify({ target }) }),
+  // AI 今日總評：針對某天產生整天綜合評語，存為當天一則 AI 動態，回傳更新後的當日資料
+  aiDaily: (date: string) =>
+    request<DayData>('/api/ai/daily', { method: 'POST', body: JSON.stringify({ date }) }),
+  // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)；kind＝'comment'(ref=留言id)｜'daily'(ref=日期)
+  aiFeedback: (kind: 'comment' | 'daily', ref: string, vote: 1 | 0 | -1) =>
+    request<{ vote: number }>('/api/ai/feedback', { method: 'POST', body: JSON.stringify({ kind, ref, vote }) }),
   adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
   // 營養師

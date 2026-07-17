@@ -57,6 +57,7 @@ export function emptyDay(): DayData {
     bodyTime: '',
     entries: [],
     commentCounts: { water: 0, ex: 0 },
+    aiSummary: null,
   };
 }
 

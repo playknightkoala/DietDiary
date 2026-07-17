@@ -156,6 +156,18 @@ export const aiCommentSchema = z.object({
   target: z.string().regex(/^entry:\d{1,10}$/),
 });
 
+// AI 今日總評：針對某一天產生整天的綜合評語
+export const aiDailySchema = z.object({
+  date: z.string().regex(DATE_RE),
+});
+
+// AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)
+export const aiFeedbackSchema = z.object({
+  kind: z.enum(['comment', 'daily']),
+  ref: z.string().min(1).max(40),
+  vote: z.union([z.literal(1), z.literal(0), z.literal(-1)]),
+});
+
 export const goalsSchema = z.object({
   start: dateSchema,
   end: dateSchema,

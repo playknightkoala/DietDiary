@@ -125,7 +125,36 @@ CREATE TABLE IF NOT EXISTS goal_periods (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_goal_periods_user ON goal_periods(user_id);
+
+-- AI 今日總評：每位使用者每天一筆（重新產生會覆蓋），本人與營養師檢視當天時皆可見
+CREATE TABLE IF NOT EXISTS daily_summaries (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  date TEXT NOT NULL,
+  body TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, date)
+);
+
+-- AI 評價：使用者對某則 AI 產出（評語／今日總評）按讚(1)或倒讚(-1)。
+-- body 存下被評價當下的內容快照：讚過的當「好範例」、倒讚過的當「反例」，
+-- 注入使用者往後每一次 AI 生成的提示，讓模型照他的偏好調整。
+CREATE TABLE IF NOT EXISTS ai_feedback (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,          -- 'comment' | 'daily'
+  ref TEXT NOT NULL,           -- comment: 留言 id；daily: 日期
+  vote INTEGER NOT NULL,       -- 1＝讚、-1＝倒讚
+  body TEXT NOT NULL DEFAULT '', -- 被評價當下的 AI 內容快照
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind, ref)
+);
 `);
+
+// ai_feedback.body（被評價內容快照）：舊資料表補欄位
+const aiFbCols = (db.pragma('table_info(ai_feedback)') as { name: string }[]).map((c) => c.name);
+if (!aiFbCols.includes('body')) {
+  db.exec(`ALTER TABLE ai_feedback ADD COLUMN body TEXT NOT NULL DEFAULT ''`);
+}
 
 // 舊資料庫沒有 status / approval_token 欄位：補上，且既有帳號一律視為已開通
 const userCols = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);

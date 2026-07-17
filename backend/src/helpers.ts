@@ -204,6 +204,7 @@ export interface CommentJson {
   mine: boolean;
   ai: boolean; // true＝AI 產生的評語（顯示 AI 標籤、不可編輯）
   aiModel: string; // AI 評語實際使用的模型（非 AI 留言為空字串）
+  feedback: number; // 擁有者對這則 AI 評語的評價（1／-1／0；非 AI 留言為 0）
 }
 
 // AI 評語在留言串內的顯示名稱
@@ -239,6 +240,8 @@ export function listComments(ownerId: number, target: string, viewerId: number):
     mine: !r.is_ai && r.author_id === viewerId,
     ai: !!r.is_ai,
     aiModel: r.is_ai ? r.ai_model || '' : '',
+    // 評價一律以紀錄擁有者的投票為準（本人在自己頁面投；營養師檢視時看得到但不投）
+    feedback: r.is_ai ? getAiFeedback(ownerId, 'comment', String(r.id)) : 0,
   }));
 }
 
@@ -320,6 +323,94 @@ export function deletePhotoRatings(entryId: number, photos?: string[]) {
   for (const p of photos) del.run(entryId, p);
 }
 
+// ---- AI 評價（使用者對某則 AI 產出按讚/倒讚）----
+
+export type AiFeedbackKind = 'comment' | 'daily';
+
+// 取得使用者對某則 AI 產出的評價（1＝讚、-1＝倒讚、0＝未評價）
+export function getAiFeedback(userId: number, kind: AiFeedbackKind, ref: string): number {
+  const row = db
+    .prepare('SELECT vote FROM ai_feedback WHERE user_id = ? AND kind = ? AND ref = ?')
+    .get(userId, kind, ref) as { vote: number } | undefined;
+  return row?.vote ?? 0;
+}
+
+// 設定評價：vote 為 0 時清除（等同再按一次同一鍵取消）。
+// body＝被評價當下的 AI 內容快照（供日後當偏好範例；清除時不需要）。
+export function setAiFeedback(userId: number, kind: AiFeedbackKind, ref: string, vote: number, body = '') {
+  if (vote === 0) {
+    db.prepare('DELETE FROM ai_feedback WHERE user_id = ? AND kind = ? AND ref = ?').run(userId, kind, ref);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO ai_feedback (user_id, kind, ref, vote, body, created_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, kind, ref) DO UPDATE SET vote = excluded.vote, body = excluded.body, created_at = excluded.created_at`
+  ).run(userId, kind, ref, vote, body, Date.now());
+}
+
+// 取得某則 AI 產出「目前」的內容（供投票時擷取快照）：comment 查留言、daily 查當日總評
+export function currentAiBody(userId: number, kind: AiFeedbackKind, ref: string): string {
+  if (kind === 'comment') {
+    const row = db
+      .prepare('SELECT body FROM entry_comments WHERE id = ? AND user_id = ? AND is_ai = 1')
+      .get(ref, userId) as { body: string } | undefined;
+    return row?.body ?? '';
+  }
+  const row = db
+    .prepare('SELECT body FROM daily_summaries WHERE user_id = ? AND date = ?')
+    .get(userId, ref) as { body: string } | undefined;
+  return row?.body ?? '';
+}
+
+export interface PrefBucket { liked: string[]; disliked: string[] }
+
+function bucketVotes(rows: { vote: number; body: string }[], perSide: number): PrefBucket {
+  const liked: string[] = [];
+  const disliked: string[] = [];
+  for (const r of rows) {
+    const bucket = r.vote === 1 ? liked : disliked;
+    if (bucket.length < perSide) bucket.push(r.body);
+  }
+  return { liked, disliked };
+}
+
+// 偏好範例（混合）：這位使用者「自己」的讚/倒讚（優先）＋「其他所有使用者」的讚/倒讚（次要基準）。
+// 讓評價既能個人化，也能靠全體回饋把整體品質帶起來。混用兩種 kind（評語與今日總評）。
+export function getFeedbackExamples(userId: number): { personal: PrefBucket; global: PrefBucket } {
+  const own = db
+    .prepare("SELECT vote, body FROM ai_feedback WHERE user_id = ? AND body != '' ORDER BY created_at DESC")
+    .all(userId) as { vote: number; body: string }[];
+  const others = db
+    .prepare("SELECT vote, body FROM ai_feedback WHERE user_id != ? AND body != '' ORDER BY created_at DESC LIMIT 200")
+    .all(userId) as { vote: number; body: string }[];
+  return { personal: bucketVotes(own, 3), global: bucketVotes(others, 2) };
+}
+
+// ---- AI 今日總評（每人每天一筆，重新產生覆蓋）----
+
+export interface DailySummaryJson {
+  body: string;
+  model: string;
+  createdAt: number;
+  feedback: number; // 擁有者對這份總評的評價（1／-1／0）
+}
+
+export function getDailySummary(userId: number, date: string): DailySummaryJson | null {
+  const row = db
+    .prepare('SELECT body, model, created_at FROM daily_summaries WHERE user_id = ? AND date = ?')
+    .get(userId, date) as { body: string; model: string; created_at: number } | undefined;
+  return row
+    ? { body: row.body, model: row.model, createdAt: row.created_at, feedback: getAiFeedback(userId, 'daily', date) }
+    : null;
+}
+
+export function upsertDailySummary(userId: number, date: string, body: string, model: string) {
+  db.prepare(
+    `INSERT INTO daily_summaries (user_id, date, body, model, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, date) DO UPDATE SET body = excluded.body, model = excluded.model, created_at = excluded.created_at`
+  ).run(userId, date, body, model, Date.now());
+}
+
 export function getDayJson(userId: number, date: string) {
   const row = db
     .prepare('SELECT * FROM days WHERE user_id = ? AND date = ?')
@@ -347,6 +438,7 @@ export function getDayJson(userId: number, date: string) {
     },
     bodyTime: row?.body_time ?? '',
     entries,
+    aiSummary: getDailySummary(userId, date),
   };
 }
 
