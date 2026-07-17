@@ -8,27 +8,22 @@ import { UPLOAD_DIR, stripJpegExif } from './helpers.js';
 //   LLM_TOKEN        （必填）呼叫 gateway 的 Bearer token
 //   LLM_BASE_URL     （選填）預設 https://eigw.elandai.cloud
 //   LLM_CHAT_URL     （選填）完整的 chat completions 端點，未設定時由 BASE_URL 推導
-//   LLM_OCR_MODEL    （選填）判斷營養素／看圖用的「視覺」模型，預設 gemma-4-31b
+//   LLM_OCR_MODEL    （選填）記錄餐點時判斷單張照片份數＋寫敘述用的「視覺」模型，預設 gemma-4-31b
 //                    （唯一的看圖模型：e4b 看圖品質不佳且僅能讀一張，不作視覺備援；
-//                     31b 偶爾整批 500（間歇性），評語會降級為純文字、OCR 則回報稍後再試）
-//   LLM_COMMENT_MODEL（選填）純文字 AI 評語用的模型，預設 gemma-4-12b；貼文含照片時改用視覺模型
+//                     31b 偶爾整批 500（間歇性），OCR 失敗時回報稍後再試）
+//   LLM_COMMENT_MODEL（選填）純文字 AI 評語用的模型，預設 gemma-4-12b
 const LLM_TOKEN = (process.env.LLM_TOKEN || '').trim();
 const BASE_URL = (process.env.LLM_BASE_URL || 'https://eigw.elandai.cloud').replace(/\/$/, '');
 const CHAT_URL = process.env.LLM_CHAT_URL || `${BASE_URL}/v1/chat/completions`;
 
-// 看圖任務（OCR、含照片的評語）用的視覺模型——唯一會看圖的模型，沒有視覺備援
-// （e4b 看圖品質不佳且僅能讀一張圖，只作「純文字」備援使用）
+// 記錄餐點時看單張照片（判份數＋寫敘述）用的視覺模型——唯一會看圖的模型，沒有視覺備援
+// （e4b 看圖品質不佳且僅能讀一張圖，只作純文字評語的備援使用）
 export const OCR_MODEL = process.env.LLM_OCR_MODEL || 'gemma-4-31b';
 // 純文字評語用的模型；主模型（12b）壞掉時自動退回備援（e4b，純文字）
 export const COMMENT_MODEL = process.env.LLM_COMMENT_MODEL || 'gemma-4-12b';
 export const COMMENT_FALLBACK_MODEL = process.env.LLM_COMMENT_FALLBACK_MODEL || 'gemma-4-e4b';
 
-// AI 評語是否附上照片（送進視覺模型）。31b 修復後預設「開啟」：
-// 評語會參考貼文的全部照片；設 LLM_COMMENT_USE_PHOTO=false 可退回純文字模式（省視覺模型負載）。
-const COMMENT_USE_PHOTO_RAW = (process.env.LLM_COMMENT_USE_PHOTO || '').trim();
-export const COMMENT_USE_PHOTO =
-  COMMENT_USE_PHOTO_RAW === '' ? true : /^(1|true|yes|on)$/i.test(COMMENT_USE_PHOTO_RAW);
-
+// 註：AI 評語已改為純文字（不附照片），視覺模型只剩「記錄餐點時判斷單張照片份數＋寫敘述」用。
 export function aiConfigured(): boolean {
   return !!LLM_TOKEN;
 }

@@ -186,7 +186,7 @@ export const api = {
 
   // AI 功能（需管理者開放）：判斷單張照片的營養素份數、對貼文產生 AI 評語
   aiOcr: (entryId: number, photo: string) =>
-    request<{ food: Food; model: string }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
+    request<{ food: Food; caption: string; model: string }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
   aiComment: (target: CommentTarget) =>
     request<EntryComment[]>('/api/ai/comment', { method: 'POST', body: JSON.stringify({ target }) }),
   adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),

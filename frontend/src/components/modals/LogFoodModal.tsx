@@ -67,6 +67,8 @@ export function LogFoodModal() {
     return init;
   });
   const [entryFoodStr, setEntryFoodStr] = useState<FoodStr>(() => (entry ? foodToStr(entry.food) : emptyFoodStr()));
+  // AI 幫每張照片寫的敘述（本回合暫存，不持久化）；用來在 desc 內「替換自己那行」而不重複、不蓋掉手打的字
+  const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
   const [page, setPage] = useState(0);
 
   // 新建流程（尚無任何內容）先選擇「新增照片或略過」；編輯既有紀錄直接進入記錄頁
@@ -95,15 +97,29 @@ export function LogFoodModal() {
       return { ...s, [url]: { ...(s[url] ?? emptyFoodStr()), [key]: v ? String(v) : '' } };
     });
 
-  // AI 判斷目前這張照片的六大類份數，填入輸入框（肉類預設中脂、乳品預設低脂，可再自行微調）
+  // 把某張照片的 AI 敘述組進整筆 desc：同一張重跑會替換自己那行（不重複），
+  // 沒有前次則附加到尾端；使用者手打的字永遠保留、不會被蓋掉。desc 一律不回送 API。
+  const applyCaption = (url: string, caption: string) => {
+    const line = caption.trim();
+    if (!line) return;
+    const prev = photoCaptions[url];
+    setDesc((d) => {
+      if (prev && d.includes(prev)) return d.replace(prev, line);
+      return d.trim() ? `${d.replace(/\s+$/, '')}\n${line}` : line;
+    });
+    setPhotoCaptions((s) => ({ ...s, [url]: line }));
+  };
+
+  // AI 判斷目前這張照片的六大類份數＋順便寫一句敘述（份數填入輸入框，敘述組進上方「這餐吃了什麼」）
   const runOcr = async () => {
     if (!currentUrl || aiBusy) return;
     setAiBusy(true);
     setAiError('');
     setAiModel('');
     try {
-      const { food, model } = await api.aiOcr(entry.id, currentUrl);
+      const { food, caption, model } = await api.aiOcr(entry.id, currentUrl);
       setPhotoFoodsStr((s) => ({ ...s, [currentUrl]: foodToStr(food) }));
+      applyCaption(currentUrl, caption);
       setAiModel(model);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'AI 判斷失敗，請再試一次');
@@ -218,6 +234,16 @@ export function LogFoodModal() {
         delete next[url];
         return next;
       });
+      // 若這張照片曾由 AI 把敘述組進 desc，一併移除那一行（使用者手打的其他內容保留）
+      const cap = photoCaptions[url];
+      if (cap) {
+        setDesc((d) => (d.includes(cap) ? d.split('\n').filter((ln) => ln.trim() !== cap).join('\n') : d));
+        setPhotoCaptions((s) => {
+          const next = { ...s };
+          delete next[url];
+          return next;
+        });
+      }
       setPage((p) => Math.max(0, Math.min(p, urls.length - 1)));
     } catch {
       /* ignore */
@@ -407,11 +433,13 @@ export function LogFoodModal() {
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 42, border: '1.5px solid #D9CEEA', borderRadius: 12, background: '#F6F3FB', color: '#7A5AB8', fontSize: 14, fontWeight: 700, cursor: aiBusy ? 'default' : 'pointer', opacity: aiBusy ? 0.65 : 1 }}
                   >
                     <span style={{ fontSize: 15 }}>✨</span>
-                    {aiBusy ? 'AI 判斷中…' : 'AI 判斷這張照片的營養素'}
+                    {aiBusy ? 'AI 判斷中…' : 'AI 判斷份數並幫忙寫敘述'}
                   </button>
                   <div style={{ fontSize: 11.5, color: aiError ? '#C0564A' : '#8A9284', lineHeight: 1.5 }}>
                     {aiError
-                      || (aiModel ? `已由模型 ${aiModel} 估算填入，可再自行微調。` : 'AI 會估算份數並填入下方（肉類預設中脂、乳品預設低脂），可再自行微調。')}
+                      || (aiModel
+                        ? `已由模型 ${aiModel} 估算份數並把敘述補進上方，可再自行微調。`
+                        : 'AI 會估算這張照片的份數（填入下方，肉類預設中脂、乳品預設低脂），並把一句敘述補進上方「這餐吃了什麼」，都可再自行修改。')}
                   </div>
                 </div>
               )}

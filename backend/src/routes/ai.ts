@@ -14,18 +14,13 @@ import {
 import {
   COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
-  COMMENT_USE_PHOTO,
-  MAX_IMAGES_TOTAL_BYTES,
   OCR_MODEL,
   aiConfigured,
-  bufferDataUri,
   chat,
   extractJson,
   imagePart,
-  photoBufferForLlm,
   photoDataUri,
   textPart,
-  type ContentPart,
 } from '../llm.js';
 
 export const aiRouter = Router();
@@ -103,39 +98,6 @@ interface EntryFull {
   photo_foods: string;
 }
 
-// 未設定目標時的預設每日份數（與前端 domain.DEFAULT_GOALS 一致）
-const DEFAULT_GOAL_VALS = { meat: 7, veg: 3, grain: 10, oil: 3, fruit: 2, milk: 2 };
-
-// 該日期適用的目標份數（多組重疊取最新一組；無涵蓋則用預設）
-function goalValsFor(userId: number, date: string): Record<string, number> {
-  const row = db
-    .prepare('SELECT vals FROM goal_periods WHERE user_id = ? AND start <= ? AND end >= ? ORDER BY id DESC LIMIT 1')
-    .get(userId, date, date) as { vals: string } | undefined;
-  if (!row) return DEFAULT_GOAL_VALS;
-  try {
-    return { ...DEFAULT_GOAL_VALS, ...JSON.parse(row.vals) };
-  } catch {
-    return DEFAULT_GOAL_VALS;
-  }
-}
-
-function goalSummaryZh(vals: Record<string, number>): string {
-  return `蛋豆魚肉 ${vals.meat} 份、蔬菜 ${vals.veg} 份、全穀雜糧 ${vals.grain} 份、油脂堅果 ${vals.oil} 份、水果 ${vals.fruit} 份、乳品 ${vals.milk} 份`;
-}
-
-// 使用者某天所有飲食紀錄的六大類加總
-function dayTotalFood(userId: number, date: string): Food {
-  const rows = db
-    .prepare('SELECT food FROM entries WHERE user_id = ? AND date = ?')
-    .all(userId, date) as { food: string }[];
-  const total = emptyFood();
-  for (const r of rows) {
-    const f = parseFood(r.food);
-    for (const k of FOOD_KEYS) total[k] = round1(total[k] + (f[k] || 0));
-  }
-  return total;
-}
-
 // ---- 判斷單張照片的營養素份數 ----
 aiRouter.post('/ocr', async (req, res) => {
   const parsed = aiOcrSchema.safeParse(req.body);
@@ -152,21 +114,25 @@ aiRouter.post('/ocr', async (req, res) => {
   if (!dataUri) return res.status(404).json({ error: 'photo file missing' });
 
   const prompt =
-    '你是專業營養師，正在看一張台灣常見的餐點照片。請依「食物代換六大類」估計這張照片中食物的份數。\n' +
+    '你是專業營養師，正在看一張台灣常見的餐點照片。請做兩件事：\n' +
+    '1) 依「食物代換六大類」估計這張照片中食物的份數。\n' +
+    '2) 用繁體中文寫一句 15～40 字的簡短敘述（caption），描述這張照片吃了什麼、大概份量，' +
+    '像使用者自己隨手記錄的口吻（例：「滷雞腿便當，白飯約八分滿，配燙青菜」），不要列出份數數字、不要加標點以外的符號。\n' +
     '六大類與每份參考：蛋豆魚肉（一份約手掌大小的肉/一顆蛋）、蔬菜（一份約煮熟半碗）、全穀雜糧（一份約四分之一碗飯）、' +
     '油脂堅果（一份約一茶匙油）、水果（一份約一個拳頭）、乳品（一份約240ml牛奶）。\n' +
-    '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk，值為份數（可含一位小數，沒有就填 0），不要有其他文字。\n' +
-    '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0}';
+    '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk（值為份數，可含一位小數，沒有就填 0）與 caption（字串），不要有其他文字。\n' +
+    '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0,"caption":"滷雞腿便當，白飯約八分滿，配燙青菜"}';
 
   try {
-    // 只用 31b 看圖（e4b 判斷品質不佳，不作視覺備援）；壞掉就直接回報稍後再試
+    // 只用 31b 看圖（e4b 判斷品質不佳，不作視覺備援）；壞掉就直接回報稍後再試。
+    // 官方範例圖片排在文字前，照做以維持辨識品質。
     const model = OCR_MODEL;
     const text = await chat({
       model,
       json: true,
       temperature: 0.2,
-      maxTokens: 300,
-      messages: [{ role: 'user', content: [textPart(prompt), imagePart(dataUri)] }],
+      maxTokens: 400,
+      messages: [{ role: 'user', content: [imagePart(dataUri), textPart(prompt)] }],
     });
     const raw = extractJson<Record<string, unknown>>(text);
     // 六大類 → 應用內細分欄位：蛋豆魚肉預設中脂、乳品預設低脂（使用者可再自行微調）
@@ -177,14 +143,16 @@ aiRouter.post('/ocr', async (req, res) => {
     food.oil = clampPortion(raw.oil);
     food.fruit = clampPortion(raw.fruit);
     food.milkLow = clampPortion(raw.milk);
-    return res.json({ food, model });
+    // AI 幫忙寫的這張照片敘述；前端會把它組進整筆「這餐吃了什麼」
+    const caption = typeof raw.caption === 'string' ? raw.caption.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+    return res.json({ food, caption, model });
   } catch (e) {
     console.error('ai ocr failed:', e);
     return res.status(502).json({ error: 'AI 判斷失敗（視覺模型暫時無法使用），請稍後再試' });
   }
 });
 
-// ---- AI 評語（依使用者寫的內容與照片，對自己的飲食貼文產生一則 AI 留言）----
+// ---- AI 評語（純文字：依敘述＋份數＋餐期＋時間，對自己的飲食貼文產生一則 AI 留言）----
 aiRouter.post('/comment', async (req, res) => {
   const parsed = aiCommentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
@@ -197,96 +165,45 @@ aiRouter.post('/comment', async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
 
   const food = parseFood(entry.food);
-  const photos = parsePhotos(entry.photos);
   const mealName = MEAL_NAMES[entry.meal] || '這餐';
 
-  // 是否附上照片由 LLM_COMMENT_USE_PHOTO 控制（預設開啟）。
-  // gateway 對整個請求的圖片「總量」有上限：把預算分給每張照片縮圖，仍超出總量的照片捨去（會如實標示張數）。
-  let allImages: ContentPart[] = [];
-  let usedPhotoCount = 0;
-  if (COMMENT_USE_PHOTO && photos.length) {
-    const perPhotoBudget = Math.max(8_000, Math.floor(MAX_IMAGES_TOTAL_BYTES / photos.length));
-    const bufs = (await Promise.all(photos.map((p) => photoBufferForLlm(p, perPhotoBudget)))).filter(
-      (b): b is Buffer => !!b
-    );
-    let total = 0;
-    const used: Buffer[] = [];
-    for (const b of bufs) {
-      if (total + b.length > MAX_IMAGES_TOTAL_BYTES) break;
-      used.push(b);
-      total += b.length;
-    }
-    usedPhotoCount = used.length;
-    allImages = used.map((b) => imagePart(bufferDataUri(b)));
-  }
-
-  // 給模型的完整脈絡：哪一餐＋用餐時間＋敘述＋這餐總份數＋當天累計份數＋當日目標
-  const dayFood = dayTotalFood(req.userId, entry.date);
-  const goalVals = goalValsFor(req.userId, entry.date);
-  const contextFor = (imageCount: number) =>
+  // 純文字評語：只針對這一篇動態，用「敘述＋這餐份數＋餐期＋用餐時間」評估
+  // （不帶照片、不帶當天累計與當日目標）。照片的資訊已在使用者記錄時經 AI 寫進敘述。
+  const context =
     `這是使用者的「${mealName}」飲食紀錄（日期：${entry.date}${entry.eat_time ? `，用餐時間：${entry.eat_time}` : ''}）。\n` +
     `使用者的敘述：${entry.desc ? entry.desc : '（未填寫）'}\n` +
-    `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n` +
-    `使用者今天目前累計（含這餐）：${foodSummaryZh(dayFood)}（約 ${kcalOfFood(dayFood)} 大卡）\n` +
-    `使用者當日的目標份數：${goalSummaryZh(goalVals)}\n` +
-    (imageCount ? `並附上這餐的 ${imageCount} 張照片，請一併參考照片中的實際食物內容。\n` : '');
+    `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n`;
 
   const system =
     '你是一位親切、專業的營養師，正在均衡飲食日記 App 中回覆使用者的餐點紀錄。' +
-    '請綜合考量：這餐吃了什麼（照片與敘述）、是哪一餐與用餐時間點、今天目前累計的份數與當日目標的差距，' +
-    '給出「此時此刻」最適合的評語。例如：某類已達標就提醒接下來收斂、還差很多就建議在今天剩下的餐次補足；' +
-    '宵夜或太晚的正餐可溫和提醒時間點。' +
+    '請只針對「這一餐」評估：這餐吃了什麼（依使用者的敘述與份數）、六大類份數是否均衡、是哪一餐與用餐時間點。' +
+    '例如：這餐某類偏多可溫和提醒、缺了哪類可建議下次補上；宵夜或太晚的正餐可溫和提醒時間點。' +
+    '不要臆測使用者一整天的累計或目標，只就眼前這餐給出評語。' +
+    '若未提供用餐時間，就不要臆測或編造用餐時間點（例如不要說「傍晚」「太晚」等）。' +
     '請用繁體中文、溫暖鼓勵的口吻寫一段 2～4 句的評語：先肯定做得好的地方，再給 1～2 個具體、好執行的小建議。' +
     '請直接寫評語內容，不要加標題或條列，不要逐項重複數字，總長度約 60～180 字。';
 
-  // 階梯式降級：31b 偶爾整批 500（間歇性），退到純文字也要給出評語。
-  // e4b 看圖品質不佳且僅能讀一張，不作視覺備援、只當純文字備援。
-  // 含照片：31b(全部照片) → 12b(純文字) → e4b(純文字)
-  // 純文字：12b → e4b
-  const attempts: { model: string; images: ContentPart[] }[] = allImages.length
-    ? [
-        { model: OCR_MODEL, images: allImages },
-        { model: COMMENT_MODEL, images: [] },
-        { model: COMMENT_FALLBACK_MODEL, images: [] },
-      ]
-    : [
-        { model: COMMENT_MODEL, images: [] },
-        { model: COMMENT_FALLBACK_MODEL, images: [] },
-      ];
-  // 去掉重複的嘗試（例如只有一張照片時 e4b(全部) 與 e4b(第一張) 相同）
-  const seen = new Set<string>();
-  const chain = attempts.filter((a) => {
-    const key = `${a.model}#${a.images.length}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // 純文字降級：主模型（12b）整批故障時退到備援（e4b）也要給出評語
+  const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
 
   let lastError: unknown = null;
-  for (const attempt of chain) {
+  for (const model of chain) {
     try {
       const text = await chat({
-        model: attempt.model,
+        model,
         temperature: 0.6,
         maxTokens: 500,
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: [textPart(contextFor(attempt.images.length)), ...attempt.images] },
+          { role: 'user', content: context },
         ],
       });
       const body = text.replace(/\s+$/, '').slice(0, 1000);
-      // 模型標示：降級或部分參考時如實註明，讓使用者知道這則評語參考了什麼
-      const label =
-        photos.length && attempt.images.length === 0
-          ? `${attempt.model}（未參考照片）`
-          : attempt.images.length && usedPhotoCount < photos.length
-            ? `${attempt.model}（參考 ${usedPhotoCount}/${photos.length} 張照片）`
-            : attempt.model;
-      createComment(req.userId, target, req.userId, body, true, label);
+      createComment(req.userId, target, req.userId, body, true, model);
       return res.status(201).json(listComments(req.userId, target, req.userId));
     } catch (e) {
       lastError = e;
-      console.error(`ai comment attempt failed (${attempt.model}, ${attempt.images.length} images), trying next:`, e instanceof Error ? e.message : e);
+      console.error(`ai comment attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
     }
   }
   console.error('ai comment failed (all attempts):', lastError);
