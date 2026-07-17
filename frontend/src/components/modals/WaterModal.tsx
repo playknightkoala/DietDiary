@@ -33,15 +33,22 @@ export function WaterModal() {
     let n = parseFloat(input);
     if (isNaN(n) || n <= 0 || !date) return;
     n = Math.min(9999, Math.round(n));
-    const updated = await api.patchDay(date, { water: target.water + n, waterTime: time });
+    const updated = await api.addWater(date, n, time);
     if (dateRef.current === date) setTarget(updated);
     setInput('');
     await refresh();
   };
 
+  const removeLog = async (id: number) => {
+    if (!date) return;
+    const updated = await api.deleteWaterLog(date, id);
+    if (dateRef.current === date) setTarget(updated);
+    await refresh();
+  };
+
   const resetWater = async () => {
     if (!date) return;
-    const updated = await api.patchDay(date, { water: 0, waterTime: '' });
+    const updated = await api.resetWater(date);
     if (dateRef.current === date) setTarget(updated);
     await refresh();
   };
@@ -92,6 +99,21 @@ export function WaterModal() {
           <button onClick={() => void addWater()} className="hv-blue" style={{ flex: 'none', height: 46, padding: '0 20px', border: 'none', borderRadius: 12, background: '#5B8DB8', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>加入</button>
         </div>
       </div>
+      {/* 當日逐筆紀錄：每筆是動態牆一則貼文，可單筆刪除 */}
+      {target.waterLogs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ fontSize: 12.5, color: '#6B7565' }}>當日紀錄（每筆會是一則動態）</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 170, overflowY: 'auto' }}>
+            {[...target.waterLogs].reverse().map((w) => (
+              <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #EEEAE0', borderRadius: 11, padding: '7px 10px', background: '#FBFAF6' }}>
+                <span style={{ fontSize: 12.5, color: '#8A9284', width: 44, flex: 'none' }}>{w.time || '未填'}</span>
+                <span style={{ flex: 1, fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 700, color: '#5B8DB8' }}>{w.ml} ml</span>
+                <button onClick={() => void removeLog(w.id)} title="刪除這筆" style={{ border: 'none', background: 'transparent', color: '#C0564A', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 4px' }}>刪除</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, color: '#8A9284' }}>
         <span>輸入錯了？</span>
         <button onClick={() => void resetWater()} style={{ border: 'none', background: 'transparent', color: '#C0564A', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>歸零重記</button>

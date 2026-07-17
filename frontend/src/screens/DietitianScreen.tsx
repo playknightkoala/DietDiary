@@ -433,14 +433,21 @@ export function DietitianScreen() {
 
               {/* 喝水／運動／身體數據（喝水與運動可留言） */}
               <div style={{ borderTop: '1px solid #F0EDE3', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#4A5A4A', lineHeight: 1.7 }}>
-                <div>喝水：{day?.water ?? 0} / {gInfo.water} ml{day?.waterTime ? `（${day.waterTime}）` : ''}</div>
-                <div id={`pro-post-water:${date}`}>
-                  <CommentsThread
-                    key={`w-${memberId}-${date}${focusTarget === `water:${date}` ? '-f' : ''}`}
-                    {...commentProps(`water:${date}`, day?.commentCounts.water ?? 0)}
-                    initialOpen={focusTarget === `water:${date}`}
-                  />
-                </div>
+                <div>喝水：{day?.water ?? 0} / {gInfo.water} ml{day?.waterTime ? `（最後 ${day.waterTime}）` : ''}</div>
+                {/* 逐筆喝水紀錄：一筆一則貼文，各自可留言 */}
+                {(day?.waterLogs ?? []).map((w) => (
+                  <div key={w.id} id={`pro-post-water:${w.id}`} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 11, padding: '6px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12.5, color: '#8A9284', flex: 'none' }}>{w.time || '未填時間'}</span>
+                      <span style={{ fontFamily: 'Outfit', fontSize: 13, fontWeight: 700, color: '#5B8DB8' }}>{w.ml} ml</span>
+                    </div>
+                    <CommentsThread
+                      key={`w-${memberId}-${w.id}${focusTarget === `water:${w.id}` ? '-f' : ''}`}
+                      {...commentProps(`water:${w.id}`, w.commentCount)}
+                      initialOpen={focusTarget === `water:${w.id}`}
+                    />
+                  </div>
+                ))}
                 <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}${day!.exTime ? `（${day!.exTime}）` : ''}` : '未記錄'}</div>
                 <div id={`pro-post-ex:${date}`}>
                   <CommentsThread

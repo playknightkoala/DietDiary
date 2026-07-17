@@ -193,7 +193,39 @@ export function entryToJsonWithRatings(e: EntryRow) {
   return { ...entryToJson(e), ratings: getPhotoRatings(e.id), commentCount: countComments(`entry:${e.id}`) };
 }
 
-// ---- 留言（target：entry:<id> / water:<date> / ex:<date>，owner 為紀錄擁有者）----
+// ---- 逐筆喝水紀錄（一筆＝動態牆一則貼文）----
+
+export interface WaterLogRow {
+  id: number;
+  ml: number;
+  time: string;
+}
+
+// 重算 days 的喝水快取：water＝當日 log 總和、water_time＝最後一次喝水時間
+export function recomputeDayWater(userId: number, date: string) {
+  ensureDayRow(userId, date);
+  const agg = db
+    .prepare("SELECT COALESCE(SUM(ml), 0) AS total, COALESCE(MAX(time), '') AS latest FROM water_logs WHERE user_id = ? AND date = ?")
+    .get(userId, date) as { total: number; latest: string };
+  db.prepare('UPDATE days SET water = ?, water_time = ? WHERE user_id = ? AND date = ?')
+    .run(agg.total, agg.latest, userId, date);
+}
+
+// 刪除一筆喝水 log（連同其留言與通知），回傳是否有刪到
+export function deleteWaterLog(userId: number, date: string, logId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM water_logs WHERE id = ? AND user_id = ? AND date = ?')
+    .run(logId, userId, date);
+  if (!info.changes) return false;
+  const target = `water:${logId}`;
+  db.prepare('DELETE FROM entry_comments WHERE user_id = ? AND target = ?').run(userId, target);
+  // 掛在這筆 log 上的通知（member_id=0＝本人的、>0＝營養師收到的追蹤通知）
+  db.prepare('DELETE FROM notifications WHERE target = ? AND (member_id = ? OR (member_id = 0 AND user_id = ?))').run(target, userId, userId);
+  recomputeDayWater(userId, date);
+  return true;
+}
+
+// ---- 留言（target：entry:<id> / water:<id> / ex:<date>，owner 為紀錄擁有者）----
 
 export interface CommentJson {
   id: number;
@@ -210,11 +242,11 @@ export interface CommentJson {
 // AI 評語在留言串內的顯示名稱
 export const AI_AUTHOR_NAME = 'AI 助手';
 
-// entry:<id> 全域唯一；water:/ex: 需連 owner 一起查
+// entry:<id> / water:<id> 全域唯一；ex:<date> 需連 owner 一起查
 export function countComments(target: string, ownerId?: number): number {
-  const row = target.startsWith('entry:')
-    ? db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target)
-    : db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ? AND user_id = ?').get(target, ownerId ?? -1);
+  const row = target.startsWith('ex:')
+    ? db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ? AND user_id = ?').get(target, ownerId ?? -1)
+    : db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target);
   return (row as { c: number }).c;
 }
 
@@ -255,10 +287,14 @@ export function createComment(ownerId: number, target: string, authorId: number,
 
 export type NotificationType = 'comment' | 'rating' | 'food' | 'post';
 
-// 取得通知對象貼文所屬日期：entry 查資料表；water/ex 直接取 target 內的日期
+// 取得通知對象貼文所屬日期：entry/water 查資料表；ex 直接取 target 內的日期
 export function notificationDate(target: string): string {
   if (target.startsWith('entry:')) {
     const row = db.prepare('SELECT date FROM entries WHERE id = ?').get(Number(target.slice(6))) as { date: string } | undefined;
+    return row?.date ?? '';
+  }
+  if (target.startsWith('water:')) {
+    const row = db.prepare('SELECT date FROM water_logs WHERE id = ?').get(Number(target.slice(6))) as { date: string } | undefined;
     return row?.date ?? '';
   }
   return target.slice(target.indexOf(':') + 1);
@@ -305,11 +341,15 @@ export function notifyCommentWatchers(ownerId: number, target: string, authorId:
   for (const w of watchers) pushNotification(w.id, 'comment', target, ownerId);
 }
 
-// 確認留言對象屬於該會員：entry 需為其所有；water/ex 為其當日紀錄（日期格式已由 schema 驗證）
+// 確認留言對象屬於該會員：entry/water 需為其所有；ex 為其當日紀錄（日期格式已由 schema 驗證）
 export function commentTargetOwned(ownerId: number, target: string): boolean {
   if (target.startsWith('entry:')) {
     const id = Number(target.slice(6));
     return !!db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(id, ownerId);
+  }
+  if (target.startsWith('water:')) {
+    const id = Number(target.slice(6));
+    return !!db.prepare('SELECT id FROM water_logs WHERE id = ? AND user_id = ?').get(id, ownerId);
   }
   return true;
 }
@@ -420,13 +460,18 @@ export function getDayJson(userId: number, date: string) {
       .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
       .all(userId, date) as EntryRow[]
   ).map(entryToJsonWithRatings);
+  const waterLogs = (
+    db
+      .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
+      .all(userId, date, '') as WaterLogRow[]
+  ).map((w) => ({ ...w, commentCount: countComments(`water:${w.id}`) }));
   return {
     commentCounts: {
-      water: countComments(`water:${date}`, userId),
       ex: countComments(`ex:${date}`, userId),
     },
     water: row?.water ?? 0,
     waterTime: row?.water_time ?? '',
+    waterLogs,
     ex: { min: row?.ex_min ?? '', desc: row?.ex_desc ?? '' },
     exTime: row?.ex_time ?? '',
     body: {
@@ -481,6 +526,7 @@ export function deleteUserData(userId: number) {
     db.prepare('DELETE FROM follows WHERE member_id = ? OR dietitian_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entry_comments WHERE user_id = ? OR author_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM water_logs WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { DATE_RE, dayPatchSchema, entryCreateSchema } from '../validation.js';
-import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, type EntryRow } from '../helpers.js';
+import { DATE_RE, dayPatchSchema, entryCreateSchema, waterLogCreateSchema } from '../validation.js';
+import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, recomputeDayWater, deleteWaterLog, type EntryRow, type WaterLogRow } from '../helpers.js';
 
 export const daysRouter = Router();
 daysRouter.use(requireAuth);
@@ -30,16 +30,14 @@ daysRouter.patch('/:date', (req, res) => {
   if (!DATE_RE.test(date)) return res.status(400).json({ error: 'invalid date' });
   const parsed = dayPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { water, waterTime, ex, exTime, body, bodyTime } = parsed.data;
+  const { ex, exTime, body, bodyTime } = parsed.data;
 
   ensureDayRow(req.userId, date);
   const prev = db
-    .prepare('SELECT water, ex_min, ex_desc FROM days WHERE user_id = ? AND date = ?')
-    .get(req.userId, date) as { water: number; ex_min: string; ex_desc: string };
+    .prepare('SELECT ex_min, ex_desc FROM days WHERE user_id = ? AND date = ?')
+    .get(req.userId, date) as { ex_min: string; ex_desc: string };
   const sets: string[] = [];
   const args: (string | number)[] = [];
-  if (water !== undefined) { sets.push('water = ?'); args.push(water); }
-  if (waterTime !== undefined) { sets.push('water_time = ?'); args.push(waterTime); }
   if (ex) { sets.push('ex_min = ?', 'ex_desc = ?'); args.push(ex.min, ex.desc); }
   if (exTime !== undefined) { sets.push('ex_time = ?'); args.push(exTime); }
   if (body) {
@@ -51,13 +49,44 @@ daysRouter.patch('/:date', (req, res) => {
     db.prepare(`UPDATE days SET ${sets.join(', ')} WHERE user_id = ? AND date = ?`)
       .run(...args, req.userId, date);
   }
-  // 新貼文通知追蹤者：喝水量增加、或運動從無到有／內容變更（歸零與清空不通知）
-  if (water !== undefined && water > prev.water) {
-    notifyFollowers(req.userId, `water:${date}`);
-  }
+  // 新貼文通知追蹤者：運動從無到有／內容變更（清空不通知）
   if (ex && ((ex.min && +ex.min > 0) || ex.desc) && (ex.min !== prev.ex_min || ex.desc !== prev.ex_desc)) {
     notifyFollowers(req.userId, `ex:${date}`);
   }
+  return res.json(getDayJson(req.userId, date));
+});
+
+// 新增一筆喝水紀錄（一筆＝動態牆一則貼文）
+daysRouter.post('/:date/water', (req, res) => {
+  const date = req.params.date;
+  if (!DATE_RE.test(date)) return res.status(400).json({ error: 'invalid date' });
+  const parsed = waterLogCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const info = db
+    .prepare('INSERT INTO water_logs (user_id, date, ml, time) VALUES (?, ?, ?, ?)')
+    .run(req.userId, date, parsed.data.ml, parsed.data.time ?? '');
+  recomputeDayWater(req.userId, date);
+  notifyFollowers(req.userId, `water:${Number(info.lastInsertRowid)}`);
+  return res.status(201).json(getDayJson(req.userId, date));
+});
+
+// 刪除單筆喝水紀錄（連同其留言與通知）
+daysRouter.delete('/:date/water/:id', (req, res) => {
+  const date = req.params.date;
+  const id = Number(req.params.id);
+  if (!DATE_RE.test(date) || !Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid params' });
+  if (!deleteWaterLog(req.userId, date, id)) return res.status(404).json({ error: 'not found' });
+  return res.json(getDayJson(req.userId, date));
+});
+
+// 歸零重記：刪掉當天所有喝水紀錄
+daysRouter.delete('/:date/water', (req, res) => {
+  const date = req.params.date;
+  if (!DATE_RE.test(date)) return res.status(400).json({ error: 'invalid date' });
+  const logs = db
+    .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ?')
+    .all(req.userId, date) as WaterLogRow[];
+  for (const w of logs) deleteWaterLog(req.userId, date, w.id);
   return res.json(getDayJson(req.userId, date));
 });
 

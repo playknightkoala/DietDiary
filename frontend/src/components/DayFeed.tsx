@@ -55,7 +55,7 @@ export function DayFeed() {
   });
 
   const hasBody = Object.values(day.body).some((v) => v !== '');
-  const empty = entries.length === 0 && !hasEx && day.water <= 0;
+  const empty = entries.length === 0 && !hasEx && day.waterLogs.length === 0;
   // 有任何當天資料才給按「今日總評」（純身體數據也算）
   const canSummarize = aiEnabled && (!empty || hasBody);
 
@@ -140,21 +140,27 @@ export function DayFeed() {
     };
   });
 
-  if (day.water > 0) {
+  // 喝水：一筆紀錄一則貼文，各自有留言串
+  for (const w of day.waterLogs) {
     posts.push({
-      key: 'water',
-      time: day.waterTime,
+      key: `w${w.id}`,
+      time: w.time,
       node: (
-        <div key="water" style={postStyle}>
+        <div key={`w${w.id}`} style={postStyle}>
           <PostHeader
             glyph="水"
             tint="#E5EBF1"
             color="#5B8DB8"
             title="喝水"
-            time={day.waterTime ? `${day.waterTime}・當日累計` : '當日累計'}
-            right={<span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#5B8DB8', flex: 'none' }}>{day.water} / {waterGoal} ml</span>}
+            time={w.time}
+            right={
+              <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#5B8DB8', flex: 'none' }}>
+                {w.ml} ml
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: '#8A9284', marginLeft: 6 }}>累計 {day.water} / {waterGoal}</span>
+              </span>
+            }
           />
-          <CommentsThread key={`w${selected}`} {...commentProps(`water:${selected}`, day.commentCounts.water)} />
+          <CommentsThread key={`w${w.id}`} {...commentProps(`water:${w.id}`, w.commentCount)} />
         </div>
       ),
     });

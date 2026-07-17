@@ -311,6 +311,49 @@ if (!notifSql.includes("'post'")) {
   db.pragma('foreign_keys = ON');
 }
 
+// 逐筆喝水紀錄（一筆＝動態牆一則貼文；days.water / water_time 降為快取＝總和／最後時間）
+db.exec(`
+CREATE TABLE IF NOT EXISTS water_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  date TEXT NOT NULL,
+  ml INTEGER NOT NULL,
+  time TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_water_logs_user_date ON water_logs(user_id, date);
+`);
+
+// 一次性搬遷：舊的當日累計（days.water）變成該天的一筆 log；
+// 舊留言／通知的 water:<日期> 目標改掛到搬出來的那筆 log（water:<id>）。
+// 搬遷後 days.water 由 log 加總維護，不會再出現「有累計但沒有 log」的狀態，故可安全重跑。
+const migrateWater = db.transaction(() => {
+  db.exec(`
+    INSERT INTO water_logs (user_id, date, ml, time)
+    SELECT d.user_id, d.date, d.water, d.water_time FROM days d
+    WHERE d.water > 0
+      AND NOT EXISTS (SELECT 1 FROM water_logs w WHERE w.user_id = d.user_id AND w.date = d.date);
+    UPDATE entry_comments SET target = 'water:' || (
+      SELECT MIN(w.id) FROM water_logs w
+      WHERE w.user_id = entry_comments.user_id AND w.date = substr(entry_comments.target, 7)
+    )
+    WHERE target LIKE 'water:%-%'
+      AND EXISTS (SELECT 1 FROM water_logs w WHERE w.user_id = entry_comments.user_id AND w.date = substr(entry_comments.target, 7));
+    UPDATE notifications SET target = 'water:' || (
+      SELECT MIN(w.id) FROM water_logs w
+      WHERE w.user_id = CASE WHEN notifications.member_id > 0 THEN notifications.member_id ELSE notifications.user_id END
+        AND w.date = substr(notifications.target, 7)
+    )
+    WHERE target LIKE 'water:%-%'
+      AND EXISTS (
+        SELECT 1 FROM water_logs w
+        WHERE w.user_id = CASE WHEN notifications.member_id > 0 THEN notifications.member_id ELSE notifications.user_id END
+          AND w.date = substr(notifications.target, 7)
+      );
+  `);
+});
+migrateWater();
+
 // 舊資料庫的單筆 goals 資料表：搬進 goal_periods 後移除
 const hasOldGoals = db
   .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'goals'`)
