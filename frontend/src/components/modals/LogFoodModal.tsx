@@ -31,6 +31,16 @@ const strToFood = (s: FoodStr | undefined): Food => {
   return f;
 };
 
+// 知識庫回傳的六大類（protein/veg/grain/oil/fruit/milk）→ 中文摘要
+const sixCatText = (c: Record<string, number>): string => {
+  const map: [string, string][] = [
+    ['protein', '蛋豆魚肉'], ['veg', '蔬菜'], ['grain', '全穀雜糧'],
+    ['oil', '油脂堅果'], ['fruit', '水果'], ['milk', '乳品'],
+  ];
+  const parts = map.filter(([k]) => (c[k] || 0) > 0).map(([k, n]) => `${n} ${c[k]}`);
+  return parts.join('、') || '份數皆為 0';
+};
+
 // 記錄飲食：先新增照片（或略過）→ 逐張照片記錄六大類份數；敘述為整筆共用，貼文顯示總和
 export function LogFoodModal() {
   const editingId = useStore((s) => s.editingId);
@@ -69,6 +79,11 @@ export function LogFoodModal() {
   const [entryFoodStr, setEntryFoodStr] = useState<FoodStr>(() => (entry ? foodToStr(entry.food) : emptyFoodStr()));
   // AI 幫每張照片寫的敘述（本回合暫存，不持久化）；用來在 desc 內「替換自己那行」而不重複、不蓋掉手打的字
   const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
+  // 每張照片最近一次 OCR 的結果（敘述、AI 估的份數摘要、知識庫命中），供顯示參考與評價用
+  type OcrMeta = { caption: string; foodSummary: string; kb: { dishId: number; caption: string; food: Record<string, number>; up: number; down: number } | null };
+  const [ocrResult, setOcrResult] = useState<Record<string, OcrMeta>>({});
+  // 對這次 OCR 的評價：敘述與份數各自 1/-1/0
+  const [ocrVote, setOcrVote] = useState<Record<string, { caption: number; food: number }>>({});
   const [page, setPage] = useState(0);
 
   // 新建流程（尚無任何內容）先選擇「新增照片或略過」；編輯既有紀錄直接進入記錄頁
@@ -117,15 +132,33 @@ export function LogFoodModal() {
     setAiError('');
     setAiModel('');
     try {
-      const { food, caption, model } = await api.aiOcr(entry.id, currentUrl);
-      setPhotoFoodsStr((s) => ({ ...s, [currentUrl]: foodToStr(food) }));
-      applyCaption(currentUrl, caption);
+      const url = currentUrl;
+      const { food, caption, model, kb } = await api.aiOcr(entry.id, url);
+      setPhotoFoodsStr((s) => ({ ...s, [url]: foodToStr(food) }));
+      applyCaption(url, caption);
       setAiModel(model);
+      // 記下這次 OCR 結果供顯示參考與評價；重跑會覆蓋、評價歸零
+      setOcrResult((s) => ({ ...s, [url]: { caption, foodSummary: foodSummary(food) || '份數皆為 0', kb } }));
+      setOcrVote((s) => ({ ...s, [url]: { caption: 0, food: 0 } }));
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'AI 判斷失敗，請再試一次');
     } finally {
       setAiBusy(false);
     }
+  };
+
+  // 對這次 OCR 的敘述或份數按讚/倒讚（再按同鍵取消）。份數評價會回饋到知識庫該道菜。
+  const voteOcr = async (url: string, aspect: 'caption' | 'food', v: 1 | -1) => {
+    const cur = ocrVote[url]?.[aspect] ?? 0;
+    const next = (cur === v ? 0 : v) as 1 | 0 | -1;
+    setOcrVote((s) => ({ ...s, [url]: { caption: s[url]?.caption ?? 0, food: s[url]?.food ?? 0, [aspect]: next } }));
+    const meta = ocrResult[url];
+    try {
+      await api.aiFeedback(aspect === 'caption' ? 'ocr_caption' : 'ocr_food', url, next, {
+        body: aspect === 'caption' ? meta?.caption : meta?.foodSummary,
+        dishId: aspect === 'food' ? meta?.kb?.dishId : undefined,
+      });
+    } catch { /* 評價失敗不影響記錄 */ }
   };
 
   // 關閉（完成或 ✕）：有資料 → 儲存；空白 entry → 自動刪除
@@ -441,6 +474,29 @@ export function LogFoodModal() {
                         ? `已由模型 ${aiModel} 估算份數並把敘述補進上方，可再自行微調。`
                         : 'AI 會估算這張照片的份數（填入下方，肉類預設中脂、乳品預設低脂），並把一句敘述補進上方「這餐吃了什麼」，都可再自行修改。')}
                   </div>
+                  {/* 這次 OCR 的評價：敘述與份數分開，回饋給 AI 越用越準；份數評價也會回饋到共用知識庫 */}
+                  {ocrResult[currentUrl] && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: '#FBF9FE', border: '1px solid #EAE2F5', borderRadius: 10, padding: '8px 10px' }}>
+                      {ocrResult[currentUrl].kb && (
+                        <div style={{ fontSize: 11.5, color: '#6B7565', lineHeight: 1.5 }}>
+                          💡 類似菜色社群參考份數：{sixCatText(ocrResult[currentUrl].kb!.food)}
+                          <span style={{ color: '#8A9284' }}>（👍{ocrResult[currentUrl].kb!.up}・👎{ocrResult[currentUrl].kb!.down}）</span>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11.5, color: '#7A5AB8', fontWeight: 700 }}>這次 AI 判斷準嗎？（幫助 AI 越來越準）</div>
+                      {(['caption', 'food'] as const).map((aspect) => {
+                        const v = ocrVote[currentUrl]?.[aspect] ?? 0;
+                        const label = aspect === 'caption' ? '敘述' : '份數';
+                        return (
+                          <div key={aspect} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, color: '#4A5A4A', width: 30 }}>{label}</span>
+                            <button onClick={() => void voteOcr(currentUrl, aspect, 1)} title="準" style={{ border: `1px solid ${v === 1 ? '#4A7C59' : '#DDD8CA'}`, background: v === 1 ? '#E3EBD9' : '#fff', color: v === 1 ? '#3B6647' : '#8A9284', borderRadius: 99, padding: '2px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>👍</button>
+                            <button onClick={() => void voteOcr(currentUrl, aspect, -1)} title="不準" style={{ border: `1px solid ${v === -1 ? '#C0564A' : '#DDD8CA'}`, background: v === -1 ? '#F5E3DB' : '#fff', color: v === -1 ? '#A8433A' : '#8A9284', borderRadius: 99, padding: '2px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>👎</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               <FoodFields

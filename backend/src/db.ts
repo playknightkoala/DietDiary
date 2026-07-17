@@ -156,6 +156,23 @@ if (!aiFbCols.includes('body')) {
   db.exec(`ALTER TABLE ai_feedback ADD COLUMN body TEXT NOT NULL DEFAULT ''`);
 }
 
+// 共用菜色知識庫（所有 AI 使用者共享；粒度＝一道菜一列）。
+// 相似的敘述/照片併成同一列，food 為「社群共識份數」（併入時取平均），
+// up/down 為全體對此菜份數估計的讚/倒讚累計。新照片來時查最相似的一列當估算依據。
+db.exec(`
+CREATE TABLE IF NOT EXISTS dish_kb (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  caption TEXT NOT NULL,          -- 代表性敘述
+  food TEXT NOT NULL,             -- 六大類共識份數 JSON
+  n INTEGER NOT NULL DEFAULT 1,   -- 併入次數（算共識平均用）
+  text_vec BLOB,                  -- 敘述向量（Float32）
+  image_vec BLOB,                 -- 圖片向量（Float32）
+  up INTEGER NOT NULL DEFAULT 0,  -- 全體讚（份數估計可信）
+  down INTEGER NOT NULL DEFAULT 0,-- 全體倒讚（份數估計踩雷）
+  updated_at INTEGER NOT NULL
+);
+`);
+
 // 舊資料庫沒有 status / approval_token 欄位：補上，且既有帳號一律視為已開通
 const userCols = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
 if (!userCols.includes('status')) {

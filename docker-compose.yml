@@ -25,6 +25,10 @@ services:
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-45000}
       # 送給視覺模型的單張照片上限（bytes）：gateway 實測約 75KB（base64 十萬字元）會 500，超過會自動縮圖
       - LLM_MAX_IMAGE_BYTES=${LLM_MAX_IMAGE_BYTES:-68000}
+      # 共用菜色知識庫（embedding 參考）總開關：預設關閉；記憶體吃緊時可一鍵關掉，關閉時 OCR 照舊
+      - AI_KB_ENABLED=${AI_KB_ENABLED:-false}
+      # 外部 embedding 服務位址（文字＋圖片向量）；未設定時知識庫自動停用
+      - AI_EMBED_URL=${AI_EMBED_URL:-}
     volumes:
       - ./docker-data/db:/app/data
       - ./docker-data/uploads:/app/uploads
@@ -37,3 +41,19 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  # 共用知識庫的 embedding 服務（文字＋圖片向量）。以 profile 隔離：
+  #   - 平時 `docker compose up -d` 不會啟動它（不佔記憶體）
+  #   - 要用知識庫時：`docker compose --profile embed up -d`
+  # 啟用後把 backend 的環境設成 AI_KB_ENABLED=true、AI_EMBED_URL=http://embedder:8900（同網路內名稱）
+  embedder:
+    build: ./embedding-service
+    profiles: ["embed"]
+    environment:
+      - FASTEMBED_CACHE_PATH=/models
+    volumes:
+      - embed-models:/models   # 模型快取，避免每次重啟重新下載
+    restart: unless-stopped
+
+volumes:
+  embed-models:

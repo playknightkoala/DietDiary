@@ -325,7 +325,7 @@ export function deletePhotoRatings(entryId: number, photos?: string[]) {
 
 // ---- AI 評價（使用者對某則 AI 產出按讚/倒讚）----
 
-export type AiFeedbackKind = 'comment' | 'daily';
+export type AiFeedbackKind = 'comment' | 'daily' | 'ocr_caption' | 'ocr_food';
 
 // 取得使用者對某則 AI 產出的評價（1＝讚、-1＝倒讚、0＝未評價）
 export function getAiFeedback(userId: number, kind: AiFeedbackKind, ref: string): number {

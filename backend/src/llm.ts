@@ -28,6 +28,16 @@ export function aiConfigured(): boolean {
   return !!LLM_TOKEN;
 }
 
+// ---- 共用菜色知識庫（embedding 參考）總開關 ----
+// AI_KB_ENABLED＝總開關（預設關）；AI_EMBED_URL＝外部 embedding 服務位址（文字/圖片向量）。
+// 記憶體吃緊或服務未就緒時保持關閉：知識庫完全不介入，OCR／評語／總評照舊運作。
+export const KB_ENABLED = /^(1|true|yes|on)$/i.test((process.env.AI_KB_ENABLED || '').trim());
+export const EMBED_URL = (process.env.AI_EMBED_URL || '').replace(/\/$/, '');
+// 兩者皆備妥才視為啟用（缺 URL 一律當關閉，避免半殘狀態）
+export function kbActive(): boolean {
+  return KB_ENABLED && !!EMBED_URL;
+}
+
 // OpenAI 相容的訊息內容：純文字或（文字＋圖片）陣列
 export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 export interface ChatMessage {

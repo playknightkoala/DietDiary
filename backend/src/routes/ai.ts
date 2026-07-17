@@ -16,11 +16,13 @@ import {
   upsertDailySummary,
   type Food,
 } from '../helpers.js';
+import { kbHint, kbLookupByImage, kbUpsert, kbVote } from '../kb.js';
 import {
   COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
   OCR_MODEL,
   aiConfigured,
+  kbActive,
   chat,
   extractJson,
   imagePart,
@@ -48,11 +50,37 @@ function requireAI(req: Request, res: Response, next: NextFunction) {
 aiRouter.post('/feedback', (req, res) => {
   const parsed = aiFeedbackSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { kind, ref, vote } = parsed.data;
-  // 擷取被評價當下的內容快照，日後當「好範例／反例」餵回模型
-  const body = vote === 0 ? '' : currentAiBody(req.userId, kind, ref);
+  const { kind, ref, vote, body: clientBody, dishId } = parsed.data;
+  // comment/daily：後端擷取當下內容快照；ocr_*：OCR 結果未持久化，用前端帶來的快照
+  const isOcr = kind === 'ocr_caption' || kind === 'ocr_food';
+  const body = vote === 0 ? '' : isOcr ? (clientBody ?? '').slice(0, 500) : currentAiBody(req.userId, kind, ref);
   setAiFeedback(req.userId, kind, ref, vote, body);
+  // 份數評價若對應到知識庫某道菜，累計該菜的全體讚/倒讚（取消時不動，避免難以回退）
+  if (kind === 'ocr_food' && dishId && vote !== 0) kbVote(dishId, vote);
   return res.json({ vote });
+});
+
+// ---- 知識庫種庫（管理者）：把既有「已存檔且有敘述＋照片」的紀錄灌進共用知識庫 ----
+aiRouter.post('/kb/seed', async (req, res) => {
+  const u = db.prepare('SELECT role, status FROM users WHERE id = ?').get(req.userId) as { role: string; status: string } | undefined;
+  if (!u || u.status !== 'active' || u.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+  if (!kbActive()) return res.status(400).json({ error: '知識庫未啟用（需設定 AI_KB_ENABLED 與 AI_EMBED_URL）' });
+  const limit = Math.min(3000, Math.max(1, Number(req.body?.limit) || 500));
+  const rows = db
+    .prepare("SELECT desc, photos, food FROM entries WHERE desc != '' AND photos != '[]' ORDER BY id DESC LIMIT ?")
+    .all(limit) as { desc: string; photos: string; food: string }[];
+  let seeded = 0, skipped = 0;
+  for (const r of rows) {
+    const photos = parsePhotos(r.photos);
+    if (!photos.length || !r.desc.trim()) { skipped++; continue; }
+    try {
+      await kbUpsert(r.desc, parseFood(r.food), photos[0]);
+      seeded++;
+    } catch {
+      skipped++;
+    }
+  }
+  return res.json({ seeded, skipped, scanned: rows.length });
 });
 
 aiRouter.use(requireAI);
@@ -217,6 +245,10 @@ aiRouter.post('/ocr', async (req, res) => {
     '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk（值為份數，可含一位小數，沒有就填 0）與 caption（字串），不要有其他文字。\n' +
     '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0,"caption":"滷雞腿便當，白飯約八分滿，配燙青菜"}';
 
+  // 共用知識庫（開關開啟時）：先找相似菜色，把社群共識份數當估算參考注入提示。查詢失敗不影響 OCR。
+  const kbMatch = await kbLookupByImage(photo).catch(() => null);
+  const promptFull = kbMatch ? prompt + '\n' + kbHint(kbMatch) : prompt;
+
   try {
     // 只用 31b 看圖（e4b 判斷品質不佳，不作視覺備援）；壞掉就直接回報稍後再試。
     // 官方範例圖片排在文字前，照做以維持辨識品質。
@@ -226,7 +258,7 @@ aiRouter.post('/ocr', async (req, res) => {
       json: true,
       temperature: 0.2,
       maxTokens: 400,
-      messages: [{ role: 'user', content: [imagePart(dataUri), textPart(prompt)] }],
+      messages: [{ role: 'user', content: [imagePart(dataUri), textPart(promptFull)] }],
     });
     const raw = extractJson<Record<string, unknown>>(text);
     // 六大類 → 應用內細分欄位：蛋豆魚肉預設中脂、乳品預設低脂（使用者可再自行微調）
@@ -239,7 +271,9 @@ aiRouter.post('/ocr', async (req, res) => {
     food.milkLow = clampPortion(raw.milk);
     // AI 幫忙寫的這張照片敘述；前端會把它組進整筆「這餐吃了什麼」
     const caption = typeof raw.caption === 'string' ? raw.caption.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
-    return res.json({ food, caption, model });
+    // 附上知識庫命中的參考（前端顯示「類似菜色社群份數」，並讓份數評價回饋到該道菜）
+    const kb = kbMatch ? { dishId: kbMatch.id, caption: kbMatch.caption, food: kbMatch.food, up: kbMatch.up, down: kbMatch.down } : null;
+    return res.json({ food, caption, model, kb });
   } catch (e) {
     console.error('ai ocr failed:', e);
     return res.status(502).json({ error: 'AI 判斷失敗（視覺模型暫時無法使用），請稍後再試' });

@@ -6,6 +6,8 @@ import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MAX_PHOTOS, copyPhotoSchema, entryPatchSchema } from '../validation.js';
 import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, stripJpegExif, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { kbActive } from '../llm.js';
+import { kbUpsert } from '../kb.js';
 
 export { UPLOAD_DIR };
 
@@ -120,6 +122,13 @@ entriesRouter.patch('/:id', (req, res) => {
   // 紀錄第一次從空白變成有內容＝發布新貼文，通知追蹤這位會員的營養師
   if (!entryHasData(entryToJson(entry)) && entryHasData(entryToJson(updated))) {
     notifyFollowers(req.userId, `entry:${entry.id}`);
+  }
+  // 學進共用知識庫（開關開啟時）：有敘述＋照片＋份數的已確認紀錄。fire-and-forget，不影響存檔回應。
+  if (kbActive()) {
+    const u = entryToJson(updated);
+    if (u.desc.trim() && u.photos.length && Object.values(u.food).some((v) => v > 0)) {
+      void kbUpsert(u.desc, u.food, u.photos[0]).catch(() => {});
+    }
   }
   return res.json(entryToJsonWithRatings(updated));
 });

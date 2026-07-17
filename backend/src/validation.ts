@@ -162,10 +162,15 @@ export const aiDailySchema = z.object({
 });
 
 // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)
+// kind：comment/daily（ref＝留言id/日期，內容快照由後端擷取）；
+//       ocr_caption/ocr_food（ref＝照片 url，內容快照由前端以 body 帶入，因 OCR 結果未持久化）
+// dishId：ocr_food 若對應到知識庫某道菜，帶上以累計該菜的讚/倒讚
 export const aiFeedbackSchema = z.object({
-  kind: z.enum(['comment', 'daily']),
-  ref: z.string().min(1).max(40),
+  kind: z.enum(['comment', 'daily', 'ocr_caption', 'ocr_food']),
+  ref: z.string().min(1).max(300),
   vote: z.union([z.literal(1), z.literal(0), z.literal(-1)]),
+  body: z.string().max(500).optional(),
+  dishId: z.number().int().positive().optional(),
 });
 
 export const goalsSchema = z.object({

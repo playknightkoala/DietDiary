@@ -186,15 +186,31 @@ export const api = {
 
   // AI 功能（需管理者開放）：判斷單張照片的營養素份數、對貼文產生 AI 評語
   aiOcr: (entryId: number, photo: string) =>
-    request<{ food: Food; caption: string; model: string }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
+    request<{
+      food: Food;
+      caption: string;
+      model: string;
+      // 共用知識庫命中的相似菜色（未啟用或未命中為 null）
+      kb: { dishId: number; caption: string; food: Record<string, number>; up: number; down: number } | null;
+    }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
   aiComment: (target: CommentTarget) =>
     request<EntryComment[]>('/api/ai/comment', { method: 'POST', body: JSON.stringify({ target }) }),
   // AI 今日總評：針對某天產生整天綜合評語，存為當天一則 AI 動態，回傳更新後的當日資料
   aiDaily: (date: string) =>
     request<DayData>('/api/ai/daily', { method: 'POST', body: JSON.stringify({ date }) }),
-  // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)；kind＝'comment'(ref=留言id)｜'daily'(ref=日期)
-  aiFeedback: (kind: 'comment' | 'daily', ref: string, vote: 1 | 0 | -1) =>
-    request<{ vote: number }>('/api/ai/feedback', { method: 'POST', body: JSON.stringify({ kind, ref, vote }) }),
+  // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)。
+  // kind：comment(ref=留言id)｜daily(ref=日期)｜ocr_caption/ocr_food(ref=照片url，body 帶內容快照)
+  // ocr_food 若對應知識庫某道菜，帶 dishId 以累計該菜的讚/倒讚
+  aiFeedback: (
+    kind: 'comment' | 'daily' | 'ocr_caption' | 'ocr_food',
+    ref: string,
+    vote: 1 | 0 | -1,
+    opts?: { body?: string; dishId?: number }
+  ) =>
+    request<{ vote: number }>('/api/ai/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ kind, ref, vote, ...opts }),
+    }),
   adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
   // 營養師
