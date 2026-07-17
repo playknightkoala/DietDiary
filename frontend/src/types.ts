@@ -37,8 +37,8 @@ export interface HistoryItem {
   date: string;
 }
 
-// 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某天的運動（ex:<date>）
-export type CommentTarget = `entry:${number}` | `water:${number}` | `ex:${string}`;
+// 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某筆運動（ex:<id>）
+export type CommentTarget = `entry:${number}` | `water:${number}` | `ex:${number}`;
 
 export interface EntryComment {
   id: number;
@@ -73,17 +73,23 @@ export interface WaterLog {
   commentCount: number;
 }
 
+// 逐筆運動紀錄（一筆＝動態牆一則貼文）
+export interface ExLog {
+  id: number;
+  min: string; // 分鐘（字串，空字串＝未填）
+  desc: string;
+  time: string; // HH:MM，空字串＝未填
+  commentCount: number;
+}
+
 export interface DayData {
   water: number; // 當日累計（waterLogs 的總和）
   waterTime: string; // 最後一次喝水紀錄時間 HH:MM，空字串＝未填
   waterLogs: WaterLog[];
-  ex: { min: string; desc: string };
-  exTime: string;
+  exLogs: ExLog[];
   body: Record<BodyKey, string>;
   bodyTime: string;
   entries: Entry[];
-  // 運動貼文的留言數
-  commentCounts: { ex: number };
   // AI 今日總評（尚未產生為 null）
   aiSummary: DailySummary | null;
 }

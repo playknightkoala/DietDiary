@@ -52,12 +52,10 @@ export function emptyDay(): DayData {
     water: 0,
     waterTime: '',
     waterLogs: [],
-    ex: { min: '', desc: '' },
-    exTime: '',
+    exLogs: [],
     body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '' },
     bodyTime: '',
     entries: [],
-    commentCounts: { ex: 0 },
     aiSummary: null,
   };
 }

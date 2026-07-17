@@ -60,8 +60,6 @@ const numText = z.string().max(20); // body/ex values stored as strings, '' = no
 const hmOrEmpty = z.string().regex(TIME_RE).or(z.literal(''));
 
 export const dayPatchSchema = z.object({
-  ex: z.object({ min: numText, desc: z.string().max(500) }).optional(),
-  exTime: hmOrEmpty.optional(),
   body: z
     .object({
       weight: numText,
@@ -84,6 +82,15 @@ export const waterLogCreateSchema = z.object({
   ml: z.number().int().min(1).max(9999),
   time: hmOrEmpty.optional(),
 });
+
+// 逐筆運動紀錄（一筆＝動態牆一則貼文）：分鐘或描述至少要有一項
+export const exLogCreateSchema = z
+  .object({
+    min: numText,
+    desc: z.string().max(500),
+    time: hmOrEmpty.optional(),
+  })
+  .refine((d) => (d.min !== '' && Number(d.min) > 0) || d.desc.trim() !== '');
 
 export const MAX_PHOTOS = 10;
 
@@ -109,8 +116,8 @@ export const entryPatchSchema = z.object({
 // 從歷史加入：複製自己既有的照片到目前這筆紀錄
 export const copyPhotoSchema = z.object({ photo: z.string().max(300) });
 
-// 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某天的運動（ex:<date>）
-export const COMMENT_TARGET_RE = /^(entry:\d{1,10}|water:\d{1,10}|ex:\d{4}-\d{2}-\d{2})$/;
+// 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某筆運動（ex:<id>）
+export const COMMENT_TARGET_RE = /^(entry:\d{1,10}|water:\d{1,10}|ex:\d{1,10})$/;
 
 export const commentCreateSchema = z.object({
   target: z.string().regex(COMMENT_TARGET_RE),

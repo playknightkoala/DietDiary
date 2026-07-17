@@ -225,7 +225,43 @@ export function deleteWaterLog(userId: number, date: string, logId: number): boo
   return true;
 }
 
-// ---- 留言（target：entry:<id> / water:<id> / ex:<date>，owner 為紀錄擁有者）----
+// ---- 逐筆運動紀錄（一筆＝動態牆一則貼文）----
+
+export interface ExLogRow {
+  id: number;
+  min: string;
+  desc: string;
+  time: string;
+}
+
+// 重算 days 的運動快取（供月曆亮燈與舊版前端相容）：
+// ex_min＝當日總分鐘、ex_desc＝各筆敘述串接、ex_time＝最後一次運動時間
+export function recomputeDayEx(userId: number, date: string) {
+  ensureDayRow(userId, date);
+  const rows = db
+    .prepare('SELECT min, desc, time FROM ex_logs WHERE user_id = ? AND date = ?')
+    .all(userId, date) as ExLogRow[];
+  const total = rows.reduce((a, r) => a + (Number(r.min) || 0), 0);
+  const descs = rows.filter((r) => r.desc).map((r) => r.desc).join('、');
+  const latest = rows.reduce((a, r) => (r.time > a ? r.time : a), '');
+  db.prepare('UPDATE days SET ex_min = ?, ex_desc = ?, ex_time = ? WHERE user_id = ? AND date = ?')
+    .run(total > 0 ? String(Math.round(total * 10) / 10) : '', descs, latest, userId, date);
+}
+
+// 刪除一筆運動 log（連同其留言與通知），回傳是否有刪到
+export function deleteExLog(userId: number, date: string, logId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM ex_logs WHERE id = ? AND user_id = ? AND date = ?')
+    .run(logId, userId, date);
+  if (!info.changes) return false;
+  const target = `ex:${logId}`;
+  db.prepare('DELETE FROM entry_comments WHERE user_id = ? AND target = ?').run(userId, target);
+  db.prepare('DELETE FROM notifications WHERE target = ? AND (member_id = ? OR (member_id = 0 AND user_id = ?))').run(target, userId, userId);
+  recomputeDayEx(userId, date);
+  return true;
+}
+
+// ---- 留言（target：entry:<id> / water:<id> / ex:<id>，owner 為紀錄擁有者）----
 
 export interface CommentJson {
   id: number;
@@ -242,11 +278,9 @@ export interface CommentJson {
 // AI 評語在留言串內的顯示名稱
 export const AI_AUTHOR_NAME = 'AI 助手';
 
-// entry:<id> / water:<id> 全域唯一；ex:<date> 需連 owner 一起查
-export function countComments(target: string, ownerId?: number): number {
-  const row = target.startsWith('ex:')
-    ? db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ? AND user_id = ?').get(target, ownerId ?? -1)
-    : db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target);
+// 三種 target（entry:/water:/ex:）皆為全域唯一 id
+export function countComments(target: string): number {
+  const row = db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target);
   return (row as { c: number }).c;
 }
 
@@ -287,17 +321,12 @@ export function createComment(ownerId: number, target: string, authorId: number,
 
 export type NotificationType = 'comment' | 'rating' | 'food' | 'post';
 
-// 取得通知對象貼文所屬日期：entry/water 查資料表；ex 直接取 target 內的日期
+// 取得通知對象貼文所屬日期（三種 target 皆以 id 反查資料表）
 export function notificationDate(target: string): string {
-  if (target.startsWith('entry:')) {
-    const row = db.prepare('SELECT date FROM entries WHERE id = ?').get(Number(target.slice(6))) as { date: string } | undefined;
-    return row?.date ?? '';
-  }
-  if (target.startsWith('water:')) {
-    const row = db.prepare('SELECT date FROM water_logs WHERE id = ?').get(Number(target.slice(6))) as { date: string } | undefined;
-    return row?.date ?? '';
-  }
-  return target.slice(target.indexOf(':') + 1);
+  const id = Number(target.slice(target.indexOf(':') + 1));
+  const table = target.startsWith('entry:') ? 'entries' : target.startsWith('water:') ? 'water_logs' : 'ex_logs';
+  const row = db.prepare(`SELECT date FROM ${table} WHERE id = ?`).get(id) as { date: string } | undefined;
+  return row?.date ?? '';
 }
 
 // 同一貼文的同類型未讀通知只保留一則（例如一筆紀錄多張照片評分只算一則），重複事件僅更新時間
@@ -341,17 +370,11 @@ export function notifyCommentWatchers(ownerId: number, target: string, authorId:
   for (const w of watchers) pushNotification(w.id, 'comment', target, ownerId);
 }
 
-// 確認留言對象屬於該會員：entry/water 需為其所有；ex 為其當日紀錄（日期格式已由 schema 驗證）
+// 確認留言對象屬於該會員（三種 target 皆查各自資料表的擁有者）
 export function commentTargetOwned(ownerId: number, target: string): boolean {
-  if (target.startsWith('entry:')) {
-    const id = Number(target.slice(6));
-    return !!db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(id, ownerId);
-  }
-  if (target.startsWith('water:')) {
-    const id = Number(target.slice(6));
-    return !!db.prepare('SELECT id FROM water_logs WHERE id = ? AND user_id = ?').get(id, ownerId);
-  }
-  return true;
+  const id = Number(target.slice(target.indexOf(':') + 1));
+  const table = target.startsWith('entry:') ? 'entries' : target.startsWith('water:') ? 'water_logs' : 'ex_logs';
+  return !!db.prepare(`SELECT id FROM ${table} WHERE id = ? AND user_id = ?`).get(id, ownerId);
 }
 
 export function deletePhotoRatings(entryId: number, photos?: string[]) {
@@ -465,15 +488,21 @@ export function getDayJson(userId: number, date: string) {
       .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
       .all(userId, date, '') as WaterLogRow[]
   ).map((w) => ({ ...w, commentCount: countComments(`water:${w.id}`) }));
+  const exLogs = (
+    db
+      .prepare('SELECT id, min, desc, time FROM ex_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
+      .all(userId, date, '') as ExLogRow[]
+  ).map((x) => ({ ...x, commentCount: countComments(`ex:${x.id}`) }));
   return {
-    commentCounts: {
-      ex: countComments(`ex:${date}`, userId),
-    },
+    // 舊版前端相容（新版已不使用；ex 固定 0 避免舊 bundle 讀取時炸掉）
+    commentCounts: { ex: 0 },
     water: row?.water ?? 0,
     waterTime: row?.water_time ?? '',
     waterLogs,
+    // ex / exTime 為快取（總分鐘／敘述串接／最後時間），供舊版前端與月曆亮燈；新版前端請用 exLogs
     ex: { min: row?.ex_min ?? '', desc: row?.ex_desc ?? '' },
     exTime: row?.ex_time ?? '',
+    exLogs,
     body: {
       weight: row?.body_weight ?? '',
       fat: row?.body_fat ?? '',
@@ -527,6 +556,7 @@ export function deleteUserData(userId: number) {
     db.prepare('DELETE FROM entry_comments WHERE user_id = ? OR author_id = ?').run(userId, userId);
     db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM water_logs WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM ex_logs WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);

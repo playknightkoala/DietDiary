@@ -129,7 +129,7 @@ export const api = {
   getDay: (date: string) => request<DayData>(`/api/days/${date}`),
   patchDay: (
     date: string,
-    patch: { ex?: DayData['ex']; exTime?: string; body?: DayData['body']; bodyTime?: string }
+    patch: { body?: DayData['body']; bodyTime?: string }
   ) => request<DayData>(`/api/days/${date}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   // 逐筆喝水紀錄：新增一筆／刪除一筆／整天歸零
   addWater: (date: string, ml: number, time: string) =>
@@ -137,6 +137,11 @@ export const api = {
   deleteWaterLog: (date: string, id: number) =>
     request<DayData>(`/api/days/${date}/water/${id}`, { method: 'DELETE' }),
   resetWater: (date: string) => request<DayData>(`/api/days/${date}/water`, { method: 'DELETE' }),
+  // 逐筆運動紀錄：新增一筆／刪除一筆（連同留言）
+  addEx: (date: string, log: { min: string; desc: string; time: string }) =>
+    request<DayData>(`/api/days/${date}/ex`, { method: 'POST', body: JSON.stringify(log) }),
+  deleteExLog: (date: string, id: number) =>
+    request<DayData>(`/api/days/${date}/ex/${id}`, { method: 'DELETE' }),
   getMarks: (from: string, to: string) =>
     request<{ dates: string[] }>(`/api/days/marks?from=${from}&to=${to}`),
 

@@ -41,6 +41,7 @@ export function WaterModal() {
 
   const removeLog = async (id: number) => {
     if (!date) return;
+    if (!window.confirm('確定要刪除這筆喝水紀錄？留言會一併刪除。')) return;
     const updated = await api.deleteWaterLog(date, id);
     if (dateRef.current === date) setTarget(updated);
     await refresh();
@@ -48,6 +49,7 @@ export function WaterModal() {
 
   const resetWater = async () => {
     if (!date) return;
+    if (!window.confirm('確定要刪除這天所有喝水紀錄？留言會一併刪除。')) return;
     const updated = await api.resetWater(date);
     if (dateRef.current === date) setTarget(updated);
     await refresh();

@@ -352,7 +352,7 @@ aiRouter.post('/daily', async (req, res) => {
   const entries = day.entries.filter(
     (e) => e.desc || e.photos.length || FOOD_KEYS.some((k) => (e.food[k] || 0) > 0)
   );
-  const hasEx = (day.ex.min && Number(day.ex.min) > 0) || !!day.ex.desc;
+  const hasEx = day.exLogs.length > 0;
   const hasBodyToday = !!bodyStrFrom(day.body);
   if (!entries.length && !(day.water > 0) && !hasEx && !hasBodyToday) {
     return res.status(400).json({ error: '這天還沒有任何紀錄，先記錄後再產生今日總評' });
@@ -374,7 +374,12 @@ aiRouter.post('/daily', async (req, res) => {
         .join('\n')
     : '（今天沒有飲食紀錄）';
   const exStr = hasEx
-    ? `${day.ex.min && Number(day.ex.min) > 0 ? `${day.ex.min} 分鐘` : ''}${day.ex.min && day.ex.desc ? '・' : ''}${day.ex.desc}${day.exTime ? `（${day.exTime}）` : ''}`
+    ? day.exLogs
+        .map((l) => {
+          const m = l.min && Number(l.min) > 0 ? `${l.min} 分鐘` : '';
+          return `${m}${m && l.desc ? '・' : ''}${l.desc}${l.time ? `（${l.time}）` : ''}`;
+        })
+        .join('；')
     : '未記錄';
   const bodyStr = bodyLineFor(req.userId, date, day.body, day.bodyTime);
 
@@ -383,7 +388,11 @@ aiRouter.post('/daily', async (req, res) => {
     `【當天各餐】\n${mealLines}\n\n` +
     `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal)} 大卡）\n` +
     `【當日六大類目標】${goalSummaryZh(goal.vals)}\n` +
-    `【喝水】${day.water} / ${goal.water} ml\n` +
+    `【喝水】${day.water} / ${goal.water} ml${
+      day.waterLogs.length
+        ? `（分 ${day.waterLogs.length} 次：${day.waterLogs.map((w) => `${w.time || '未填時間'} ${w.ml} ml`).join('、')}）`
+        : ''
+    }\n` +
     `【運動】${exStr}\n` +
     `【身體數據】${bodyStr}\n`;
 

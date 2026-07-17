@@ -42,7 +42,6 @@ export function DayFeed() {
   const lightboxEntry = lightbox ? day.entries.find((e) => e.id === lightbox.entryId) : null;
 
   const entries = sortEntriesNewestFirst(day.entries.filter(entryHasData));
-  const hasEx = (day.ex.min && +day.ex.min > 0) || day.ex.desc;
   const { water: waterGoal } = goalsFor(selected, goals);
   const isToday = selected === dstr(new Date());
 
@@ -54,8 +53,24 @@ export function DayFeed() {
     remove: (id: number) => api.deleteComment(id),
   });
 
+  // 刪除喝水／運動單筆紀錄（連同留言），與飲食貼文的刪除行為一致
+  const removeWaterLog = async (id: number) => {
+    if (!window.confirm('確定要刪除這筆喝水紀錄？留言會一併刪除。')) return;
+    await api.deleteWaterLog(selected, id);
+    await loadDay();
+  };
+  const removeExLog = async (id: number) => {
+    if (!window.confirm('確定要刪除這筆運動紀錄？留言會一併刪除。')) return;
+    await api.deleteExLog(selected, id);
+    await loadDay();
+  };
+  const deleteBtnStyle = {
+    border: '1px solid #E4C9C4', background: '#fff', color: '#C0564A',
+    borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '4px 12px', cursor: 'pointer', flex: 'none',
+  } as const;
+
   const hasBody = Object.values(day.body).some((v) => v !== '');
-  const empty = entries.length === 0 && !hasEx && day.waterLogs.length === 0;
+  const empty = entries.length === 0 && day.exLogs.length === 0 && day.waterLogs.length === 0;
   // 有任何當天資料才給按「今日總評」（純身體數據也算）
   const canSummarize = aiEnabled && (!empty || hasBody);
 
@@ -154,10 +169,13 @@ export function DayFeed() {
             title="喝水"
             time={w.time}
             right={
-              <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#5B8DB8', flex: 'none' }}>
-                {w.ml} ml
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: '#8A9284', marginLeft: 6 }}>累計 {day.water} / {waterGoal}</span>
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#5B8DB8', flex: 'none' }}>
+                  {w.ml} ml
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: '#8A9284', marginLeft: 6 }}>累計 {day.water} / {waterGoal}</span>
+                </span>
+                <button onClick={() => void removeWaterLog(w.id)} className="hv-red-tint" style={deleteBtnStyle}>刪除</button>
+              </div>
             }
           />
           <CommentsThread key={`w${w.id}`} {...commentProps(`water:${w.id}`, w.commentCount)} />
@@ -166,22 +184,28 @@ export function DayFeed() {
     });
   }
 
-  if (hasEx) {
+  // 運動：一筆紀錄一則貼文，各自有留言串
+  for (const x of day.exLogs) {
     posts.push({
-      key: 'ex',
-      time: day.exTime,
+      key: `x${x.id}`,
+      time: x.time,
       node: (
-        <div key="ex" style={postStyle}>
+        <div key={`x${x.id}`} style={postStyle}>
           <PostHeader
             glyph="動"
             tint="#F3E7D8"
             color="#C77B4A"
             title="運動"
-            time={day.exTime}
-            right={day.ex.min && +day.ex.min > 0 ? <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#C77B4A', flex: 'none' }}>{day.ex.min} 分鐘</span> : undefined}
+            time={x.time}
+            right={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {x.min && +x.min > 0 && <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#C77B4A', flex: 'none' }}>{x.min} 分鐘</span>}
+                <button onClick={() => void removeExLog(x.id)} className="hv-red-tint" style={deleteBtnStyle}>刪除</button>
+              </div>
+            }
           />
-          {day.ex.desc && <div style={{ fontSize: 13.5, color: '#4A5A4A', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{day.ex.desc}</div>}
-          <CommentsThread key={`x${selected}`} {...commentProps(`ex:${selected}`, day.commentCounts.ex)} />
+          {x.desc && <div style={{ fontSize: 13.5, color: '#4A5A4A', lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{x.desc}</div>}
+          <CommentsThread key={`x${x.id}`} {...commentProps(`ex:${x.id}`, x.commentCount)} />
         </div>
       ),
     });

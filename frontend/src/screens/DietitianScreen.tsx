@@ -243,7 +243,7 @@ export function DietitianScreen() {
   const totals = dayFoodTotals(entries);
   const gInfo = goalsFor(date, goals);
   const totalKcal = kcalOfFood(totals);
-  const hasEx = day && ((day.ex.min && +day.ex.min > 0) || day.ex.desc);
+  const totalExMin = Math.round((day?.exLogs ?? []).reduce((a, l) => a + (Number(l.min) || 0), 0) * 10) / 10;
   const bodyItems = day ? BODY_DEFS.filter((b) => day.body[b.k] !== '') : [];
   const member = members.find((m) => m.id === memberId);
 
@@ -448,14 +448,22 @@ export function DietitianScreen() {
                     />
                   </div>
                 ))}
-                <div>運動：{hasEx ? `${day!.ex.min ? day!.ex.min + ' 分鐘' : ''}${day!.ex.min && day!.ex.desc ? '・' : ''}${day!.ex.desc}${day!.exTime ? `（${day!.exTime}）` : ''}` : '未記錄'}</div>
-                <div id={`pro-post-ex:${date}`}>
-                  <CommentsThread
-                    key={`x-${memberId}-${date}${focusTarget === `ex:${date}` ? '-f' : ''}`}
-                    {...commentProps(`ex:${date}`, day?.commentCounts.ex ?? 0)}
-                    initialOpen={focusTarget === `ex:${date}`}
-                  />
-                </div>
+                <div>運動：{(day?.exLogs.length ?? 0) > 0 ? `共 ${day!.exLogs.length} 筆${totalExMin > 0 ? `・合計 ${totalExMin} 分鐘` : ''}` : '未記錄'}</div>
+                {/* 逐筆運動紀錄：一筆一則貼文，各自可留言 */}
+                {(day?.exLogs ?? []).map((x) => (
+                  <div key={x.id} id={`pro-post-ex:${x.id}`} style={{ border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 11, padding: '6px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12.5, color: '#8A9284', flex: 'none' }}>{x.time || '未填時間'}</span>
+                      {x.min && Number(x.min) > 0 && <span style={{ fontFamily: 'Outfit', fontSize: 13, fontWeight: 700, color: '#C77B4A', flex: 'none' }}>{x.min} 分鐘</span>}
+                      {x.desc && <span style={{ fontSize: 13, color: '#4A5A4A' }}>{x.desc}</span>}
+                    </div>
+                    <CommentsThread
+                      key={`x-${memberId}-${x.id}${focusTarget === `ex:${x.id}` ? '-f' : ''}`}
+                      {...commentProps(`ex:${x.id}`, x.commentCount)}
+                      initialOpen={focusTarget === `ex:${x.id}`}
+                    />
+                  </div>
+                ))}
                 <div>
                   身體數據：{bodyItems.length
                     ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、') + (day!.bodyTime ? `（${day!.bodyTime}）` : '')

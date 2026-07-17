@@ -354,6 +354,49 @@ const migrateWater = db.transaction(() => {
 });
 migrateWater();
 
+// 逐筆運動紀錄（一筆＝動態牆一則貼文；days.ex_min / ex_desc / ex_time 降為快取＝總分鐘／敘述串接／最後時間）
+db.exec(`
+CREATE TABLE IF NOT EXISTS ex_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  date TEXT NOT NULL,
+  min TEXT NOT NULL DEFAULT '',
+  desc TEXT NOT NULL DEFAULT '',
+  time TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ex_logs_user_date ON ex_logs(user_id, date);
+`);
+
+// 一次性搬遷：舊的當日運動（days.ex_*）變成該天的一筆 log；
+// 舊留言／通知的 ex:<日期> 目標改掛到搬出來的那筆 log（ex:<id>）。與喝水搬遷同一套邏輯，可安全重跑。
+const migrateEx = db.transaction(() => {
+  db.exec(`
+    INSERT INTO ex_logs (user_id, date, min, desc, time)
+    SELECT d.user_id, d.date, d.ex_min, d.ex_desc, d.ex_time FROM days d
+    WHERE (d.ex_desc != '' OR (d.ex_min != '' AND CAST(d.ex_min AS REAL) > 0))
+      AND NOT EXISTS (SELECT 1 FROM ex_logs x WHERE x.user_id = d.user_id AND x.date = d.date);
+    UPDATE entry_comments SET target = 'ex:' || (
+      SELECT MIN(x.id) FROM ex_logs x
+      WHERE x.user_id = entry_comments.user_id AND x.date = substr(entry_comments.target, 4)
+    )
+    WHERE target LIKE 'ex:%-%'
+      AND EXISTS (SELECT 1 FROM ex_logs x WHERE x.user_id = entry_comments.user_id AND x.date = substr(entry_comments.target, 4));
+    UPDATE notifications SET target = 'ex:' || (
+      SELECT MIN(x.id) FROM ex_logs x
+      WHERE x.user_id = CASE WHEN notifications.member_id > 0 THEN notifications.member_id ELSE notifications.user_id END
+        AND x.date = substr(notifications.target, 4)
+    )
+    WHERE target LIKE 'ex:%-%'
+      AND EXISTS (
+        SELECT 1 FROM ex_logs x
+        WHERE x.user_id = CASE WHEN notifications.member_id > 0 THEN notifications.member_id ELSE notifications.user_id END
+          AND x.date = substr(notifications.target, 4)
+      );
+  `);
+});
+migrateEx();
+
 // 舊資料庫的單筆 goals 資料表：搬進 goal_periods 後移除
 const hasOldGoals = db
   .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'goals'`)
