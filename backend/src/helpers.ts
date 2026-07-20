@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
@@ -125,9 +126,25 @@ export interface HistoryItem {
   date: string;
 }
 
+// 照片「內容指紋」：同一張圖（含逐位元組複製出來的副本）指紋相同、換一張新圖才會不同。
+// 以檔名為鍵快取（照片檔寫入後不再變動，故安全），避免每次都重讀檔。讀不到檔時退回用檔名當身分。
+const photoFingerprintCache = new Map<string, string>();
+function photoFingerprint(photoUrl: string): string {
+  const base = path.basename(photoUrl);
+  const cached = photoFingerprintCache.get(base);
+  if (cached) return cached;
+  let sig: string;
+  try {
+    sig = crypto.createHash('sha1').update(fs.readFileSync(path.join(UPLOAD_DIR, base))).digest('hex');
+  } catch {
+    sig = 'name:' + base;
+  }
+  photoFingerprintCache.set(base, sig);
+  return sig;
+}
+
 // 相同餐點只保留最新一張；只回傳有記份數的照片。
-// 去重規則：有敘述者以「敘述＋份數」為指紋；無敘述者若份數已被某個「有敘述」的餐點涵蓋，
-// 則視為同一餐點（避免同一份餐點因為一筆有敘述、一筆沒敘述而被列成兩筆）。
+// 去重身分＝「照片內容指紋 ＋ 六大類份數」（不含敘述）：改敘述不算新的一筆，改份數或換照片才算新的。
 export function getEntryHistory(userId: number, limit: number, excludeId?: number): HistoryItem[] {
   const rows = db
     .prepare(
@@ -136,9 +153,8 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
     )
     .all(userId, excludeId ?? -1) as (EntryRow & { date: string })[];
 
-  // 先把所有照片攤平成候選（新→舊），並算出各自的份數指紋
+  // 把所有照片攤平成候選（新→舊）；每張照片解析出自己的份數
   const cands: (HistoryItem & { foodSig: string })[] = [];
-  const describedFoodSigs = new Set<string>();
   for (const row of rows) {
     const photos = parsePhotos(row.photos);
     if (!photos.length) continue;
@@ -155,24 +171,17 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
       }
       const norm = { ...emptyFood(), ...food } as Food;
       const foodSig = FOOD_KEYS.map((k) => norm[k] || 0).join(',');
-      if (row.desc) describedFoodSigs.add(foodSig);
       cands.push({ photo: url, food: norm, desc: row.desc, meal: row.meal as HistoryItem['meal'], date: row.date, foodSig });
     }
   }
 
+  // 去重：以「照片內容指紋＋份數」為身分，新→舊掃描保留最新一張（敘述不參與判斷）
   const items: HistoryItem[] = [];
-  const seenDescFood = new Set<string>(); // 有敘述：敘述＋份數
-  const seenEmptyFood = new Set<string>(); // 無敘述：僅份數
+  const seen = new Set<string>();
   for (const c of cands) {
-    if (c.desc) {
-      const key = c.desc + '|' + c.foodSig;
-      if (seenDescFood.has(key)) continue;
-      seenDescFood.add(key);
-    } else {
-      // 無敘述：份數已被有敘述的餐點涵蓋，或已出現過相同份數的無敘述照片 → 視為重複
-      if (describedFoodSigs.has(c.foodSig) || seenEmptyFood.has(c.foodSig)) continue;
-      seenEmptyFood.add(c.foodSig);
-    }
+    const key = photoFingerprint(c.photo) + '|' + c.foodSig;
+    if (seen.has(key)) continue;
+    seen.add(key);
     items.push({ photo: c.photo, food: c.food, desc: c.desc, meal: c.meal, date: c.date });
     if (items.length >= limit) break;
   }
