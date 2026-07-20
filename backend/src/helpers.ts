@@ -437,16 +437,16 @@ function bucketVotes(rows: { vote: number; body: string }[], perSide: number): P
   return { liked, disliked };
 }
 
-// 偏好範例（混合）：這位使用者「自己」的讚/倒讚（優先）＋「其他所有使用者」的讚/倒讚（次要基準）。
-// 讓評價既能個人化，也能靠全體回饋把整體品質帶起來。混用兩種 kind（評語與今日總評）。
+// 偏好範例：只用「這位使用者自己」的讚/倒讚 body 當範例（混用評語與今日總評兩種 kind）。
+// 刻意「不」共用其他使用者的 body：
+//   1) comment/daily 的 body 是針對某人飲食/身體數據產生的內容，注入他人 prompt 會造成跨使用者個資外洩；
+//   2) ocr_* 的 body 由前端任意提供、且投票只需登入不需 AI 權限，共用等於開放持久化 prompt injection。
+// 保留 global 欄位（回空）以維持既有介面。
 export function getFeedbackExamples(userId: number): { personal: PrefBucket; global: PrefBucket } {
   const own = db
     .prepare("SELECT vote, body FROM ai_feedback WHERE user_id = ? AND body != '' ORDER BY created_at DESC")
     .all(userId) as { vote: number; body: string }[];
-  const others = db
-    .prepare("SELECT vote, body FROM ai_feedback WHERE user_id != ? AND body != '' ORDER BY created_at DESC LIMIT 200")
-    .all(userId) as { vote: number; body: string }[];
-  return { personal: bucketVotes(own, 3), global: bucketVotes(others, 2) };
+  return { personal: bucketVotes(own, 3), global: { liked: [], disliked: [] } };
 }
 
 // ---- AI 今日總評（每人每天一筆，重新產生覆蓋）----

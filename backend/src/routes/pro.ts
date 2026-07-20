@@ -24,7 +24,8 @@ proRouter.get('/members', (req, res) => {
        FROM users u
        LEFT JOIN member_aliases a ON a.member_id = u.id AND a.dietitian_id = ?
        LEFT JOIN follows f ON f.member_id = u.id AND f.dietitian_id = ?
-       WHERE u.role IN ('member','citizen') AND u.status = 'active' ORDER BY u.username`
+       WHERE u.role IN ('member','citizen') AND u.status = 'active'
+       ORDER BY followed DESC, u.username`
     )
     .all(req.userId, req.userId) as { id: number; username: string; nickname: string; alias: string | null; followed: number }[];
   return res.json(rows.map((r) => ({ ...r, followed: !!r.followed })));

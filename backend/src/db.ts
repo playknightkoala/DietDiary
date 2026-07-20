@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS captchas (
   id TEXT PRIMARY KEY,
   text TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
-  verified INTEGER NOT NULL DEFAULT 0
+  verified INTEGER NOT NULL DEFAULT 0,
+  email TEXT
 );
 
 CREATE TABLE IF NOT EXISTS email_codes (
@@ -239,6 +240,10 @@ if (!commentCols.includes('ai_model')) {
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {
   db.exec(`ALTER TABLE captchas ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`);
+}
+// 綁定「這張驗證碼首次寄送的 Email」：一張驗證碼只能寄給同一個 Email，堵住並行請求對多個 Email 濫發
+if (!captchaCols.includes('email')) {
+  db.exec(`ALTER TABLE captchas ADD COLUMN email TEXT`);
 }
 
 // 舊資料庫 entries 只有單張 photo：補 photos 欄位並把舊照片搬進陣列

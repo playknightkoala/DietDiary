@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../db.js';
@@ -54,7 +55,7 @@ entriesRouter.post('/:id/photos/copy', (req, res) => {
   const srcPath = path.join(UPLOAD_DIR, path.basename(src));
   if (!fs.existsSync(srcPath)) return res.status(404).json({ error: 'photo file missing' });
 
-  const filename = `e${entry.id}-${Date.now()}-copy.jpg`;
+  const filename = `e${entry.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}-copy.jpg`;
   fs.copyFileSync(srcPath, path.join(UPLOAD_DIR, filename));
   const newUrl = `/uploads/${filename}`;
   const photos = [...current, newUrl];
@@ -79,11 +80,10 @@ entriesRouter.patch('/:id', (req, res) => {
 
   // 照片保留清單（PATCH 只能刪除，新增走 /photos 上傳）
   let finalPhotos = parsePhotos(entry.photos);
+  let removedPhotos: string[] = [];
   if (photos !== undefined) {
     const keep = finalPhotos.filter((p) => photos.includes(p));
-    const removed = finalPhotos.filter((p) => !keep.includes(p));
-    removed.forEach(unlinkPhoto);
-    deletePhotoRatings(entry.id, removed);
+    removedPhotos = finalPhotos.filter((p) => !keep.includes(p));
     sets.push('photos = ?');
     args.push(JSON.stringify(keep));
     finalPhotos = keep;
@@ -118,6 +118,11 @@ entriesRouter.patch('/:id', (req, res) => {
   if (sets.length) {
     db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
   }
+  // DB 更新成功後才刪實體檔案與評分：避免更新失敗卻已把檔案刪掉、留下指向不存在照片的紀錄
+  if (removedPhotos.length) {
+    deletePhotoRatings(entry.id, removedPhotos);
+    removedPhotos.forEach(unlinkPhoto);
+  }
   const updated = getOwnedEntry(req.userId, req.params.id)!;
   // 紀錄第一次從空白變成有內容＝發布新貼文，通知追蹤這位會員的營養師
   if (!entryHasData(entryToJson(entry)) && entryHasData(entryToJson(updated))) {
@@ -136,10 +141,15 @@ entriesRouter.patch('/:id', (req, res) => {
 entriesRouter.delete('/:id', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
-  parsePhotos(entry.photos).forEach(unlinkPhoto);
-  deletePhotoRatings(entry.id);
-  db.prepare('DELETE FROM entry_comments WHERE target = ?').run(`entry:${entry.id}`);
-  db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
+  const photos = parsePhotos(entry.photos);
+  // 一次交易刪除評分／留言／紀錄：避免中途失敗留下孤兒 metadata
+  db.transaction(() => {
+    deletePhotoRatings(entry.id);
+    db.prepare('DELETE FROM entry_comments WHERE target = ?').run(`entry:${entry.id}`);
+    db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
+  })();
+  // DB 已刪除後才刪實體檔案：即使 unlink 失敗也只是留下孤兒檔，不會有指向已刪紀錄的照片
+  photos.forEach(unlinkPhoto);
   return res.status(204).end();
 });
 
@@ -155,7 +165,8 @@ entriesRouter.post('/:id/photos', upload.array('photos', MAX_PHOTOS), (req, res)
     return res.status(400).json({ error: `每筆紀錄最多 ${MAX_PHOTOS} 張照片` });
   }
   const urls = files.map((file, i) => {
-    const filename = `e${entry.id}-${Date.now()}-${i}.jpg`;
+    // 加隨機後綴：避免同一毫秒的並行上傳產生相同檔名而互相覆蓋
+    const filename = `e${entry.id}-${Date.now()}-${i}-${crypto.randomBytes(3).toString('hex')}.jpg`;
     // 存檔前去除 EXIF（部分手機瀏覽器壓縮後仍保留；會讓 LLM gateway 解析 500，也可能夾帶 GPS 隱私）
     fs.writeFileSync(path.join(UPLOAD_DIR, filename), stripJpegExif(file.buffer));
     return `/uploads/${filename}`;

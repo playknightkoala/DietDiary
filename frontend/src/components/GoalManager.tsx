@@ -78,7 +78,9 @@ export function GoalManager({ goals, memberView, onCreate, onUpdate, onDelete }:
     }
     const vals = {} as Record<GoalKey, number>;
     GOAL_DEFS.forEach(({ k }) => (vals[k] = Math.min(99, Math.max(0, parseFloat(draft.vals[k]) || 0))));
-    const water = Math.min(999999, Math.max(0, Math.round(parseFloat(draft.water))) || DEFAULT_WATER);
+    // 空白／非數字才用預設；使用者明確填 0 要保留為 0（不可用 || 塌回預設）
+    const waterNum = Math.round(parseFloat(draft.water));
+    const water = isNaN(waterNum) ? DEFAULT_WATER : Math.min(999999, Math.max(0, waterNum));
     const input: GoalInput = { start: draft.start, end: draft.end, vals, water };
     setBusy(true);
     try {

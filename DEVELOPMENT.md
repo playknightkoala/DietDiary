@@ -50,7 +50,7 @@ docker compose up -d --build
 ```bash
 # 一次更新兩邊版號（避免不一致造成迴圈）
 node scripts/bump-version.mjs 1.0.1
-# 在 frontend/src/lib/changelog.ts 最前面新增這一版的更新內容
+# 在 frontend/public/changelog.json 最前面新增這一版的更新內容
 #   → 強制更新視窗與底部「版本紀錄」都會顯示它
 # 重新建置部署，前後端同步生效
 docker compose up -d --build

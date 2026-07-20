@@ -97,26 +97,20 @@ export function HistoryPickerSheet({
 
   return (
     <ModalShell maxWidth={480} zIndex={60} cardStyle={{ maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* 固定表頭：標題 */}
+      <div style={{ flex: 'none', padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 16, fontWeight: 900 }}>從歷史加入</div>
         <CloseButton onClick={onClose} />
       </div>
-      <div style={{ padding: '10px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* 固定表頭：說明 + 餐別分頁（不隨清單捲動，避免項目多時最上方的分頁被捲掉遮住） */}
+      <div style={{ flex: 'none', padding: '10px 20px 0' }}>
         <div style={{ fontSize: 13, color: '#6B7565', lineHeight: 1.6 }}>
           選一筆記過的餐點，直接加入<b>這張照片與它的份數</b>（顯示最近 {items?.length ?? ''} 筆）。
           {full && <span style={{ color: '#C0564A' }}>　已達照片上限</span>}
         </div>
-
-        {items === null && <div style={{ fontSize: 13, color: '#8A9284', padding: '20px 0', textAlign: 'center' }}>載入中…</div>}
-        {items !== null && items.length === 0 && (
-          <div style={{ fontSize: 13, color: '#8A9284', padding: '24px 0', textAlign: 'center', lineHeight: 1.7 }}>
-            還沒有記過份數的照片。<br />先記幾餐，之後就能從這裡快速加入。
-          </div>
-        )}
-
-        {/* 餐別分頁 tab */}
         {groups.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, margin: '0 -2px' }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, margin: '10px -2px 0' }}>
             {groups.map(({ meal, list }) => {
               const on = meal.k === active;
               return (
@@ -135,6 +129,16 @@ export function HistoryPickerSheet({
                 </button>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* 捲動區：只有清單本身（flex:1 + minHeight:0 才能在固定高度卡片內正確捲動） */}
+      <div style={{ flex: 1, minHeight: 0, padding: '10px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items === null && <div style={{ fontSize: 13, color: '#8A9284', padding: '20px 0', textAlign: 'center' }}>載入中…</div>}
+        {items !== null && items.length === 0 && (
+          <div style={{ fontSize: 13, color: '#8A9284', padding: '24px 0', textAlign: 'center', lineHeight: 1.7 }}>
+            還沒有記過份數的照片。<br />先記幾餐，之後就能從這裡快速加入。
           </div>
         )}
         {activeList.map(row)}

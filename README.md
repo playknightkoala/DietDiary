@@ -1,137 +1,218 @@
-# Handoff: 均衡日記（飲食紀錄 App）
+# 均衡日記（DietDiary）
 
-## Overview
-「均衡日記」是一個手機優先、桌面亦適用的飲食紀錄應用。核心功能：以「每日一頁」的日記方式記錄六大類飲食份數（依每筆餐次紀錄）、自動累計熱量、喝水量、運動、身體數據（含趨勢圖）、階段性份數目標（超標 20% 標紅）、月曆跳日，以及內建「食物份數指南」。
+以「每日一頁」記錄飲食的手機優先 Web App：依六大類份數記帳、自動累計熱量、追蹤喝水／運動／身體數據，設定階段性份數目標，並提供 AI 營養師評語與營養師專業回饋。
 
-## About the Design Files
-本包內的檔案是 **HTML 設計參考（prototype）**，展示預期的外觀與行為，**不是可直接上線的生產程式碼**。你的任務是：
+> 目前版本 **1.1.12**。前後端版號由 `scripts/bump-version.mjs` 保持一致，前端會輪詢 `GET /api/version` 對過舊的用戶端跳出強制更新。
 
-1. **前端**：在目標 codebase 的既有環境（React / Vue / Next.js 等，若尚無環境請自行選擇最合適的框架，建議 React + TypeScript）中**重新實作**這些畫面與互動。
-2. **後端**：原型將所有資料存在 `localStorage`、登入為純視覺。請實作真正的後端：帳號系統（註冊/登入/JWT 或 session）、資料庫（每日紀錄、餐次紀錄、目標、照片上傳），並將前端改為呼叫 API。
+---
 
-檔案說明：
-- `均衡日記-standalone.html` — **單檔可離線開啟**，直接用瀏覽器打開即可操作完整原型（最佳參考來源）。
-- `飲食紀錄.dc.html` + `support.js` — 原始原型程式碼。`<x-dc>` 內為模板（inline style 即最終視覺規格），底部 `<script data-dc-script>` 內的 `class Component` 為全部業務邏輯（**熱量計算、目標判斷、資料結構都在這裡，可直接照抄邏輯**）。
+## 功能總覽
 
-## Fidelity
-**High-fidelity**：顏色、字級、圓角、間距皆為最終定案，請以像素級還原（用 codebase 的元件庫/樣式系統重建即可，不必沿用 inline style 寫法）。
+- **每日飲食日記**：每筆餐次為獨立動態（早／午／晚／宵夜／點心），可填敘述、上傳多張照片（每筆最多 10 張）、記錄六大類份數與用餐時間；動態牆新→舊排序。
+- **六大類與熱量**：11 個細分份數欄位（蛋豆魚肉低/中/高/超高脂、蔬菜、全穀雜糧、油脂堅果、水果、乳品脫脂/低脂/全脂）自動換算熱量，收斂成六大類顯示。
+- **喝水／運動**：皆為逐筆記錄，一筆一則動態（含時間），可單筆刪除。
+- **身體數據與趨勢圖**：體重、體脂率、腰圍、肌肉重、體脂重；任一欄位可看折線趨勢。
+- **階段目標與超標紅字**：可設定多組日期區間目標（六大類份數＋喝水）；當日某類 > 目標 × 1.2（目標為 0 時只要 > 0）即轉紅。營養師設定的目標會員不可自改。
+- **月曆與週曆跳日**、內建**食物份數指南**。
+- **社群互動**：每則動態可留言；營養師可對照片評分（紅黃綠燈）、調整份數、留言、替會員設定目標；有通知中心。
+- **AI 營養師**（需管理者逐一開放）：拍照估份數＋自動寫敘述、單篇餐點評語、今日總評、對 AI 輸出按讚／倒讚回饋，並有跨使用者的「共用菜色知識庫」。
+- **帳號系統**：Email 註冊（圖形驗證碼＋Email 認證碼）→ 管理者審核開通；JWT 登入；四種角色（member／citizen／dietitian／admin）。
 
-## Domain Rules（核心業務規則 — 必須正確）
+---
 
-### 六大類與每份熱量（kcal/份）
-- 蛋豆魚肉：低脂 55、中脂 75、高脂 120、超高脂 135
-- 蔬菜 25；全穀雜糧 70；油脂堅果 45；水果 60
-- 乳品：脫脂 80、低脂 120、全脂 150
+## 系統架構
 
-### 份數輸入
-- 使用者直接輸入數字，範圍 0.1–99，步進 0.1，前端 clamp（<0→0、>99→99、四捨五入到小數 1 位）。
-
-### 餐次紀錄（重要資料模型）
-- 每筆飲食紀錄是**獨立的 entry**：`{ id, meal, desc, photo, food }`
-  - `meal`: `breakfast | lunch | dinner | night | snack`（早餐/午餐/晚餐/宵夜/點心）
-  - `desc`: 文字敘述；`photo`: 餐點照片（原型存壓縮後 dataURL，正式版請上傳到物件儲存並存 URL）
-  - `food`: 11 個份數欄位 `{ meatLow, meatMed, meatHigh, meatXHigh, veg, grain, oil, fruit, milkSkim, milkLow, milkFull }`
-- **同一天可有多筆同餐別**（例如兩次午餐）。
-- 空白 entry（無敘述、無照片、份數全 0）在關閉編輯視窗時自動刪除。
-- 每餐即時顯示該筆 kcal；當日總計 = 所有 entries 加總。
-
-### 每日目標與紅字規則
-- 預設目標：蛋豆魚肉 7、蔬菜 3、全穀雜糧 10、油脂堅果 3、水果 2、乳品 2（份），喝水 2000 ml。
-- 使用者可設定**日期區間**的自訂目標（六類份數 + 喝水 ml）；區間內的日期用自訂值，區間外用預設值。
-- **超標判斷：當日總份數 > 目標 × 1.2 時**，該類數字與進度條轉紅（`#C0564A`），進度條上限 100%。喝水同樣適用（文字轉紅）。
-
-### 其他每日資料
-- 喝水：每次輸入正整數 ml（1–9999）按「加入」累計；可歸零重記。
-- 運動：時間（分鐘）＋文字描述（不估算消耗熱量）。
-- 身體數據：體重 kg、體脂率 %、腰圍 cm、肌肉重 kg、體脂重 kg（皆選填，小數 1 位）。
-- 趨勢圖：任一身體欄位，取最近 30 筆有值日期畫折線圖（需 ≥2 點）。
-
-## Screens / Views
-
-### 1. 登入
-- 置中卡片（max-width 400px），漸層背景 `linear-gradient(160deg,#EDF2E6,#F4F1EA 55%,#E8EEE0)`。
-- Logo：72px 圓角 22px 綠底盾形葉子 icon；標題「均衡日記」30px/800（Outfit）；副標「六大類飲食・運動・身體數據，一天一頁」。
-- 帳號、密碼欄（48px 高、圓角 12px、邊框 `#DDD8CA`、底 `#FBFAF6`），主按鈕「登入」50px 綠底。
-- 原型為視覺展示（點擊即進入）；正式版接真實驗證，含「忘記密碼」「註冊新帳號」流程。
-
-### 2. 主畫面（日記總覽）
-- max-width 1100px 置中；桌面雙欄 `repeat(auto-fit,minmax(340px,1fr))`，手機自動單欄；底部預留 110px 給 FAB。
-- **頂欄**：logo + 名稱（左）；右側 4 個 38px 圓角 12px 白底 icon 按鈕：月曆、目標設定、份數指南、登出。
-- **週曆列**：7 欄 grid，左右箭頭切上/下週（週一起始）。每格：星期字 11px、日期 17px Outfit 700、下方 5px 圓點（該日有紀錄時橘色 `#C77B4A`）。選中日：綠底白字＋陰影；今天（未選中）：綠字。下方顯示完整日期，非今天時出現「回到今天」pill 按鈕。
-- **熱量卡**（綠底 `#4A7C59` 白字）：「今日攝取熱量」+ 34px Outfit 數字 + kcal。
-- **喝水卡**（白底）：累計/目標 ml（超標 20% 紅字）、藍色 `#5B8DB8` 進度條。
-- **六大類卡**：每類一列 — 32px 色塊字形圖示、名稱、該類 kcal、右側「X / Y 份」（超標紅字 900）、7px 進度條（超標轉紅）。底部「查看今日飲食」outline 綠按鈕 → 開啟今日飲食彈窗。
-- **今日運動卡**：摘要文字「NN 分鐘・描述」或未記錄提示。
-- **身體數據卡**：5 個數值小卡（值 19px Outfit）；右上「看趨勢」pill 切換折線圖（欄位 pill 選擇器 + SVG 折線，綠線、漸層填色、端點圓點、上下極值標籤）。
-- **FAB**：右下固定 60px、圓角 20px、綠底白「＋」。
-
-### 3. ＋選單（bottom sheet）
-- 底部滑出、圓角 24px 上緣、2 欄 grid、8 個選項：**早餐、午餐、晚餐、宵夜、點心**（各自建立一筆新 entry 並直接進入編輯）、**喝水、運動、身體數據**。每項：44px 色塊 glyph + 名稱。右上 ✕ 關閉。
-
-### 4. 記錄餐次（編輯單筆 entry）
-- 置中彈窗 max-width 520px。標題「記錄{餐別}」（無餐次切換列）。
-- 綠色淺底橫幅：「{餐別}熱量」＋即時 kcal（隨份數輸入即時更新）。
-- 照片區（88px）：未上傳顯示虛線框「上傳照片」（file input, accept image/*，原型壓縮至長邊 640px JPEG 0.7）；已上傳顯示縮圖＋「移除照片」。
-- 敘述 textarea（「這餐吃了什麼？」）。
-- 六大類份數輸入：蛋豆魚肉 4 欄（低脂/中脂/高脂/超高脂）、乳品 3 欄（脫脂/低脂/全脂）、其餘各 1 欄；`type=number, min 0, max 99, step 0.1`，置中對齊。
-- 底部：「完成」綠按鈕、「刪除這筆紀錄」紅字按鈕。
-
-### 5. 今日飲食（彈窗）
-- 只列出**當天實際有資料的 entries**（依餐別排序）；每列：照片縮圖或 glyph 色塊（52px）、餐別名、kcal（綠字 Outfit）、敘述單行截斷、右箭頭；點擊進入該筆編輯。無紀錄時顯示空狀態文字。
-
-### 6. 月曆彈窗
-- max-width 380px；‹ › 換月、✕ 關閉；週一起始 7 欄；每格 42px：選中日綠底白字、今天淺綠底綠字、有紀錄日下方橘點；點日期跳到該日並關閉。
-
-### 7. 階段目標彈窗
-- 開始/結束日期（date input）、六類份數 number input（step 0.5）＋喝水 ml（step 50）、「取消/儲存目標」、已有目標時顯示區間與「清除」。
-
-### 8. 食物份數指南彈窗
-- max-width 560px，頂部餐類 pill 分頁（6 類，各用類別色）；內容為「一份舉例」列表卡（左側粗體份量、右側食物與可食重量）與說明段落卡。**完整內容文字已在原型的 `guideData()` 內，請直接沿用。**
-
-## Interactions & Behavior
-- 所有彈窗**不可**點背景關閉，只能用 ✕ / 取消 / 完成。
-- 彈窗動畫：`popIn .25s`（scale .96→1 + fade）；bottom sheet：`fadeUp .25s`。
-- 進度條寬度變化 `transition: width .3s`。
-- 週曆左右切換僅移動顯示範圍，不改變選中日。
-- hover 狀態：白底按鈕 → `#EDF2E6` 或 `#F4F1EA`；綠按鈕 → `#3A6347`；藍按鈕 → `#4A7CA5`。
-
-## State Management / Backend 建議
-原型 state 形狀（可直接對應 DB schema）：
 ```
-days: {
-  "YYYY-MM-DD": {
-    water: number(ml),
-    ex: { min: string, desc: string },
-    body: { weight, fat, waist, muscle, fatkg }, // string, 空字串=未填
-    entries: [ { id, meal, desc, photo, food: {11 keys} } ]
-  }
-},
-goals: { start: "YYYY-MM-DD", end: "YYYY-MM-DD", vals: {meat,veg,grain,oil,fruit,milk}, water } | null
+                         ┌─────────────────────────────────────┐
+  瀏覽器  ──:8080──▶     │  frontend 容器 (nginx)               │
+                         │  ・靜態 React SPA (Vite build)       │
+                         │  ・/api、/uploads 反向代理 → backend │
+                         │  ・/api/auth 限流、/api/ai 放寬逾時   │
+                         └───────────────┬─────────────────────┘
+                                         │ backend:3001（僅內網）
+                         ┌───────────────▼─────────────────────┐
+                         │  backend 容器 (Node + Express)       │
+                         │  ・better-sqlite3（單檔 SQLite）     │
+                         │  ・JWT 認證、multer 照片上傳          │
+                         │  ・呼叫 LLM Gateway / embedding 服務  │
+                         └───────┬───────────────────┬─────────┘
+                                 │                   │（選用）
+                   ┌─────────────▼──────┐   ┌────────▼──────────────┐
+                   │ eLAND LLM Gateway  │   │ embedder 容器 (選用)  │
+                   │ (OpenAI 相容,gemma)│   │ FastAPI + ONNX 向量   │
+                   └────────────────────┘   │ 文字/圖片 embedding   │
+                                            └───────────────────────┘
+  持久化：./docker-data/db（SQLite）、./docker-data/uploads（照片）
 ```
-後端 API 建議：
-- `POST /auth/register`, `POST /auth/login`
-- `GET /days/:date`（含 entries）、`PATCH /days/:date`（water/ex/body）
-- `POST /days/:date/entries`、`PATCH /entries/:id`、`DELETE /entries/:id`
-- `POST /entries/:id/photo`（multipart 上傳，存物件儲存）
-- `GET /goals`、`PUT /goals`、`DELETE /goals`
-- `GET /body-trend?field=weight&limit=30`
-- 熱量與紅字可由前端以常數表計算（規則見上），後端僅存份數。
 
-## Design Tokens
-- 背景 `#F4F1EA`；卡片白 `#FFFFFF`、卡片邊框 `#E4DFD2` 1.5px、內部淺底 `#FBFAF6`、分隔線 `#F0EDE3`
-- 主綠 `#4A7C59`（hover `#3A6347`）、淺綠底 `#EDF2E6`
-- 文字：主 `#2D3B2D`、次 `#4A5A4A`、弱 `#6B7565`、最弱 `#8A9284`
-- 警示紅 `#C0564A`；水藍 `#5B8DB8`（hover `#4A7CA5`）、水藍淺底 `#F0F5FA`
-- 類別色：蛋豆魚肉 `#C0564A`/底 `#F5E3DB`；蔬菜 `#4A7C59`/`#E3EBD9`；全穀 `#A8842E`/`#F1E8D2`；油脂 `#C77B4A`/`#F3E7D8`；水果 `#B5537A`/`#F6E5E9`；乳品 `#5B8DB8`/`#E5EBF1`
-- 字型：中文 `Noto Sans TC`（400/500/700/900）、數字與標題 `Outfit`（500/700/800），Google Fonts
-- 圓角：卡片 20–22px、輸入框 11–12px、按鈕 13–14px、pill 99px
-- 輸入框：高 42–48px、邊框 1.5px `#DDD8CA`、底 `#FBFAF6`
-- 觸控目標 ≥34px（行動端主要按鈕 ≥44px）
+- **frontend** 是唯一對外服務（host `8080` → nginx `80`），既服務靜態頁，也把 `/api`、`/uploads` 代理到 `backend:3001`。
+- **backend** 不對外開埠，只在 compose 網路內經 nginx 代理存取；資料存在單檔 SQLite 與本機 uploads 目錄（bind mount 到 `./docker-data/`）。
+- **embedder**（Python/FastAPI）為選用，用 `profiles: ["embed"]` 隔離，平時不啟動、不佔記憶體；開啟共用知識庫時才需要。
+- **LLM** 走外部 eLAND Intelligence Gateway（OpenAI 相容），未設定 `LLM_TOKEN` 時 AI 功能自動全部停用。
 
-## Assets
-無外部圖片；所有 icon 為 inline SVG（stroke 風格，線寬 1.8–2.6）。餐點照片由使用者上傳。
+---
 
-## Files
-- `均衡日記-standalone.html` — 可直接開啟的完整互動原型（單檔）
-- `飲食紀錄.dc.html` — 原型原始碼（模板 + `class Component` 業務邏輯；`guideData()` 含指南全文、`KCAL`/`DEFAULT_GOALS` 常數）
-- `support.js` — 原型執行環境（runtime，僅供原型運行，不需移植）
+## 技術棧
+
+| 層 | 技術 |
+|---|---|
+| 前端 | React 19、TypeScript、Vite 8（Rolldown）、Zustand、oxlint；純 inline style + `index.css`，無 UI 框架 |
+| 後端 | Node.js 22、Express 4、TypeScript、better-sqlite3（WAL）、JWT、bcrypt、multer、sharp、nodemailer、svg-captcha、zod |
+| Embedding 服務 | Python 3.11、FastAPI、fastembed（量化 ONNX + onnxruntime，無 PyTorch） |
+| LLM | eLAND LLM Gateway（LiteLLM，OpenAI 相容）；`gemma-4-31b` 看圖、`gemma-4-12b` 文字、`gemma-4-e4b` 備援 |
+| 佈署 | Docker Compose；前端 nginx、後端 Node、選用 embedder |
+
+---
+
+## 專案結構
+
+```
+dietdiary/
+├── frontend/                 React 19 + Vite 前端（nginx 佈署）
+│   ├── src/
+│   │   ├── App.tsx           以 Zustand 狀態切換畫面（無 URL router）
+│   │   ├── store.ts          全域狀態 + API 呼叫動作
+│   │   ├── screens/          Login / Main（會員日記）/ Dietitian / Admin
+│   │   ├── components/       卡片、動態牆、留言、圖表、modals/ 各彈窗
+│   │   └── lib/              domain.ts（熱量/目標規則）、api.ts、guideData.ts、
+│   │                         photo.ts（壓縮）、version.ts、changelog.ts
+│   ├── public/changelog.json 版本紀錄（單一來源；nginx 永遠供最新版）
+│   └── nginx.conf            靜態服務 + 反向代理 + 限流/逾時
+├── backend/                  Node + Express + SQLite 後端
+│   └── src/
+│       ├── index.ts          進入點、路由掛載、/uploads 靜態
+│       ├── db.ts             SQLite schema 與內建 migration
+│       ├── routes/           auth / days / entries / goals / trend /
+│       │                     comments / notifications / admin / pro / ai
+│       ├── middleware/auth.ts JWT 驗證、requireRole
+│       ├── llm.ts, kb.ts      LLM gateway 客戶端、共用菜色知識庫
+│       ├── helpers.ts, validation.ts, mailer.ts, version.ts
+├── embedding-service/        選用：文字＋圖片向量微服務（FastAPI）
+├── scripts/bump-version.mjs  一次更新前後端版號
+├── docker-compose.yml        backend / frontend / embedder(profile)
+├── docker-data/              持久化資料（SQLite、上傳照片）— 不進版控
+├── DEVELOPMENT.md            詳細開發／佈署／帳號／API 說明
+├── LLM-API-使用教學.md        eLAND LLM Gateway 串接參考
+└── 均衡日記-standalone.html   早期 HTML 設計原型（僅供參考，見文末）
+    飲食紀錄.dc.html / support.js
+```
+
+---
+
+## 快速開始
+
+### 本機開發（不經 Docker）
+
+```bash
+# 後端（port 3001）
+cd backend && npm install && npm run dev
+
+# 另開一個終端機：前端（port 5173，/api 與 /uploads 自動 proxy 到 3001）
+cd frontend && npm install && npm run dev
+```
+
+瀏覽 <http://localhost:5173>，先「註冊新帳號」再登入。
+資料庫在 `backend/data/diet.db`（首次啟動自動建立），照片在 `backend/uploads/`。
+
+> 註冊需寄 Email 認證碼，本機開發若未設定 SMTP 則無法註冊新帳號。可用 `ADMIN_EMAIL` 對應帳號（啟動時自動開通為管理者）來略過審核。
+
+### Docker 佈署
+
+```bash
+cp .env.example .env          # 填入實際值（至少換掉 JWT_SECRET、設好 SMTP）
+docker compose up -d --build
+```
+
+瀏覽 <http://localhost:8080>。停止：`docker compose down`（資料保留在 `docker-data/`）。
+
+啟用共用菜色知識庫（額外約 1.2–1.5 GB 記憶體）：
+
+```bash
+docker compose --profile embed up -d --build
+# 並在 .env 設 AI_KB_ENABLED=true、AI_EMBED_URL=http://embedder:8900
+```
+
+---
+
+## 環境變數
+
+Docker 佈署以根目錄 `.env` 為主（範本見 `.env.example`）；本機後端則用 `backend/.env`。**`.env` 含密碼，請勿提交版控。**
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `JWT_SECRET` | `please-change-this-secret` | JWT 簽章秘鑰，**正式環境務必更換**（`openssl rand -hex 32`）|
+| `ADMIN_EMAIL` | — | 此 Email 對應帳號在啟動／登入時自動升為管理者並開通 |
+| `APP_URL` | `http://localhost:8080` | 對外網址（開通通知信連結）|
+| `SMTP_HOST/PORT/USER/PASS/FROM` | Gmail 587 | 寄認證碼／通知信；`SMTP_PASS` 用 Gmail「應用程式密碼」。未設定則無法寄認證碼、無法註冊 |
+| `LLM_TOKEN` | — | LLM Gateway Bearer token；**留空＝全站 AI 功能停用** |
+| `LLM_BASE_URL` | `https://eigw.elandai.cloud` | Gateway 網址（OpenAI 相容）|
+| `LLM_OCR_MODEL` | `gemma-4-31b` | 看圖判份數＋寫敘述 |
+| `LLM_COMMENT_MODEL` | `gemma-4-12b` | 純文字評語／今日總評 |
+| `LLM_COMMENT_FALLBACK_MODEL` | `gemma-4-e4b` | 主模型故障時的純文字備援 |
+| `LLM_TIMEOUT_MS` | `45000` | 單次模型呼叫逾時；逾時後換備援再試一次 |
+| `LLM_MAX_IMAGE_BYTES` | `68000` | 送給視覺模型的單張照片上限，超過自動縮圖 |
+| `AI_KB_ENABLED` | `false` | 共用菜色知識庫總開關；記憶體吃緊可一鍵關閉，主功能不受影響 |
+| `AI_EMBED_URL` | — | embedding 服務位址（如 `http://embedder:8900`）；未設定則知識庫停用 |
+
+後端另有本機開發用的 `PORT`、`DB_PATH`、`UPLOAD_DIR`（皆有預設）。
+
+---
+
+## 核心領域規則
+
+熱量與超標判斷都在前端 `frontend/src/lib/domain.ts` 以常數表計算，**後端只儲存份數**。
+
+**每份熱量（kcal/份）**
+
+| 類別 | 每份熱量 |
+|---|---|
+| 蛋豆魚肉 | 低脂 55、中脂 75、高脂 120、超高脂 135 |
+| 乳品 | 脫脂 80、低脂 120、全脂 150 |
+| 蔬菜 | 25 |
+| 全穀雜糧 | 70 |
+| 油脂堅果 | 45 |
+| 水果 | 60 |
+
+**份數輸入**：0–99，四捨五入到小數 1 位（`clampPortion`）。
+
+**預設目標**：蛋豆魚肉 7、蔬菜 3、全穀雜糧 10、油脂堅果 3、水果 2、乳品 2 份，喝水 2000 ml。可設多組日期區間目標，重疊時取最新建立的一組。
+
+**超標紅字**：某類當日總份數 > 目標 × 1.2 轉紅；**目標設為 0 時，吃任何份數（> 0）都算超標**。
+
+> ⚠️ 「全穀雜糧」「油脂堅果」等只是食物代換表的分類代稱，不代表健康與否（炸雞皮、餅乾也算全穀雜糧）。AI 評語會依實際敘述判斷，而非分類名稱。
+
+---
+
+## AI 功能
+
+AI 為**逐一開放**：管理者在後台替個別會員開啟後才可用；且需設定 `LLM_TOKEN`。四項能力：
+
+1. **拍照判份數＋寫敘述**（`POST /api/ai/ocr`）：視覺模型估六大類份數並寫一句敘述；若共用知識庫命中相似菜色，會附上「社群參考份數」。敘述與份數可分別按讚／倒讚。
+2. **單篇 AI 評語**（`POST /api/ai/comment`）：針對一則餐點動態，比對當日階段目標給溫和建議。
+3. **AI 今日總評**（`POST /api/ai/daily`）：綜合整天餐點、六大類達成、喝水、運動、身體數據；目標比對由後端先算好再交給模型，避免算錯。
+4. **回饋**（`POST /api/ai/feedback`）：對 AI 輸出按讚／倒讚，會影響往後生成風格。
+
+**共用菜色知識庫**（選用）：`embedding-service` 用文字（菜名/敘述，384 維）與圖片（餐點照片，512 維）向量，找相似菜色的社群共識份數當估算參考。所有知識庫呼叫在服務未啟用或失效時都會靜默略過，OCR 照常運作。LLM Gateway 串接細節見 `LLM-API-使用教學.md`。
+
+---
+
+## 帳號、角色與版號
+
+- **角色**：`member`（一般會員）、`citizen`（駒駒國民，權限同會員）、`dietitian`（營養師）、`admin`（管理者）。
+- **註冊流程**：圖形驗證碼 → Email 6 位認證碼 → 帳號建立為 `pending` → 管理者於後台開通。`ADMIN_EMAIL` 對應帳號自動成為管理者。
+- **營養師**可在專屬頁面檢視會員每日紀錄、替照片評分（綠/黃/紅燈）、調整份數、留言、設定目標。
+- **強制更新**：版號嵌入前端 bundle，後端由 `GET /api/version` 回報；前端每 60 秒比對，**伺服器版號嚴格大於**用戶端時跳出不可關閉的更新視窗。改版用 `node scripts/bump-version.mjs X.Y.Z` 一次更新前後端版號，並在 `frontend/public/changelog.json` 最前面新增一筆（同時驅動底部「版本紀錄」與更新視窗內容）。專案內有 `release` skill 可一鍵完成 bump → changelog → build → commit → push → GitHub Release。
+
+> 帳號流程、四種角色的細節、以及**完整 API 端點表**請見 **[DEVELOPMENT.md](./DEVELOPMENT.md)**。
+
+---
+
+## 相關文件
+
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** — 開發／佈署／帳號審核／完整 API 摘要（最權威的操作文件）。
+- **[LLM-API-使用教學.md](./LLM-API-使用教學.md)** — eLAND LLM Gateway（OpenAI 相容）串接參考。
+- **[embedding-service/README.md](./embedding-service/README.md)** — 共用知識庫向量服務的兩種佈署方式與記憶體概估。
+
+## 早期設計原型（僅供參考）
+
+`均衡日記-standalone.html`、`飲食紀錄.dc.html`、`support.js` 是本專案最初的 HTML 設計原型（資料存在 `localStorage`、登入為純視覺）。**正式版已改由上述 `frontend/` + `backend/` 實作，這些檔案僅保留作為視覺與領域規則的歷史參考，不參與建置或佈署。**

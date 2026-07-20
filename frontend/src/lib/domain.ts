@@ -157,7 +157,8 @@ export function goalsFor(
     .filter((g) => g.start && g.end && key >= g.start && key <= g.end)
     .sort((a, b) => b.id - a.id)[0];
   if (hit) {
-    return { vals: hit.vals, water: hit.water || DEFAULT_WATER, custom: true, setBy: hit.setBy };
+    // 目標喝水 0 須保留（?? 而非 ||，否則 0 會被塌回預設 2000）
+    return { vals: hit.vals, water: hit.water ?? DEFAULT_WATER, custom: true, setBy: hit.setBy };
   }
   return { vals: DEFAULT_GOALS, water: DEFAULT_WATER, custom: false, setBy: null };
 }

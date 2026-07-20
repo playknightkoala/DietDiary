@@ -187,7 +187,8 @@ function goalForDate(userId: number, date: string): { vals: Record<string, numbe
   try {
     vals = { ...DEFAULT_GOAL_VALS, ...JSON.parse(row.vals) };
   } catch { /* 用預設 */ }
-  return { vals, water: row.water || DEFAULT_WATER };
+  // 目標喝水 0＝這段期間不特別要求喝水，須保留 0；欄位 NOT NULL 有值時不該 fallback（?? 而非 ||）
+  return { vals, water: row.water ?? DEFAULT_WATER };
 }
 
 function goalSummaryZh(vals: Record<string, number>): string {

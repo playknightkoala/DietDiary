@@ -13,7 +13,14 @@ import { aiRouter } from './routes/ai.js';
 import { APP_VERSION } from './version.js';
 
 const app = express();
-app.use(cors());
+// 正常運作時前端與 API 同源（prod 經 nginx、dev 經 Vite proxy），本不觸發 CORS；
+// 這裡收斂允許來源，避免其他網站直接以瀏覽器跨源呼叫 API。APP_URL 為對外網址，另放行本機開發埠。
+const ALLOWED_ORIGINS = [
+  process.env.APP_URL || 'http://localhost:8080',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

@@ -2,7 +2,8 @@ services:
   backend:
     build: ./backend
     environment:
-      - JWT_SECRET=${JWT_SECRET:-please-change-this-secret}
+      # 必填：未在 .env 設定時 `docker compose up` 直接報錯，不再 fallback 到可預測的預設秘鑰
+      - JWT_SECRET=${JWT_SECRET:?請在 .env 設定 JWT_SECRET（openssl rand -hex 32）}
       # Gmail SMTP：SMTP_USER 填 Gmail、SMTP_PASS 填應用程式密碼（非登入密碼）
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}

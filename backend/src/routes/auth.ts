@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Request } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
@@ -18,6 +19,27 @@ const CODE_TTL_MS = 10 * 60 * 1000; // 認證碼 10 分鐘有效
 const CODE_RESEND_MS = 60 * 1000; // 重寄間隔 60 秒
 const CODE_MAX_ATTEMPTS = 5;
 const CAPTCHA_TTL_MS = 5 * 60 * 1000; // 圖形驗證碼 5 分鐘有效
+
+// 登入失敗節流：以「帳號＋來源 IP」為鍵，連續失敗達上限即短暫鎖定（記憶體，單機部署足夠；搭配 nginx per-IP 限流）。
+// 用 IP 一併當鍵，避免攻擊者對某帳號連打錯誤密碼就把「本人（不同 IP）」也鎖在外（account-lockout DoS）。
+const LOGIN_MAX_FAILS = 10;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map<string, { count: number; until: number }>();
+
+// 正式環境經 nginx 反向代理，X-Real-IP 由 nginx 以實際來源覆寫（外部無法偽造）；本機開發退回 socket 位址
+function clientIp(req: Request): string {
+  const xr = req.headers['x-real-ip'];
+  if (typeof xr === 'string' && xr) return xr;
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string' && xf) return xf.split(',')[0].trim();
+  return req.socket.remoteAddress || 'unknown';
+}
+
+// 清掉已過期的鎖定紀錄，避免 Map 在長時間運行下無限增長
+function pruneLoginFails(now: number) {
+  if (loginFails.size < 2000) return;
+  for (const [k, v] of loginFails) if (now >= v.until) loginFails.delete(k);
+}
 
 authRouter.get('/captcha', (_req, res) => {
   db.prepare('DELETE FROM captchas WHERE expires_at < ?').run(Date.now());
@@ -64,14 +86,6 @@ authRouter.post('/send-code', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: '請輸入正確的 Email 與圖形驗證碼' });
   const { email, captchaId } = parsed.data;
 
-  const cap = db
-    .prepare('SELECT expires_at, verified FROM captchas WHERE id = ?')
-    .get(captchaId) as { expires_at: number; verified: number } | undefined;
-  if (!cap || !cap.verified || Date.now() > cap.expires_at) {
-    db.prepare('DELETE FROM captchas WHERE id = ?').run(captchaId);
-    return res.status(400).json({ error: '圖形驗證碼已失效，請重新驗證' });
-  }
-
   if (!mailerConfigured()) {
     return res.status(503).json({ error: '系統尚未設定寄信服務，請聯絡管理員' });
   }
@@ -87,17 +101,36 @@ authRouter.post('/send-code', async (req, res) => {
     return res.status(429).json({ error: `請稍候 ${wait} 秒後再重新寄送` });
   }
 
+  // 原子地把驗證碼「認領」給這個 Email：必須已驗證、未過期，且尚未綁定或已綁定同一個 Email。
+  // 這是單一 UPDATE（同步、原子），在 await 寄信之前執行，因此並行請求無法用同一張驗證碼寄給不同 Email。
+  const claim = db
+    .prepare('UPDATE captchas SET email = ? WHERE id = ? AND verified = 1 AND expires_at >= ? AND (email IS NULL OR email = ?)')
+    .run(email, captchaId, now, email);
+  if (claim.changes !== 1) {
+    return res.status(400).json({ error: '圖形驗證碼已失效或已用於其他 Email，請重新驗證' });
+  }
+
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  // 先原子寫入認證碼並在同一句強制 60 秒節流（寫在 await 之前 → 並行的「同 Email」請求只有第一個成功，
+  // 其餘 changes=0 直接擋下），再寄信。避免同一地址被並行濫發、或收到多組只有最後一組有效的碼。
+  const upsert = db
+    .prepare(
+      `INSERT INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, 0)
+       ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, sent_at = excluded.sent_at, attempts = 0
+         WHERE email_codes.sent_at <= ?`
+    )
+    .run(email, code, now + CODE_TTL_MS, now, now - CODE_RESEND_MS);
+  if (upsert.changes !== 1) {
+    return res.status(429).json({ error: '寄送太頻繁，請稍候再試' });
+  }
   try {
     await sendVerifyCode(email, code);
   } catch (e) {
     console.error('send-code mail failed:', e);
+    // 補償：只在 DB 的碼仍等於這次產生的碼時才刪除，避免清掉另一個較新請求寫入的認證碼
+    db.prepare('DELETE FROM email_codes WHERE email = ? AND code = ?').run(email, code);
     return res.status(502).json({ error: '認證信寄送失敗，請確認 Email 是否正確或稍後再試' });
   }
-  db.prepare(
-    `INSERT INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, 0)
-     ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, sent_at = excluded.sent_at, attempts = 0`
-  ).run(email, code, now + CODE_TTL_MS, now);
   return res.json({ ok: true });
 });
 
@@ -168,13 +201,24 @@ authRouter.post('/login', async (req, res) => {
   const parsed = authSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: '帳號或密碼格式不正確' });
   const { username, password, remember } = parsed.data;
+  const throttleKey = `${username.trim().toLowerCase()}|${clientIp(req)}`;
+  const now = Date.now();
+  const fail = loginFails.get(throttleKey);
+  if (fail && fail.count >= LOGIN_MAX_FAILS && now < fail.until) {
+    const wait = Math.ceil((fail.until - now) / 60000);
+    return res.status(429).json({ error: `登入失敗次數過多，請於約 ${wait} 分鐘後再試` });
+  }
   const findUser = db.prepare('SELECT id, username, password_hash, status, role FROM users WHERE username = ?');
   type UserRow = { id: number; username: string; password_hash: string; status: string; role: Role };
   // 新帳號以小寫 email 儲存；舊帳號維持原樣，先精確比對再退回小寫
   let user = (findUser.get(username) ?? findUser.get(username.toLowerCase())) as UserRow | undefined;
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    const count = (fail && now < fail.until ? fail.count : 0) + 1;
+    loginFails.set(throttleKey, { count, until: now + LOGIN_LOCK_MS });
+    pruneLoginFails(now);
     return res.status(401).json({ error: '帳號或密碼錯誤' });
   }
+  loginFails.delete(throttleKey); // 登入成功即清除失敗計數
   // ADMIN_EMAIL 對應帳號登入時自動升為管理者（環境變數事後設定也生效）
   promoteAdminIfConfigured(user.username);
   user = findUser.get(user.username) as UserRow;
