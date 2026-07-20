@@ -134,6 +134,21 @@ function sixCategories(food: Food) {
 function round1(n: number): number {
   return Math.round((n || 0) * 10) / 10;
 }
+
+// 六大類：sixCategories 的鍵、目標 vals 的鍵、中文名稱
+const CAT_DEFS: [keyof ReturnType<typeof sixCategories>, string, string][] = [
+  ['protein', 'meat', '蛋豆魚肉'], ['veg', 'veg', '蔬菜'], ['grain', 'grain', '全穀雜糧'],
+  ['oil', 'oil', '油脂堅果'], ['fruit', 'fruit', '水果'], ['milk', 'milk', '乳品'],
+];
+
+// 六大類名稱只是「食物代換表」的分類代稱，不等於健康與否：例如炸雞皮、餅乾、蛋糕都可能被歸到「全穀雜糧」，
+// 炸物的油、糕點的糖也會被歸到「油脂堅果」。健不健康要看使用者敘述裡「實際吃的東西」，不能因為落在某個
+// 分類就當成健康食材；敘述沒寫清楚時就不要憑分類名稱腦補是健康版本。共用給評語與今日總評的提示詞。
+const CATEGORY_LABEL_CAVEAT =
+  '注意：六大類（全穀雜糧、油脂堅果等）只是「食物代換表」的分類代稱，不代表健康與否——' +
+  '例如炸雞皮、餅乾、蛋糕也會被歸為全穀雜糧，糕點與炸物的油糖也會落在油脂堅果。' +
+  '請依使用者敘述裡「實際吃的東西」判斷健不健康，不要因為某類份數多就當成吃得健康而稱讚；' +
+  '敘述沒有寫清楚是什麼時，就不要憑分類名稱假設它是健康的版本。';
 function clampPortion(n: unknown): number {
   const v = typeof n === 'number' ? n : Number(n);
   if (!isFinite(v) || v < 0) return 0;
@@ -177,6 +192,40 @@ function goalForDate(userId: number, date: string): { vals: Record<string, numbe
 
 function goalSummaryZh(vals: Record<string, number>): string {
   return `蛋豆魚肉 ${vals.meat} 份、蔬菜 ${vals.veg} 份、全穀雜糧 ${vals.grain} 份、油脂堅果 ${vals.oil} 份、水果 ${vals.fruit} 份、乳品 ${vals.milk} 份`;
+}
+
+// 今日總評用：整天六大類實際 vs 目標的比對（後端算好，避免小模型算錯或憑空說「低於目標」）。
+// 逐類給明確狀態，特別處理「目標 0」：目標 0＝這段期間不應攝取，吃了才要提醒，沒吃就是達成，
+// 絕不能說成「低於目標／不足」。回傳每一類一行文字。
+function dayGoalBreakdown(dayTotal: Food, vals: Record<string, number>): string[] {
+  const six = sixCategories(dayTotal);
+  return CAT_DEFS.map(([sk, gk, name]) => {
+    const eaten = six[sk];
+    const g = vals[gk] ?? 0;
+    let status: string;
+    if (g === 0) {
+      status = eaten > 0
+        ? `目標 0 份（這段期間不應攝取），今天卻吃了 ${eaten} 份，請明確提醒`
+        : `目標 0 份且今天沒有攝取，已達成（不要說成低於目標或不足）`;
+    } else if (eaten > g * 1.2) {
+      status = `今天 ${eaten} 份，明顯超過目標 ${g} 份，可提醒收斂`;
+    } else if (eaten < g * 0.6) {
+      status = `今天 ${eaten} 份，明顯低於目標 ${g} 份，可建議補足`;
+    } else {
+      status = `今天 ${eaten} 份，接近目標 ${g} 份，大致達標`;
+    }
+    return `・${name}：${status}`;
+  });
+}
+
+// 今日總評用：喝水實際 vs 目標的比對（同樣後端算好；目標 0 時不說「不足」）。
+function waterGoalNote(water: number, goalWater: number): string {
+  if (goalWater <= 0) {
+    return water > 0 ? `目標 0 ml，今天喝了 ${water} ml` : `目標 0 ml，今天未記錄喝水`;
+  }
+  if (water >= goalWater) return `今天 ${water} / ${goalWater} ml，已達標`;
+  if (water < goalWater * 0.6) return `今天 ${water} / ${goalWater} ml，明顯不足，可提醒多補水`;
+  return `今天 ${water} / ${goalWater} ml，略低於目標`;
 }
 
 const BODY_LABELS: [key: string, name: string, unit: string][] = [
@@ -299,10 +348,6 @@ aiRouter.post('/comment', async (req, res) => {
   // 目標為 0＝目標期間完全不能攝取，這餐出現就要提醒；單餐即超過一整天目標的 120% 也要提醒（無論該類一般認為健不健康）
   const goal = goalForDate(req.userId, entry.date);
   const six = sixCategories(food);
-  const CAT_DEFS: [keyof ReturnType<typeof sixCategories>, string, string][] = [
-    ['protein', 'meat', '蛋豆魚肉'], ['veg', 'veg', '蔬菜'], ['grain', 'grain', '全穀雜糧'],
-    ['oil', 'oil', '油脂堅果'], ['fruit', 'fruit', '水果'], ['milk', 'milk', '乳品'],
-  ];
   const goalFlags: string[] = [];
   for (const [sk, gk, name] of CAT_DEFS) {
     const eaten = six[sk];
@@ -331,6 +376,7 @@ aiRouter.post('/comment', async (req, res) => {
     '例如：這餐某類偏多可溫和提醒、缺了哪類可建議下次補上；宵夜或太晚的正餐可溫和提醒時間點。' +
     '只根據使用者實際寫出的食材與份數評論，敘述中沒提到的食材不要憑菜名或刻板印象推測' +
     '（例如使用者列出的關東煮食材都是原形食物時，不要假設裡面有加工火鍋料；不要假設某道菜「通常」怎麼煮）。' +
+    CATEGORY_LABEL_CAVEAT +
     '若提供了「與目標比對」的提醒，請把它自然地寫進評語：目標為 0 的類別代表使用者這段期間完全不攝取，這餐出現了就要明確提醒，' +
     '且不要先稱讚該食物再提醒（避免前後矛盾），直接溫和說明這段期間不攝取並給替代選項；' +
     '單獨一餐就超過一整天目標 120% 的類別也要提醒，即使那類食物一般認為健康。' +
@@ -419,7 +465,8 @@ aiRouter.post('/daily', async (req, res) => {
     `【當天各餐】\n${mealLines}\n\n` +
     `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal)} 大卡）\n` +
     `【當日六大類目標】${goalSummaryZh(goal.vals)}\n` +
-    `【喝水】${day.water} / ${goal.water} ml${
+    `【與目標比對（系統已算好，請直接採用，不要自行加減或臆測其他數字）】\n${dayGoalBreakdown(dayTotal, goal.vals).join('\n')}\n` +
+    `【喝水】${day.water} / ${goal.water} ml（${waterGoalNote(day.water, goal.water)}）${
       day.waterLogs.length
         ? `（分 ${day.waterLogs.length} 次：${day.waterLogs.map((w) => `${w.time || '未填時間'} ${w.ml} ml`).join('、')}）`
         : ''
@@ -431,11 +478,15 @@ aiRouter.post('/daily', async (req, res) => {
     '你是一位親切、專業的營養師，正在均衡飲食日記 App 中替使用者做「一整天」的飲食與健康總評。' +
     '請綜合當天所有餐點、六大類總份數與當日目標的達成情形、喝水量、運動、以及身體數據，給出整體評估。' +
     '只根據使用者實際寫出的食材與份數評論，敘述中沒提到的食材不要憑菜名或刻板印象推測（例如不要假設關東煮一定有加工火鍋料）。' +
+    CATEGORY_LABEL_CAVEAT +
     '確實有值得肯定之處再肯定（不要為了鼓勵而硬找優點或美化），再指出 1～3 個最值得調整的重點（例如某類明顯超標或不足、水分不夠、太晚進食等），並給具體、好執行的建議。' +
     '若當天出現甜點、含糖飲料、炸物等高糖高油的食物，不要淡化其性質、不要替它們找營養上的理由，' +
     '更不要把這類食物描述成「健康」或「較健康的選擇」（例如不要因為甜點含有堅果或穀物就稱讚它健康）；' +
     '請溫和但明確地提醒頻率與份量的拿捏。' +
-    '某類接近或超過目標可提醒收斂，不足則建議如何補足；身體數據若只有較早日期的紀錄，當作參考背景即可，不要當成今天的數字。' +
+    '與目標的比對一律以「與目標比對」區塊的系統結果為準，不要自己重算或臆測其他數字：' +
+    '目標為 0 的類別代表這段期間不應攝取，沒吃就是達成，絕對不要說成「低於目標」或「不足」，' +
+    '吃了才要明確提醒；其餘類別再依系統標示的超標／不足／達標給建議。' +
+    '身體數據若只有較早日期的紀錄，當作參考背景即可，不要當成今天的數字。' +
     '批評對事不對人，不要讓使用者因為誠實記錄而覺得被責備。' +
     '請用繁體中文、溫暖鼓勵的口吻，寫成通順的 3～5 句短文（約 120～250 字），直接寫內容，不要用標題或條列、不要逐項複述所有數字。';
 
