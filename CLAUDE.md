@@ -28,13 +28,13 @@ docker compose --profile embed up -d --build   # also start the embedding servic
 node scripts/bump-version.mjs X.Y.Z
 ```
 
-- **There is no test framework** in either package — do not look for or invent test commands.
+- **No test framework**, but the backend has `npm test`: two plain tsx scripts under `backend/scripts/` — `day-sql-count.ts` (getDayJson SQL-count + response-shape regression; expects 7 queries for a representative day) and `marker-contract.ts` (calendar-marker rule equivalence between backend `getMarkedDates` and frontend `dayHasData`). Run it after touching `getDayJson`, comment counts, or the marker rule. The frontend has no tests.
 - Node is not always on `PATH` in this environment; if `node`/`npm` aren't found, they live in `/usr/local/bin`.
 - Releasing is scripted by the `release` skill (bump → changelog → build → commit → push → GitHub Release). New version **must be strictly greater** than the deployed one or the force-update won't fire.
 
 ## Serving topology (dev ≠ prod, but API paths are identical)
 
-The **frontend nginx container is the only public entry point** (host `8080` → nginx `80`). It serves the static SPA and reverse-proxies `/api` and `/uploads` to `backend:3001`; the backend has no published port. In dev, Vite's proxy plays nginx's role. Because of this, **the API client uses relative paths only** (`/api/...`, `frontend/src/lib/api.ts`) — there is no configurable base URL. `frontend/nginx.conf` also rate-limits `/api/auth/` and gives `/api/ai/` a 150s timeout (LLM can stall ~45s then fall back).
+The **frontend nginx container is the only public entry point** (host `8080` → nginx `80`). It serves the static SPA and reverse-proxies `/api` and `/uploads` to `backend:3001`; the backend has no published port. In dev, Vite's proxy plays nginx's role. Because of this, **the API client uses relative paths only** (`/api/...`, `frontend/src/lib/api.ts`) — there is no configurable base URL. `frontend/nginx.conf` also rate-limits `/api/auth/`, gives `/api/ai/` a 150s timeout (LLM can stall ~45s then fall back), gzips text/JSON responses (including proxied `/api`), and serves `/assets/*` with a 1-year immutable cache — hashed filenames make that safe, but `index.html` and `changelog.json` must stay non-immutable or force-update breaks.
 
 ## Architecture
 
@@ -58,6 +58,7 @@ The **frontend nginx container is the only public entry point** (host `8080` →
 
 ## Gotchas
 
+- **The calendar-marker rule is a frontend/backend contract.** Backend `getMarkedDates` (`helpers.ts`) and frontend `dayHasData` (`lib/domain.ts`) must judge "day has data" identically — water > 0, exercise minutes or desc, any body field, or a non-blank entry; blank entries (created empty before PATCH) and AI summaries don't count. Water/exercise/body mutations write the returned `DayData` straight into the store via `replaceDay`/`markDate(dayHasData(...))` instead of refetching, so a drifted rule shows up as wrong calendar dots. `backend/scripts/marker-contract.ts` (part of `npm test`) guards this.
 - **Nutrition constants are duplicated.** `frontend/src/lib/domain.ts` has `KCAL` and the goal defaults; `backend/src/routes/ai.ts` **re-declares its own `KCAL` and default-goal constants** for building AI prompts. Change serving rules in **both** or AI comments will disagree with the UI.
 - **Version must be in sync** across `frontend/package.json` and `backend/package.json` (that's why `scripts/bump-version.mjs` writes both). Mismatch causes a force-update loop.
 - **Changelog single source** is `frontend/public/changelog.json` (newest-first). The footer bundles it; the force-update modal live-fetches `/changelog.json` so stale bundles still show new notes. Add a new entry there on every release.

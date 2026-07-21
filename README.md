@@ -77,7 +77,7 @@ dietdiary/
 │   │   └── lib/              domain.ts（熱量/目標規則）、api.ts、guideData.ts、
 │   │                         photo.ts（壓縮）、version.ts、changelog.ts
 │   ├── public/changelog.json 版本紀錄（單一來源；nginx 永遠供最新版）
-│   └── nginx.conf            靜態服務 + 反向代理 + 限流/逾時
+│   └── nginx.conf            靜態服務 + 反向代理 + 限流/逾時 + gzip/長期快取
 ├── backend/                  Node + Express + SQLite 後端
 │   └── src/
 │       ├── index.ts          進入點、路由掛載、/uploads 靜態
