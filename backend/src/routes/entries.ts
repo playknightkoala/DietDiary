@@ -135,7 +135,7 @@ entriesRouter.patch('/:id', (req, res) => {
       void kbUpsert(u.desc, u.food, u.photos[0]).catch(() => {});
     }
   }
-  return res.json(entryToJsonWithRatings(updated));
+  return res.json(entryToJsonWithRatings(updated, req.userId));
 });
 
 entriesRouter.delete('/:id', (req, res) => {
@@ -145,7 +145,7 @@ entriesRouter.delete('/:id', (req, res) => {
   // 一次交易刪除評分／留言／紀錄：避免中途失敗留下孤兒 metadata
   db.transaction(() => {
     deletePhotoRatings(entry.id);
-    db.prepare('DELETE FROM entry_comments WHERE target = ?').run(`entry:${entry.id}`);
+    db.prepare('DELETE FROM entry_comments WHERE user_id = ? AND target = ?').run(req.userId, `entry:${entry.id}`);
     db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
   })();
   // DB 已刪除後才刪實體檔案：即使 unlink 失敗也只是留下孤兒檔，不會有指向已刪紀錄的照片

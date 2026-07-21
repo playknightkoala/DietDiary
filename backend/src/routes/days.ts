@@ -115,5 +115,5 @@ daysRouter.post('/:date/entries', (req, res) => {
   const row = db
     .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ?')
     .get(Number(info.lastInsertRowid)) as EntryRow;
-  return res.status(201).json(entryToJsonWithRatings(row));
+  return res.status(201).json(entryToJsonWithRatings(row, req.userId));
 });

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { dstr, goalsFor, nowHM } from '../../lib/domain';
+import { dayHasData, dstr, goalsFor, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { DayData } from '../../types';
 import { PickerInput } from '../PickerInput';
@@ -10,7 +10,8 @@ export function WaterModal() {
   const day = useStore((s) => s.day);
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
-  const refresh = useStore((s) => s.refresh);
+  const replaceDay = useStore((s) => s.replaceDay);
+  const markDate = useStore((s) => s.markDate);
   const closeModal = useStore((s) => s.closeModal);
   const [input, setInput] = useState('');
   const [date, setDate] = useState(selected);
@@ -36,7 +37,8 @@ export function WaterModal() {
     const updated = await api.addWater(date, n, time);
     if (dateRef.current === date) setTarget(updated);
     setInput('');
-    await refresh();
+    replaceDay(date, updated);
+    markDate(date, dayHasData(updated));
   };
 
   const removeLog = async (id: number) => {
@@ -44,7 +46,8 @@ export function WaterModal() {
     if (!window.confirm('確定要刪除這筆喝水紀錄？留言會一併刪除。')) return;
     const updated = await api.deleteWaterLog(date, id);
     if (dateRef.current === date) setTarget(updated);
-    await refresh();
+    replaceDay(date, updated);
+    markDate(date, dayHasData(updated));
   };
 
   const resetWater = async () => {
@@ -52,7 +55,8 @@ export function WaterModal() {
     if (!window.confirm('確定要刪除這天所有喝水紀錄？留言會一併刪除。')) return;
     const updated = await api.resetWater(date);
     if (dateRef.current === date) setTarget(updated);
-    await refresh();
+    replaceDay(date, updated);
+    markDate(date, dayHasData(updated));
   };
 
   return (

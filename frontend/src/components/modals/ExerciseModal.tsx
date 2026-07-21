@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { dstr, nowHM } from '../../lib/domain';
+import { dayHasData, dstr, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { DayData } from '../../types';
 import { PickerInput } from '../PickerInput';
@@ -9,7 +9,8 @@ import { CloseButton, ModalShell } from './ModalShell';
 export function ExerciseModal() {
   const day = useStore((s) => s.day);
   const selected = useStore((s) => s.selected);
-  const refresh = useStore((s) => s.refresh);
+  const replaceDay = useStore((s) => s.replaceDay);
+  const markDate = useStore((s) => s.markDate);
   const closeModal = useStore((s) => s.closeModal);
   const [date, setDate] = useState(selected);
   const [time, setTime] = useState(nowHM());
@@ -38,7 +39,8 @@ export function ExerciseModal() {
       if (dateRef.current === date) setTarget(updated);
       setMin('');
       setDesc('');
-      await refresh();
+      replaceDay(date, updated);
+      markDate(date, dayHasData(updated));
     } finally {
       setBusy(false);
     }
@@ -49,7 +51,8 @@ export function ExerciseModal() {
     if (!window.confirm('確定要刪除這筆運動紀錄？留言會一併刪除。')) return;
     const updated = await api.deleteExLog(date, id);
     if (dateRef.current === date) setTarget(updated);
-    await refresh();
+    replaceDay(date, updated);
+    markDate(date, dayHasData(updated));
   };
 
   const totalMin = Math.round(target.exLogs.reduce((a, l) => a + (Number(l.min) || 0), 0) * 10) / 10;

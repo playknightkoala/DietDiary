@@ -85,6 +85,15 @@ export function entryHasData(e: { desc: string; photos: string[]; food: Food }):
   return !!(e.desc || e.photos.length || Object.values(e.food).some((v) => v > 0));
 }
 
+// 月曆亮燈判斷，規則必須與後端 getMarkedDates 一致：
+// 喝水>0、任一筆運動有分鐘或敘述、任一身體欄位非空、任一 entry 有內容；
+// 空白 entry（剛新增未填）與 AI 總評不亮燈。
+export function dayHasData(day: DayData): boolean {
+  const hasBody = Object.values(day.body).some((v) => v !== '');
+  const hasEx = day.exLogs.some((l) => (Number(l.min) || 0) > 0 || l.desc !== '');
+  return day.water > 0 || hasEx || hasBody || day.entries.some(entryHasData);
+}
+
 export function dayFoodTotals(entries: Entry[]): Food {
   const tot = emptyFood();
   entries.forEach((e) => {

@@ -58,6 +58,9 @@ interface AppState {
   loadDay: () => Promise<void>;
   loadWeekMarks: () => Promise<void>;
   loadMonthMarks: (y: number, m: number) => Promise<void>;
+  // mutation 已回傳完整 DayData 時直接寫回，省掉 refresh() 的 day＋marks 重抓
+  replaceDay: (date: string, day: DayData) => void;
+  markDate: (date: string, hasData: boolean) => void;
   refresh: () => Promise<void>;
   loadGoals: () => Promise<void>;
   loadTrend: () => Promise<void>;
@@ -176,6 +179,19 @@ export const useStore = create<AppState>((set, get) => ({
       const dim = new Date(y, m + 1, 0).getDate();
       for (let n = 1; n <= dim; n++) delete marks[dstr(new Date(y, m, n))];
       dates.forEach((d) => (marks[d] = true));
+      return { marks };
+    });
+  },
+  replaceDay: (date, day) => {
+    // 只在仍停留於該日期時替換，避免蓋掉已切換的畫面
+    if (get().selected === date) set({ day });
+  },
+  markDate: (date, hasData) => {
+    set((s) => {
+      if (!!s.marks[date] === hasData) return s;
+      const marks = { ...s.marks };
+      if (hasData) marks[date] = true;
+      else delete marks[date];
       return { marks };
     });
   },

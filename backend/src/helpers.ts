@@ -197,9 +197,9 @@ export function getPhotoRatings(entryId: number): Record<string, PhotoRating> {
   return Object.fromEntries(rows.map((r) => [r.photo, r.rating]));
 }
 
-// 對外回傳的 entry 一律附上營養師的照片評分（無評分＝空物件）與留言數
-export function entryToJsonWithRatings(e: EntryRow) {
-  return { ...entryToJson(e), ratings: getPhotoRatings(e.id), commentCount: countComments(`entry:${e.id}`) };
+// 對外回傳的 entry 一律附上營養師的照片評分（無評分＝空物件）與留言數；ownerId＝紀錄擁有者
+export function entryToJsonWithRatings(e: EntryRow, ownerId: number) {
+  return { ...entryToJson(e), ratings: getPhotoRatings(e.id), commentCount: countComments(ownerId, `entry:${e.id}`) };
 }
 
 // ---- 逐筆喝水紀錄（一筆＝動態牆一則貼文）----
@@ -287,9 +287,10 @@ export interface CommentJson {
 // AI 評語在留言串內的顯示名稱
 export const AI_AUTHOR_NAME = 'AI 助手';
 
-// 三種 target（entry:/water:/ex:）皆為全域唯一 id
-export function countComments(target: string): number {
-  const row = db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE target = ?').get(target);
+// 三種 target（entry:/water:/ex:）皆為全域唯一 id；
+// ownerId＝紀錄擁有者，帶進條件是為了命中 (user_id, target) 索引（單查 target 會全表掃描）
+export function countComments(ownerId: number, target: string): number {
+  const row = db.prepare('SELECT COUNT(*) AS c FROM entry_comments WHERE user_id = ? AND target = ?').get(ownerId, target);
   return (row as { c: number }).c;
 }
 
@@ -468,12 +469,16 @@ export interface DailySummaryJson {
 }
 
 export function getDailySummary(userId: number, date: string): DailySummaryJson | null {
+  // 總評與擁有者評價一次 LEFT JOIN 取回（原本分兩查）
   const row = db
-    .prepare('SELECT body, model, created_at FROM daily_summaries WHERE user_id = ? AND date = ?')
-    .get(userId, date) as { body: string; model: string; created_at: number } | undefined;
-  return row
-    ? { body: row.body, model: row.model, createdAt: row.created_at, feedback: getAiFeedback(userId, 'daily', date) }
-    : null;
+    .prepare(
+      `SELECT s.body, s.model, s.created_at, COALESCE(f.vote, 0) AS vote
+       FROM daily_summaries s
+       LEFT JOIN ai_feedback f ON f.user_id = s.user_id AND f.kind = 'daily' AND f.ref = s.date
+       WHERE s.user_id = ? AND s.date = ?`
+    )
+    .get(userId, date) as { body: string; model: string; created_at: number; vote: number } | undefined;
+  return row ? { body: row.body, model: row.model, createdAt: row.created_at, feedback: row.vote } : null;
 }
 
 export function upsertDailySummary(userId: number, date: string, body: string, model: string) {
@@ -487,21 +492,63 @@ export function getDayJson(userId: number, date: string) {
   const row = db
     .prepare('SELECT * FROM days WHERE user_id = ? AND date = ?')
     .get(userId, date) as DayRow | undefined;
-  const entries = (
-    db
-      .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
-      .all(userId, date) as EntryRow[]
-  ).map(entryToJsonWithRatings);
-  const waterLogs = (
-    db
-      .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
-      .all(userId, date, '') as WaterLogRow[]
-  ).map((w) => ({ ...w, commentCount: countComments(`water:${w.id}`) }));
-  const exLogs = (
-    db
-      .prepare('SELECT id, min, desc, time FROM ex_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
-      .all(userId, date, '') as ExLogRow[]
-  ).map((x) => ({ ...x, commentCount: countComments(`ex:${x.id}`) }));
+  const entryRows = db
+    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
+    .all(userId, date) as EntryRow[];
+  const waterRows = db
+    .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
+    .all(userId, date, '') as WaterLogRow[];
+  const exRows = db
+    .prepare('SELECT id, min, desc, time FROM ex_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
+    .all(userId, date, '') as ExLogRow[];
+
+  // 當日所有照片評分一次取回（原本每筆 entry 各查一次）
+  const ratingsByEntry = new Map<number, Record<string, PhotoRating>>();
+  if (entryRows.length) {
+    const ratingRows = db
+      .prepare(
+        `SELECT pr.entry_id, pr.photo, pr.rating
+         FROM photo_ratings pr
+         JOIN entries e ON e.id = pr.entry_id
+         WHERE e.user_id = ? AND e.date = ?`
+      )
+      .all(userId, date) as { entry_id: number; photo: string; rating: PhotoRating }[];
+    for (const r of ratingRows) {
+      const m = ratingsByEntry.get(r.entry_id) ?? {};
+      m[r.photo] = r.rating;
+      ratingsByEntry.set(r.entry_id, m);
+    }
+  }
+
+  // 當日所有留言數一次 GROUP BY 取回（原本每筆紀錄各查一次且掃全表）；
+  // key 是帶前綴的 target 字串（entry:12 / water:12 是不同目標）。空集合不組 IN ()。
+  const commentCounts = new Map<string, number>();
+  const targets = [
+    ...entryRows.map((e) => `entry:${e.id}`),
+    ...waterRows.map((w) => `water:${w.id}`),
+    ...exRows.map((x) => `ex:${x.id}`),
+  ];
+  // SQLite bind 參數上限 32766，單日紀錄數沒有硬上限，分批每 500 筆查一次保險；
+  // 一般每日資料量仍只會有一次查詢
+  for (let i = 0; i < targets.length; i += 500) {
+    const batch = targets.slice(i, i + 500);
+    const countRows = db
+      .prepare(
+        `SELECT target, COUNT(*) AS c FROM entry_comments
+         WHERE user_id = ? AND target IN (${batch.map(() => '?').join(', ')})
+         GROUP BY target`
+      )
+      .all(userId, ...batch) as { target: string; c: number }[];
+    for (const r of countRows) commentCounts.set(r.target, r.c);
+  }
+
+  const entries = entryRows.map((e) => ({
+    ...entryToJson(e),
+    ratings: ratingsByEntry.get(e.id) ?? {},
+    commentCount: commentCounts.get(`entry:${e.id}`) ?? 0,
+  }));
+  const waterLogs = waterRows.map((w) => ({ ...w, commentCount: commentCounts.get(`water:${w.id}`) ?? 0 }));
+  const exLogs = exRows.map((x) => ({ ...x, commentCount: commentCounts.get(`ex:${x.id}`) ?? 0 }));
   return {
     // 舊版前端相容（新版已不使用；ex 固定 0 避免舊 bundle 讀取時炸掉）
     commentCounts: { ex: 0 },

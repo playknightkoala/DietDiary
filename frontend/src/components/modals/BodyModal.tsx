@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { BODY_DEFS, nowHM } from '../../lib/domain';
+import { BODY_DEFS, dayHasData, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { BodyKey } from '../../types';
 import { PickerInput } from '../PickerInput';
@@ -11,7 +11,8 @@ export function BodyModal() {
   const selected = useStore((s) => s.selected);
   const trendOpen = useStore((s) => s.trendOpen);
   const loadTrend = useStore((s) => s.loadTrend);
-  const refresh = useStore((s) => s.refresh);
+  const replaceDay = useStore((s) => s.replaceDay);
+  const markDate = useStore((s) => s.markDate);
   const closeModal = useStore((s) => s.closeModal);
   const [body, setBody] = useState<Record<BodyKey, string>>({ ...day.body });
   const [time, setTime] = useState(day.bodyTime || nowHM());
@@ -21,8 +22,9 @@ export function BodyModal() {
     if (closing.current) return;
     closing.current = true;
     try {
-      await api.patchDay(selected, { body, bodyTime: time });
-      await refresh();
+      const updated = await api.patchDay(selected, { body, bodyTime: time });
+      replaceDay(selected, updated);
+      markDate(selected, dayHasData(updated));
       if (trendOpen) await loadTrend();
     } finally {
       closeModal();

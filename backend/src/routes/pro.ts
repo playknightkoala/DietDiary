@@ -143,7 +143,7 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
   const row = db
     .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ?')
     .get(entry.id) as EntryRow;
-  return res.json(entryToJsonWithRatings(row));
+  return res.json(entryToJsonWithRatings(row, member.id));
 });
 
 // 營養師對會員紀錄（飲食／喝水／運動）的留言
