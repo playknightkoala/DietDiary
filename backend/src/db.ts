@@ -174,6 +174,21 @@ CREATE TABLE IF NOT EXISTS dish_kb (
 );
 `);
 
+// Tavily 網路搜尋（search.ts）：按月額度計數＋查詢結果快取。
+// used 以「原子先扣後打」維護（檢查＋累加同一條 UPDATE），reconciled_at 為最近一次與官方 /usage 對帳的時間。
+db.exec(`
+CREATE TABLE IF NOT EXISTS search_usage (
+  month TEXT PRIMARY KEY,                    -- 'YYYY-MM'
+  used INTEGER NOT NULL DEFAULT 0,           -- 當月已扣 credits
+  reconciled_at INTEGER NOT NULL DEFAULT 0   -- 最近對帳時間（epoch 毫秒）
+);
+CREATE TABLE IF NOT EXISTS search_cache (
+  query TEXT PRIMARY KEY,        -- 正規化後的查詢字串
+  result TEXT NOT NULL,          -- WebSearchResult JSON（不含 fromCache）
+  created_at INTEGER NOT NULL    -- 寫入時間（epoch 毫秒；90 天後視為過期）
+);
+`);
+
 // 舊資料庫沒有 status / approval_token 欄位：補上，且既有帳號一律視為已開通
 const userCols = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
 if (!userCols.includes('status')) {

@@ -203,7 +203,15 @@ export const api = {
       model: string;
       // 共用知識庫命中的相似菜色（未啟用或未命中為 null）
       kb: { dishId: number; caption: string; food: Record<string, number>; up: number; down: number } | null;
+      // 品牌品項且 KB 未命中時，份數已依網路營養資訊校正（未觸發為 null）
+      web: { query: string; sources: { title: string; url: string }[] } | null;
     }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
+  // 營養師查詢輔助：問題 → 網路搜尋 → AI 整理成含來源的摘要（營養師／管理者）
+  aiResearch: (question: string) =>
+    request<{ answer: string; sources: { title: string; url: string }[]; model: string }>('/api/ai/research', {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+    }),
   aiComment: (target: CommentTarget) =>
     request<EntryComment[]>('/api/ai/comment', { method: 'POST', body: JSON.stringify({ target }) }),
   // AI 今日總評：針對某天產生整天綜合評語，存為當天一則 AI 動態，回傳更新後的當日資料

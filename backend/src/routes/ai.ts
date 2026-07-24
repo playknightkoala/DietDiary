@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { aiOcrSchema, aiCommentSchema, aiDailySchema, aiFeedbackSchema, FOOD_KEYS } from '../validation.js';
+import { aiOcrSchema, aiCommentSchema, aiDailySchema, aiFeedbackSchema, aiResearchSchema, FOOD_KEYS } from '../validation.js';
 import {
   createComment,
   currentAiBody,
@@ -17,6 +17,7 @@ import {
   type Food,
 } from '../helpers.js';
 import { kbHint, kbLookupByImage, kbUpsert, kbVote } from '../kb.js';
+import { searchActive, webResultForPrompt, webSearch } from '../search.js';
 import {
   COMMENT_FALLBACK_MODEL,
   COMMENT_MODEL,
@@ -81,6 +82,61 @@ aiRouter.post('/kb/seed', async (req, res) => {
     }
   }
   return res.json({ seeded, skipped, scanned: rows.length });
+});
+
+// ---- 營養師查詢輔助：問題 → 網路搜尋 → LLM 整理成含來源引用的繁中摘要 ----
+// 放在 requireAI 之前：以角色（營養師／管理者）授權即可，不需逐人開 ai_enabled；
+// 掛在 /api/ai/ 下以取得 nginx 的 150s 逾時（搜尋＋LLM 兩段可能較慢）。
+aiRouter.post('/research', async (req, res) => {
+  const u = db.prepare('SELECT role, status FROM users WHERE id = ?').get(req.userId) as
+    | { role: string; status: string }
+    | undefined;
+  if (!u || u.status !== 'active' || (u.role !== 'dietitian' && u.role !== 'admin')) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  if (!aiConfigured()) return res.status(503).json({ error: 'AI 服務尚未設定，請聯絡管理員' });
+  if (!searchActive()) return res.status(503).json({ error: '網路查詢功能尚未設定（TAVILY_API_KEY），請聯絡管理員' });
+  const parsed = aiResearchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入 2～200 字的問題' });
+  const question = parsed.data.question;
+
+  const web = await webSearch(question);
+  if (!web) {
+    return res.status(503).json({ error: '網路查詢暫時無法使用（可能本月查詢額度已用完），請稍後再試' });
+  }
+
+  const system =
+    '你是營養學領域的研究助理，協助營養師快速掌握資訊。請根據提供的網路搜尋結果回答問題：' +
+    '以繁體中文寫 2～5 句的重點摘要，只根據搜尋結果作答、不要憑自己的印象補充，' +
+    '搜尋結果不足以回答時要直說「查到的資料有限」並說明實際查到了什麼。' +
+    '引用時以（來源1）（來源2）標註對應的來源編號，不要輸出網址。直接寫內容，不要加標題或條列。';
+  const context = `問題：${question}\n\n【網路搜尋結果】\n${webResultForPrompt(web)}`;
+
+  const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
+  let lastError: unknown = null;
+  for (const model of chain) {
+    try {
+      const text = await chat({
+        model,
+        temperature: 0.3,
+        maxTokens: 600,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: context },
+        ],
+      });
+      return res.json({
+        answer: text.replace(/\s+$/, '').slice(0, 2000),
+        sources: web.results.map((r) => ({ title: r.title, url: r.url })),
+        model,
+      });
+    } catch (e) {
+      lastError = e;
+      console.error(`ai research attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
+    }
+  }
+  console.error('ai research failed (all attempts):', lastError);
+  return res.status(502).json({ error: 'AI 整理失敗，請稍後再試' });
 });
 
 aiRouter.use(requireAI);
@@ -295,9 +351,16 @@ aiRouter.post('/ocr', async (req, res) => {
     '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk（值為份數，可含一位小數，沒有就填 0）與 caption（字串），不要有其他文字。\n' +
     '範例：{"protein":2,"veg":1,"grain":2.5,"oil":1,"fruit":0,"milk":0,"caption":"滷雞腿便當，白飯約八分滿，配燙青菜"}';
 
+  // 網路搜尋可用時，請視覺模型順便認品牌：之後拿品牌品項查官方營養標示來校正份數
+  const brandAsk = searchActive()
+    ? '\n另外：若照片中「明確看得到」連鎖店或品牌名稱（招牌、包裝、杯身、logo 上的文字，例如麥當勞、50嵐、超商包裝食品），' +
+      '請在 JSON 多輸出鍵 brand，值為「品牌＋品項名」（例：「麥當勞 大麥克」「50嵐 波霸奶茶」）；' +
+      '看不到明確的品牌文字或標誌就填空字串，絕對不要用猜的。'
+    : '';
+
   // 共用知識庫（開關開啟時）：先找相似菜色，把社群共識份數當估算參考注入提示。查詢失敗不影響 OCR。
   const kbMatch = await kbLookupByImage(photo).catch(() => null);
-  const promptFull = kbMatch ? prompt + '\n' + kbHint(kbMatch) : prompt;
+  const promptFull = prompt + brandAsk + (kbMatch ? '\n' + kbHint(kbMatch) : '');
 
   try {
     // 只用 31b 看圖（e4b 判斷品質不佳，不作視覺備援）；壞掉就直接回報稍後再試。
@@ -321,14 +384,114 @@ aiRouter.post('/ocr', async (req, res) => {
     food.milkLow = clampPortion(raw.milk);
     // AI 幫忙寫的這張照片敘述；前端會把它組進整筆「這餐吃了什麼」
     const caption = typeof raw.caption === 'string' ? raw.caption.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+
+    // 品牌品項且知識庫沒有共識時：搜營養標示，讓文字模型把官方數據換算回六大類份數校正視覺估計。
+    // 補知識庫的冷啟動——校正後的份數在使用者存檔時經 kbUpsert 回寫 KB，之後同品項直接命中不再搜。
+    // 搜尋／換算任一步失敗（額度用完、模型故障、資料不符）都保留原本的視覺估計。
+    const brand = typeof raw.brand === 'string' ? raw.brand.trim().replace(/\s+/g, ' ').slice(0, 50) : '';
+    let web: { query: string; sources: { title: string; url: string }[] } | null = null;
+    if (brand && !kbMatch) {
+      const found = await webSearch(`${brand} 熱量 營養成分`);
+      if (found) {
+        try {
+          const refinePrompt =
+            `你是專業營養師。使用者拍了「${brand}」的照片，視覺模型的初步六大類估計為：${foodSummaryZh(food)}` +
+            `（照片敘述：${caption || '無'}）。\n以下是網路搜尋到的這個品項的營養資訊：\n${webResultForPrompt(found)}\n` +
+            '請優先依上述營養資訊（官方熱量／三大營養素）校正六大類份數。換算參考——每份熱量：' +
+            '蛋豆魚肉（中脂）約 75 大卡、蔬菜 25、全穀雜糧 70、油脂堅果 45、水果 60、乳品（低脂）120。' +
+            '份量以照片實際看到的為準（例如飲料只剩半杯就按半份算）；搜尋資料與品項明顯不符時維持原估計。\n' +
+            '只輸出 JSON 物件，鍵為 protein、veg、grain、oil、fruit、milk（份數，可含一位小數），不要有其他文字。';
+          const refined = extractJson<Record<string, unknown>>(
+            await chat({
+              model: COMMENT_MODEL,
+              json: true,
+              temperature: 0.2,
+              maxTokens: 300,
+              messages: [{ role: 'user', content: refinePrompt }],
+            })
+          );
+          const keys = ['protein', 'veg', 'grain', 'oil', 'fruit', 'milk'] as const;
+          // 全零視為換算失敗，保留視覺估計
+          if (keys.some((k) => clampPortion(refined[k]) > 0)) {
+            food.meatMed = clampPortion(refined.protein);
+            food.veg = clampPortion(refined.veg);
+            food.grain = clampPortion(refined.grain);
+            food.oil = clampPortion(refined.oil);
+            food.fruit = clampPortion(refined.fruit);
+            food.milkLow = clampPortion(refined.milk);
+            web = { query: found.query, sources: found.results.map((r) => ({ title: r.title, url: r.url })) };
+          }
+        } catch (e) {
+          console.error('ai ocr web refine failed (keeping visual estimate):', e instanceof Error ? e.message : e);
+        }
+      }
+    }
+
     // 附上知識庫命中的參考（前端顯示「類似菜色社群份數」，並讓份數評價回饋到該道菜）
     const kb = kbMatch ? { dishId: kbMatch.id, caption: kbMatch.caption, food: kbMatch.food, up: kbMatch.up, down: kbMatch.down } : null;
-    return res.json({ food, caption, model, kb });
+    return res.json({ food, caption, model, kb, web });
   } catch (e) {
     console.error('ai ocr failed:', e);
     return res.status(502).json({ error: 'AI 判斷失敗（視覺模型暫時無法使用），請稍後再試' });
   }
 });
+
+// ---- 評語／總評的「查證搜尋」：gateway 的 gemma 模型不支援原生 tool-use，用單回合協定模擬 ----
+// 模型遇到不熟悉的特殊食材／品牌品項時，可整段只回「SEARCH: 查詢詞」，系統搜尋後帶結果重問一次
+// （每次生成最多一輪）。搜尋不可用（未設定／額度用完）時完全不提供此選項，模型永遠不會輸出指令。
+const SEARCH_PROTOCOL_HINT =
+  '\n若敘述中出現你不熟悉、無法確定營養特性的特殊食材、品牌品項或飲品，導致無法正確評估，' +
+  '你可以先不寫評語，整段回覆只輸出一行「SEARCH: 查詢詞」（例：SEARCH: 蝶豆花 營養成分），' +
+  '系統會提供網路搜尋結果讓你重新作答。常見食材請直接作答、不要查詢；最多查一次。';
+
+// 依模型鏈生成一段文字，支援上述查證協定；全部模型都失敗時丟出最後的錯誤
+async function chatWithVerification(
+  models: string[],
+  system: string,
+  context: string,
+  maxTokens: number
+): Promise<{ body: string; model: string }> {
+  let lastError: unknown = null;
+  for (const model of models) {
+    try {
+      let text = await chat({
+        model,
+        temperature: 0.6,
+        maxTokens,
+        messages: [
+          { role: 'system', content: searchActive() ? system + SEARCH_PROTOCOL_HINT : system },
+          { role: 'user', content: context },
+        ],
+      });
+      // 只有「整段回覆就是一行 SEARCH 指令」才視為查證要求，避免誤判評語內文
+      const trimmed = text.trim();
+      const m = !trimmed.includes('\n') ? /^SEARCH[:：]\s*(.{2,120})$/i.exec(trimmed) : null;
+      if (m) {
+        // 搜到就帶資料重問；沒搜到（額度用完等）也要重問——不能把 SEARCH 指令當成評語存檔。
+        // 重問時不再提供查證選項，模型必須作答。
+        const found = await webSearch(m[1].trim());
+        const extra = found
+          ? '\n【網路查證資料（僅供參考，請自行判斷取用；評語中不要提到「搜尋」、不要列出網址）】\n' +
+            webResultForPrompt(found) + '\n'
+          : '';
+        text = await chat({
+          model,
+          temperature: 0.6,
+          maxTokens,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: context + extra },
+          ],
+        });
+      }
+      return { body: text.replace(/\s+$/, ''), model };
+    } catch (e) {
+      lastError = e;
+      console.error(`ai generate attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('all models failed');
+}
 
 // ---- AI 評語（純文字：依敘述＋份數＋餐期＋時間，對自己的飲食貼文產生一則 AI 留言）----
 aiRouter.post('/comment', async (req, res) => {
@@ -412,30 +575,20 @@ aiRouter.post('/comment', async (req, res) => {
   const systemFull = system + preferenceHint(req.userId);
 
   // 純文字降級：主模型（12b）整批故障時退到備援（e4b）也要給出評語
-  const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
-
-  let lastError: unknown = null;
-  for (const model of chain) {
-    try {
-      const text = await chat({
-        model,
-        temperature: 0.6,
-        maxTokens: 500,
-        messages: [
-          { role: 'system', content: systemFull },
-          { role: 'user', content: context },
-        ],
-      });
-      const body = text.replace(/\s+$/, '').slice(0, 1000);
-      createComment(req.userId, target, req.userId, body, true, model);
-      return res.status(201).json(listComments(req.userId, target, req.userId));
-    } catch (e) {
-      lastError = e;
-      console.error(`ai comment attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
-    }
+  try {
+    const { body: text, model } = await chatWithVerification(
+      [COMMENT_MODEL, COMMENT_FALLBACK_MODEL],
+      systemFull,
+      context,
+      500
+    );
+    const body = text.slice(0, 1000);
+    createComment(req.userId, target, req.userId, body, true, model);
+    return res.status(201).json(listComments(req.userId, target, req.userId));
+  } catch (e) {
+    console.error('ai comment failed (all attempts):', e);
+    return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
   }
-  console.error('ai comment failed (all attempts):', lastError);
-  return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
 });
 
 // ---- AI 今日總評（純文字：擷取當天所有動態＋六大類總份數＋熱量喝水＋身體數據＋當日目標，
@@ -518,27 +671,18 @@ aiRouter.post('/daily', async (req, res) => {
   // 評價當作依據：注入使用者過去讚／倒讚的偏好，讓這份總評貼近他的喜好
   const systemFull = system + preferenceHint(req.userId);
 
-  const chain = [COMMENT_MODEL, COMMENT_FALLBACK_MODEL];
-  let lastError: unknown = null;
-  for (const model of chain) {
-    try {
-      const text = await chat({
-        model,
-        temperature: 0.6,
-        maxTokens: 700,
-        messages: [
-          { role: 'system', content: systemFull },
-          { role: 'user', content: context },
-        ],
-      });
-      const body = text.replace(/\s+$/, '').slice(0, 2000);
-      upsertDailySummary(req.userId, date, body, model);
-      return res.status(201).json(getDayJson(req.userId, date));
-    } catch (e) {
-      lastError = e;
-      console.error(`ai daily attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
-    }
+  try {
+    const { body: text, model } = await chatWithVerification(
+      [COMMENT_MODEL, COMMENT_FALLBACK_MODEL],
+      systemFull,
+      context,
+      700
+    );
+    const body = text.slice(0, 2000);
+    upsertDailySummary(req.userId, date, body, model);
+    return res.status(201).json(getDayJson(req.userId, date));
+  } catch (e) {
+    console.error('ai daily failed (all attempts):', e);
+    return res.status(502).json({ error: 'AI 今日總評產生失敗，請稍後再試' });
   }
-  console.error('ai daily failed (all attempts):', lastError);
-  return res.status(502).json({ error: 'AI 今日總評產生失敗，請稍後再試' });
 });

@@ -180,6 +180,27 @@ export function DietitianScreen() {
   // 會員顯示名稱：私人暱稱（僅自己可見）＞會員自訂暱稱＞帳號
   const memberLabel = (m: MemberInfo) => m.alias || m.nickname || m.username;
 
+  // 營養查詢助手：問題 → 網路搜尋 → AI 整理成含來源的摘要（需後端設定 TAVILY_API_KEY，未設定時後端會回覆說明）
+  const [researchQ, setResearchQ] = useState('');
+  const [researchBusy, setResearchBusy] = useState(false);
+  const [researchErr, setResearchErr] = useState('');
+  const [research, setResearch] = useState<{ question: string; answer: string; sources: { title: string; url: string }[]; model: string } | null>(null);
+
+  const runResearch = async () => {
+    const q = researchQ.trim();
+    if (q.length < 2 || researchBusy) return;
+    setResearchBusy(true);
+    setResearchErr('');
+    try {
+      const r = await api.aiResearch(q);
+      setResearch({ question: q, ...r });
+    } catch (e) {
+      setResearchErr(e instanceof Error ? e.message : '查詢失敗，請再試一次');
+    } finally {
+      setResearchBusy(false);
+    }
+  };
+
   // 編輯私人暱稱（僅該營養師可見）
   const [aliasEditing, setAliasEditing] = useState(false);
   const [aliasInput, setAliasInput] = useState('');
@@ -331,6 +352,51 @@ export function DietitianScreen() {
           <button onClick={() => selectDate(todayStr)} className="hv-cream" style={{ border: '1px solid #4A7C59', color: '#4A7C59', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}>
             回到今天
           </button>
+        )}
+      </div>
+
+      {/* 營養查詢助手：不依賴會員選擇，輸入問題由 AI 搜尋網路並整理成含來源的摘要 */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 15 }}>🔎</span>
+          <span style={{ fontSize: 15, fontWeight: 900 }}>營養查詢助手</span>
+          <span style={{ fontSize: 11.5, color: '#8A9284' }}>AI 搜尋網路並整理重點（含資料來源）</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            maxLength={200}
+            placeholder="例：奇亞籽的營養成分與每日建議攝取量"
+            value={researchQ}
+            onChange={(e) => setResearchQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void runResearch(); }}
+            style={{ flex: 1, minWidth: 220, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 12px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
+          />
+          <button
+            onClick={() => void runResearch()}
+            disabled={researchBusy || researchQ.trim().length < 2}
+            className="hv-green"
+            style={{ height: 42, padding: '0 18px', border: 'none', borderRadius: 11, background: '#4A7C59', color: '#fff', fontSize: 14, fontWeight: 700, cursor: researchBusy ? 'default' : 'pointer', opacity: researchBusy || researchQ.trim().length < 2 ? 0.6 : 1 }}
+          >
+            {researchBusy ? '查詢中…' : '查詢'}
+          </button>
+        </div>
+        {researchErr && <div style={{ fontSize: 12.5, color: '#C0564A', fontWeight: 700 }}>{researchErr}</div>}
+        {research && !researchBusy && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 12, padding: '10px 12px' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#4A5A4A' }}>{research.question}</div>
+            <div style={{ fontSize: 13.5, color: '#2D3B2D', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{research.answer}</div>
+            {research.sources.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, borderTop: '1px solid #EEEAE0', paddingTop: 8 }}>
+                {research.sources.map((s, i) => (
+                  <a key={s.url + i} href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#5B8DB8', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    來源{i + 1}：{s.title || s.url}
+                  </a>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: '#8A9284' }}>由 {research.model} 依網路搜尋結果整理，僅供參考，請以專業判斷為準。</div>
+          </div>
         )}
       </div>
 

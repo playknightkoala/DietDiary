@@ -116,5 +116,6 @@ docker compose up -d --build
 | DELETE | `/api/pro/members/:id/comments/:cid` | （dietitian/admin）刪除自己的留言 |
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
+| POST | `/api/ai/research` | （dietitian/admin）`{question}` → 網路搜尋＋AI 整理成含來源的摘要（需 `LLM_TOKEN` 與 `TAVILY_API_KEY`）|
 
 熱量計算與超標（>目標×1.2 轉紅）規則依 README domain rules，由前端 `src/lib/domain.ts` 以常數表計算；後端僅存份數。

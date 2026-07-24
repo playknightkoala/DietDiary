@@ -80,7 +80,12 @@ export function LogFoodModal() {
   // AI 幫每張照片寫的敘述（本回合暫存，不持久化）；用來在 desc 內「替換自己那行」而不重複、不蓋掉手打的字
   const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
   // 每張照片最近一次 OCR 的結果（敘述、AI 估的份數摘要、知識庫命中），供顯示參考與評價用
-  type OcrMeta = { caption: string; foodSummary: string; kb: { dishId: number; caption: string; food: Record<string, number>; up: number; down: number } | null };
+  type OcrMeta = {
+    caption: string;
+    foodSummary: string;
+    kb: { dishId: number; caption: string; food: Record<string, number>; up: number; down: number } | null;
+    web: { query: string; sources: { title: string; url: string }[] } | null;
+  };
   const [ocrResult, setOcrResult] = useState<Record<string, OcrMeta>>({});
   // 對這次 OCR 的評價：敘述與份數各自 1/-1/0
   const [ocrVote, setOcrVote] = useState<Record<string, { caption: number; food: number }>>({});
@@ -133,12 +138,12 @@ export function LogFoodModal() {
     setAiModel('');
     try {
       const url = currentUrl;
-      const { food, caption, model, kb } = await api.aiOcr(entry.id, url);
+      const { food, caption, model, kb, web } = await api.aiOcr(entry.id, url);
       setPhotoFoodsStr((s) => ({ ...s, [url]: foodToStr(food) }));
       applyCaption(url, caption);
       setAiModel(model);
       // 記下這次 OCR 結果供顯示參考與評價；重跑會覆蓋、評價歸零
-      setOcrResult((s) => ({ ...s, [url]: { caption, foodSummary: foodSummary(food) || '份數皆為 0', kb } }));
+      setOcrResult((s) => ({ ...s, [url]: { caption, foodSummary: foodSummary(food) || '份數皆為 0', kb, web } }));
       setOcrVote((s) => ({ ...s, [url]: { caption: 0, food: 0 } }));
     } catch (e) {
       setAiError(e instanceof Error ? e.message : 'AI 判斷失敗，請再試一次');
@@ -481,6 +486,11 @@ export function LogFoodModal() {
                         <div style={{ fontSize: 11.5, color: '#6B7565', lineHeight: 1.5 }}>
                           💡 類似菜色社群參考份數：{sixCatText(ocrResult[currentUrl].kb!.food)}
                           <span style={{ color: '#8A9284' }}>（👍{ocrResult[currentUrl].kb!.up}・👎{ocrResult[currentUrl].kb!.down}）</span>
+                        </div>
+                      )}
+                      {ocrResult[currentUrl].web && (
+                        <div style={{ fontSize: 11.5, color: '#6B7565', lineHeight: 1.5 }}>
+                          🔎 已依網路營養資訊校正份數（{ocrResult[currentUrl].web!.query}）
                         </div>
                       )}
                       <div style={{ fontSize: 11.5, color: '#7A5AB8', fontWeight: 700 }}>這次 AI 判斷準嗎？（幫助 AI 越來越準）</div>

@@ -26,6 +26,10 @@ services:
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-45000}
       # 送給視覺模型的單張照片上限（bytes）：gateway 實測約 75KB（base64 十萬字元）會 500，超過會自動縮圖
       - LLM_MAX_IMAGE_BYTES=${LLM_MAX_IMAGE_BYTES:-68000}
+      # Tavily 網路搜尋（AI 查證／外食營養標示）；未設定時搜尋相關功能自動停用，主功能不受影響
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      # 本地每月額度閘門（免費方案 1,000 credits/月，預設 950 留緩衝；達到後當月停用搜尋）
+      - TAVILY_MONTHLY_BUDGET=${TAVILY_MONTHLY_BUDGET:-950}
       # 共用菜色知識庫（embedding 參考）總開關：預設關閉；記憶體吃緊時可一鍵關掉，關閉時 OCR 照舊
       - AI_KB_ENABLED=${AI_KB_ENABLED:-false}
       # 外部 embedding 服務位址（文字＋圖片向量）；未設定時知識庫自動停用

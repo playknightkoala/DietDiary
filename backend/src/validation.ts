@@ -172,6 +172,11 @@ export const aiDailySchema = z.object({
   date: z.string().regex(DATE_RE),
 });
 
+// 營養師查詢輔助：網路搜尋＋LLM 摘要的問題
+export const aiResearchSchema = z.object({
+  question: z.string().trim().min(2).max(200),
+});
+
 // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)
 // kind：comment/daily（ref＝留言id/日期，內容快照由後端擷取）；
 //       ocr_caption/ocr_food（ref＝照片 url，內容快照由前端以 body 帶入，因 OCR 結果未持久化）
