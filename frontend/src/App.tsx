@@ -33,6 +33,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, [token, loadNotifications]);
 
+  // 切回 App（手機解鎖、切分頁回來）時重抓當日資料：多裝置交錯記錄時避免這台顯示過時內容。
+  // 編輯視窗開著時不打擾（本地輸入優先；openLogFood 開啟前會自行重抓最新資料）。
+  useEffect(() => {
+    if (!token) return;
+    const onVis = () => {
+      const s = useStore.getState();
+      if (document.visibilityState === 'visible' && s.modal === null && s.view === 'diary') void s.refresh();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [token]);
+
   // 版號檢查（不分登入與否）：改版後強制更新
   useEffect(() => {
     void checkVersion();

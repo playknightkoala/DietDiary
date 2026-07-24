@@ -14,7 +14,6 @@ export function AddMenuSheet() {
   const selected = useStore((s) => s.selected);
   const setModal = useStore((s) => s.setModal);
   const openLogFood = useStore((s) => s.openLogFood);
-  const loadDay = useStore((s) => s.loadDay);
   const closeModal = useStore((s) => s.closeModal);
   const [busy, setBusy] = useState(false);
 
@@ -23,8 +22,8 @@ export function AddMenuSheet() {
     setBusy(true);
     try {
       const entry = await api.createEntry(selected, meal.k, nowHM());
-      await loadDay();
-      openLogFood(entry.id);
+      // openLogFood 會自行抓最新當日資料（含剛建立的這筆）再開啟
+      await openLogFood(entry.id);
     } catch {
       setBusy(false);
     }

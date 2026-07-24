@@ -72,7 +72,7 @@ interface AppState {
   loadAll: () => Promise<void>;
 
   setModal: (modal: ModalKey) => void;
-  openLogFood: (entryId: number) => void;
+  openLogFood: (entryId: number) => Promise<void>;
   openCalendar: () => void;
   closeModal: () => void;
   openGuide: (tab?: number) => void;
@@ -240,7 +240,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setModal: (modal) => set({ modal }),
-  openLogFood: (entryId) => set({ modal: 'logFood', editingId: entryId }),
+  // 開啟記餐編輯視窗前，先向伺服器抓最新當日資料再打開：
+  // 編輯視窗會把 store 裡的紀錄快照成本地狀態、按「完成」時整筆寫回，
+  // 若這台裝置的資料已過時（例如另一台裝置剛改過份數或敘述），舊快照會把對方的修改整筆蓋掉。
+  openLogFood: async (entryId) => {
+    try {
+      const day = await api.getDay(get().selected);
+      get().replaceDay(get().selected, day);
+      if (!day.entries.some((e) => e.id === entryId)) return; // 這筆已在別台裝置刪除
+    } catch { /* 離線或暫時失敗：仍以現有資料開啟，不擋記錄 */ }
+    set({ modal: 'logFood', editingId: entryId });
+  },
   openCalendar: () => {
     const sel = get().selected;
     const [y, m] = sel.split('-').map(Number);
