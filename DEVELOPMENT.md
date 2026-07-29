@@ -96,8 +96,10 @@ docker compose up -d --build
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
 | GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
-| PATCH / DELETE | `/api/entries/:id` | 更新（desc / food / photos 子集合＝刪除照片 / eatTime / date＝移到別天）／刪除 |
+| PATCH / DELETE | `/api/entries/:id` | 更新（desc / photoFoods＋photoCustoms＋items 整組份量替換 / photos 子集合＝刪除照片 / eatTime / date＝移到別天；舊 client 的 `food` 仍相容）／刪除 |
 | POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 10 張，前端已壓縮 640px JPEG）|
+| GET | `/api/entries/history?limit&exclude` | 「從歷史加入」：最近記過的餐（以原始紀錄分組成卡，含各照片份數／自定義與敘述；limit 為每餐別上限）|
+| POST | `/api/entries/:id/photos/copy` | 從歷史複製自己的一張照片到這筆紀錄 `{photo}` |
 | GET / POST | `/api/comments?target=` | 留言（target：`entry:<id>`／`water:<date>`／`ex:<date>`）|
 | DELETE | `/api/comments/:cid` | 刪除自己的留言 |
 | GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
@@ -111,7 +113,7 @@ docker compose up -d --build
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
 | PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
-| PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{food}` 調整該筆六大類份數（會員端標示「營養師調整份數」）|
+| PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{photoFoods, photoCustoms, items}` 調整該筆份數與自定義項目（份數有變才標示「營養師調整份數」；舊 client 的 `{food}` 仍相容）|
 | GET / POST | `/api/pro/members/:id/comments?target=` | （dietitian/admin）查看／新增對會員紀錄的留言 |
 | DELETE | `/api/pro/members/:id/comments/:cid` | （dietitian/admin）刪除自己的留言 |
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
