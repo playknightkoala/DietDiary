@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { GUIDE_DATA } from '../lib/guideData';
 import { CUSTOM_ITEM_DEFS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, type CustomDraft, type Macros } from '../lib/domain';
 import { useStore } from '../store';
@@ -110,14 +110,32 @@ export function FoodSummaryGrid({ food }: { food: Food }) {
 }
 
 // 自定義熱量項目編輯器（記錄飲食視窗與營養師編輯份數共用）：
-// 四種新增按鈕＋逐項卡片；custom 自填名稱＋大卡，糖／酒精／蛋白質輸入重量自動換算
-export function CustomItemsEditor({ drafts, setDrafts }: { drafts: CustomDraft[]; setDrafts: Dispatch<SetStateAction<CustomDraft[]>> }) {
+// 四種新增按鈕＋逐項卡片；custom 自填名稱＋大卡，糖／酒精／蛋白質輸入重量自動換算。
+// history（選用）＝載入「之前記過的自訂項目」讓使用者一鍵再次加入
+export function CustomItemsEditor({
+  drafts,
+  setDrafts,
+  history,
+}: {
+  drafts: CustomDraft[];
+  setDrafts: Dispatch<SetStateAction<CustomDraft[]>>;
+  history?: () => Promise<{ name: string; kcal: number }[]>;
+}) {
   const full = drafts.length >= MAX_CUSTOM_ITEMS;
   const setDraft = (i: number, patch: Partial<CustomDraft>) =>
     setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   const removeDraft = (i: number) => setDrafts((ds) => ds.filter((_, j) => j !== i));
   const addDraft = (type: CustomItemType) =>
     setDrafts((ds) => (ds.length >= MAX_CUSTOM_ITEMS ? ds : [...ds, { type, name: '', amountStr: '', kcalStr: '' }]));
+  // 歷史自訂項目：有「名稱還空著的自定義卡」時才載入（null＝未載入），
+  // 建議清單顯示在該卡內，點一下直接填入名稱＋大卡；填了名稱就自動收起
+  const [hist, setHist] = useState<{ name: string; kcal: number }[] | null>(null);
+  const wantHist = !!history && drafts.some((d) => d.type === 'custom' && !d.name);
+  useEffect(() => {
+    if (wantHist && hist === null && history) {
+      history().then(setHist).catch(() => setHist([]));
+    }
+  }, [wantHist, hist, history]);
   const inputStyle = { height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' } as const;
   return (
     <>
@@ -161,28 +179,53 @@ export function CustomItemsEditor({ drafts, setDrafts }: { drafts: CustomDraft[]
               </button>
             </div>
             {isCustom ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  placeholder="名稱（例：珍珠奶茶）"
-                  value={d.name}
-                  maxLength={50}
-                  onChange={(e) => setDraft(i, { name: e.target.value })}
-                  style={{ ...inputStyle, flex: 2, minWidth: 0 }}
-                />
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <>
+                <div style={{ display: 'flex', gap: 8 }}>
                   <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="大卡"
-                    value={d.kcalStr}
-                    onChange={(e) => setDraft(i, { kcalStr: e.target.value })}
-                    onBlur={() => { const v = clampKcal(d.kcalStr); setDraft(i, { kcalStr: v ? String(v) : '' }); }}
-                    style={{ ...inputStyle, width: '100%', minWidth: 0 }}
+                    type="text"
+                    placeholder="名稱（例：珍珠奶茶）"
+                    value={d.name}
+                    maxLength={50}
+                    onChange={(e) => setDraft(i, { name: e.target.value })}
+                    style={{ ...inputStyle, flex: 2, minWidth: 0 }}
                   />
-                  <span style={{ flex: 'none', fontSize: 12.5, color: '#6B7565' }}>kcal</span>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="大卡"
+                      value={d.kcalStr}
+                      onChange={(e) => setDraft(i, { kcalStr: e.target.value })}
+                      onBlur={() => { const v = clampKcal(d.kcalStr); setDraft(i, { kcalStr: v ? String(v) : '' }); }}
+                      style={{ ...inputStyle, width: '100%', minWidth: 0 }}
+                    />
+                    <span style={{ flex: 'none', fontSize: 12.5, color: '#6B7565' }}>kcal</span>
+                  </div>
                 </div>
-              </div>
+                {/* 名稱還空著時列出記過的自訂項目（新→舊），點一下填入這張卡；填了名稱自動收起 */}
+                {history && !d.name && hist !== null && hist.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <span style={{ fontSize: 11.5, color: '#8A9284' }}>從記過的項目選：</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {hist.map((h, hi) => (
+                        <button
+                          key={`${h.name}|${h.kcal}|${hi}`}
+                          onClick={() => setDraft(i, { name: h.name, kcalStr: String(h.kcal) })}
+                          className="hv-sand"
+                          style={{
+                            flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, padding: '0 12px',
+                            border: '1px solid #E4DFD2', borderRadius: 99, background: '#fff', color: '#4A5A4A',
+                            fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                          }}
+                        >
+                          {h.name}
+                          <span style={{ fontFamily: 'Outfit', color: '#4A7C59' }}>{h.kcal} kcal</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

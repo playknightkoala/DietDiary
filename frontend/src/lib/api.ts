@@ -158,6 +158,8 @@ export const api = {
   // 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組）；limit 為每餐別的餐卡上限
   entryHistory: (excludeId?: number, limit = 30) =>
     request<HistoryMeal[]>(`/api/entries/history?limit=${limit}${excludeId ? `&exclude=${excludeId}` : ''}`),
+  // 最近記過的「自訂名稱＋大卡」自定義項目（快速再次加入）
+  customItemHistory: () => request<{ name: string; kcal: number }[]>('/api/entries/custom-history'),
   // 把一張歷史照片複製到目前這筆紀錄，回傳更新後的照片清單與新照片 URL
   copyPhoto: (id: number, photo: string) =>
     request<{ photos: string[]; photo: string }>(`/api/entries/${id}/photos/copy`, {

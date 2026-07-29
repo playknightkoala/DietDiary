@@ -863,6 +863,7 @@ export function LogFoodModal() {
                     key={cur.kind === 'photo' ? cur.url : cur.key}
                     drafts={curCustoms}
                     setDrafts={cur.kind === 'photo' ? photoCustomSetter(cur.url) : itemCustomSetter(cur.key)}
+                    history={api.customItemHistory}
                   />
                 </>
               )}

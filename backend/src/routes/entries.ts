@@ -37,6 +37,35 @@ entriesRouter.get('/history', (req, res) => {
   return res.json(getEntryHistory(req.userId, limit, exclude));
 });
 
+// 最近記過的「自訂名稱＋大卡」自定義項目（新→舊、以名稱＋大卡去重），供快速再次加入。
+// 只回傳 type=custom（糖/酒精/蛋白質輸入重量即可，不需要歷史）
+entriesRouter.get('/custom-history', (req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT photo_customs, items FROM entries
+       WHERE user_id = ? AND (photo_customs != '{}' OR items != '[]')
+       ORDER BY date DESC, id DESC LIMIT 500`
+    )
+    .all(req.userId) as { photo_customs: string; items: string }[];
+  const seen = new Set<string>();
+  const out: { name: string; kcal: number }[] = [];
+  for (const row of rows) {
+    const customs = [
+      ...Object.values(parsePhotoCustoms(row.photo_customs)).flat(),
+      ...parseItems(row.items).flatMap((it) => it.customItems),
+    ];
+    for (const it of customs) {
+      if (it.type !== 'custom' || !it.name) continue;
+      const key = `${it.name}|${it.kcal}`; // 同名不同大卡視為不同項（大杯/小杯）
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name: it.name, kcal: it.kcal });
+      if (out.length >= 10) return res.json(out);
+    }
+  }
+  return res.json(out);
+});
+
 // 從歷史加入：把自己既有的一張照片複製成新檔案，加進目前這筆紀錄（份數由前端於完成時寫入）
 entriesRouter.post('/:id/photos/copy', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
