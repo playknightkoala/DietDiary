@@ -4,16 +4,22 @@ import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { aiOcrSchema, aiCommentSchema, aiDailySchema, aiFeedbackSchema, aiResearchSchema, FOOD_KEYS } from '../validation.js';
 import {
+  ENTRY_COLS,
   createComment,
   currentAiBody,
+  customItemsKcal,
   emptyFood,
+  entryAllCustoms,
   getDayJson,
   getFeedbackExamples,
   listComments,
   parseFood,
+  parseItems,
+  parsePhotoCustoms,
   parsePhotos,
   setAiFeedback,
   upsertDailySummary,
+  type CustomItem,
   type Food,
 } from '../helpers.js';
 import { kbHint, kbLookupByImage, kbUpsert, kbVote } from '../kb.js';
@@ -175,6 +181,38 @@ const KCAL: Record<string, number> = {
   milkSkim: 80, milkLow: 120, milkFull: 150,
 };
 
+// 每份三大營養素公克數 [醣類, 蛋白質, 脂肪]（與前端 domain.MACROS 一致——改任一邊要同步改另一邊）
+const MACROS: Record<string, [number, number, number]> = {
+  meatLow: [0, 7, 3], meatMed: [0, 7, 5], meatHigh: [0, 7, 10], meatXHigh: [0, 7, 10],
+  veg: [5, 1, 0], grain: [15, 2, 0], oil: [0, 0, 5], fruit: [15, 0, 0],
+  milkSkim: [12, 8, 0], milkLow: [12, 8, 4], milkFull: [12, 8, 8],
+};
+
+// 三大營養素（公克）：六大類份數×每份營養素＋自定義項目（糖→醣類且另計精緻糖、蛋白質→蛋白質；
+// 酒精與自訂項目無法歸類，只計熱量）
+function macrosOf(food: Food, customs: CustomItem[]) {
+  let carb = 0;
+  let protein = 0;
+  let fat = 0;
+  let sugar = 0;
+  for (const k of FOOD_KEYS) {
+    const n = food[k] || 0;
+    const m = MACROS[k] ?? [0, 0, 0];
+    carb += n * m[0];
+    protein += n * m[1];
+    fat += n * m[2];
+  }
+  for (const it of customs) {
+    if (it.type === 'sugar') sugar += it.amount ?? 0;
+    else if (it.type === 'protein') protein += it.amount ?? 0;
+  }
+  return { carb: round1(carb + sugar), protein: round1(protein), fat: round1(fat), sugar: round1(sugar) };
+}
+
+function macrosZh(m: ReturnType<typeof macrosOf>): string {
+  return `醣類 ${m.carb} 克、蛋白質 ${m.protein} 克、脂質 ${m.fat} 克${m.sugar > 0 ? `（其中精緻糖 ${m.sugar} 克）` : ''}`;
+}
+
 // 把細分份數收斂成六大類總份數（蛋豆魚肉、乳品各自加總）
 function sixCategories(food: Food) {
   return {
@@ -225,6 +263,24 @@ function foodSummaryZh(food: Food): string {
 
 function kcalOfFood(food: Food): number {
   return Math.round(FOOD_KEYS.reduce((a, k) => a + (food[k] || 0) * (KCAL[k] || 0), 0));
+}
+
+// 自定義熱量項目的中文摘要，供提示詞使用：糖 10 公克（40 大卡）、珍珠奶茶（250 大卡）
+const CUSTOM_ITEM_LABEL: Record<string, [string, string]> = {
+  sugar: ['糖', '公克'], alcohol: ['酒精', '毫升'], protein: ['蛋白質', '公克'],
+};
+function customItemsZh(items: CustomItem[]): string {
+  // 極端多項時截斷，避免提示詞爆量（每張照片與每個項目頁都可掛自定義清單）
+  const MAX_ZH = 30;
+  const shown = items.slice(0, MAX_ZH);
+  const text = shown
+    .map((it) => {
+      const def = CUSTOM_ITEM_LABEL[it.type];
+      if (def) return `${def[0]} ${it.amount ?? 0} ${def[1]}（${it.kcal} 大卡）`;
+      return `${it.name || '自定義項目'}（${it.kcal} 大卡）`;
+    })
+    .join('、');
+  return items.length > MAX_ZH ? `${text}…等 ${items.length} 項` : text;
 }
 
 // ---- 今日總評用：目標與身體數據 ----
@@ -322,6 +378,8 @@ interface EntryFull {
   eat_time: string;
   food: string;
   photo_foods: string;
+  photo_customs: string;
+  items: string;
 }
 
 // ---- 判斷單張照片的營養素份數 ----
@@ -501,11 +559,16 @@ aiRouter.post('/comment', async (req, res) => {
   const entryId = Number(target.slice('entry:'.length));
 
   const entry = db
-    .prepare('SELECT id, date, meal, desc, photos, eat_time, food, photo_foods FROM entries WHERE id = ? AND user_id = ?')
+    .prepare(`SELECT date, ${ENTRY_COLS} FROM entries WHERE id = ? AND user_id = ?`)
     .get(entryId, req.userId) as EntryFull | undefined;
   if (!entry) return res.status(404).json({ error: 'not found' });
 
   const food = parseFood(entry.food);
+  // 自定義項目彙總（照片綁定＋無照片項目）
+  const customItems = entryAllCustoms({
+    photoCustoms: parsePhotoCustoms(entry.photo_customs ?? '{}'),
+    items: parseItems(entry.items ?? '[]'),
+  });
   const mealName = MEAL_NAMES[entry.meal] || '這餐';
 
   // 與當日目標比對（僅此餐 vs 一整天目標；比對由後端算好，避免小模型算錯）：
@@ -537,7 +600,11 @@ aiRouter.post('/comment', async (req, res) => {
   const context =
     `這是使用者的「${mealName}」飲食紀錄（日期：${entry.date}${entry.eat_time ? `，用餐時間：${entry.eat_time}` : ''}）。\n` +
     `使用者的敘述：${entry.desc ? entry.desc : '（未填寫）'}\n` +
-    `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food)} 大卡）\n` +
+    `這餐已記錄的六大類份數：${foodSummaryZh(food)}（約 ${kcalOfFood(food) + customItemsKcal(customItems)} 大卡${customItems.length ? '，含自定義項目' : ''}）\n` +
+    `這餐三大營養素（系統依份數與自定義項目換算，可作為均衡度參考；酒精與自訂項目只計熱量不計營養素）：${macrosZh(macrosOf(food, customItems))}\n` +
+    (customItems.length
+      ? `這餐另外記錄的自定義熱量項目（不屬於六大類份數，請勿當成六大類評論）：${customItemsZh(customItems)}\n`
+      : '') +
     `使用者的當日六大類目標（一整天的量）：${goalSummaryZh(goal.vals)}\n` +
     `（注意：上列目標是「一整天」的總量，這餐只是其中一餐；單餐份數低於全天目標是完全正常的，不代表不足，絕對不要因此說某類不夠或建議補充。）\n` +
     (goalFlags.length
@@ -600,7 +667,7 @@ aiRouter.post('/daily', async (req, res) => {
 
   const day = getDayJson(req.userId, date);
   const entries = day.entries.filter(
-    (e) => e.desc || e.photos.length || FOOD_KEYS.some((k) => (e.food[k] || 0) > 0)
+    (e) => e.desc || e.photos.length || FOOD_KEYS.some((k) => (e.food[k] || 0) > 0) || entryAllCustoms(e).length
   );
   const hasEx = day.exLogs.length > 0;
   const hasBodyToday = !!bodyStrFrom(day.body);
@@ -608,9 +675,13 @@ aiRouter.post('/daily', async (req, res) => {
     return res.status(400).json({ error: '這天還沒有任何紀錄，先記錄後再產生今日總評' });
   }
 
-  // 當天六大類總份數（各餐加總）
+  // 當天六大類總份數（各餐加總）＋自定義熱量總和
   const dayTotal = emptyFood();
-  for (const e of entries) for (const k of FOOD_KEYS) dayTotal[k] = round1(dayTotal[k] + (e.food[k] || 0));
+  let dayCustomKcal = 0;
+  for (const e of entries) {
+    for (const k of FOOD_KEYS) dayTotal[k] = round1(dayTotal[k] + (e.food[k] || 0));
+    dayCustomKcal += customItemsKcal(entryAllCustoms(e));
+  }
   const goal = goalForDate(req.userId, date);
 
   const mealLines = entries.length
@@ -619,7 +690,9 @@ aiRouter.post('/daily', async (req, res) => {
           const mn = MEAL_NAMES[e.meal] || '這餐';
           const t = e.eatTime ? ` ${e.eatTime}` : '';
           const d = e.desc ? e.desc : '（未填敘述）';
-          return `・${mn}${t}：${d}（${foodSummaryZh(e.food)}，約 ${kcalOfFood(e.food)} 大卡）`;
+          const customs = entryAllCustoms(e);
+          const custom = customs.length ? `；自定義熱量項目：${customItemsZh(customs)}` : '';
+          return `・${mn}${t}：${d}（${foodSummaryZh(e.food)}，約 ${kcalOfFood(e.food) + customItemsKcal(customs)} 大卡${custom}）`;
         })
         .join('\n')
     : '（今天沒有飲食紀錄）';
@@ -636,7 +709,11 @@ aiRouter.post('/daily', async (req, res) => {
   const context =
     `以下是使用者在 ${date} 這一天的完整飲食與健康紀錄，請據此給出「一整天」的綜合總評。\n\n` +
     `【當天各餐】\n${mealLines}\n\n` +
-    `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal)} 大卡）\n` +
+    `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal) + dayCustomKcal} 大卡${
+      dayCustomKcal ? `，其中自定義熱量項目 ${dayCustomKcal} 大卡——這部分不屬於六大類份數，與目標比對時請勿當成某類份數` : ''
+    }）\n` +
+    `【當天三大營養素】${macrosZh(macrosOf(dayTotal, entries.flatMap((e) => entryAllCustoms(e))))}` +
+    '（系統依份數與自定義項目換算，可作為均衡度參考；酒精與自訂項目只計熱量不計營養素）\n' +
     `【當日六大類目標】${goalSummaryZh(goal.vals)}\n` +
     `【與目標比對（系統已算好，請直接採用，不要自行加減或臆測其他數字）】\n${dayGoalBreakdown(dayTotal, goal.vals).join('\n')}\n` +
     `【喝水】${day.water} / ${goal.water} ml（${waterGoalNote(day.water, goal.water)}）${

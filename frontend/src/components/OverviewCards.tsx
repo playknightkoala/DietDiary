@@ -1,6 +1,6 @@
 import { useStore } from '../store';
-import { KCAL, dayFoodTotals, goalsFor, kcalOfFood, round1 } from '../lib/domain';
-import type { FoodKey } from '../types';
+import { KCAL, dayCustomKcal, dayFoodTotals, dayMacros, goalsFor, kcalOfFood, round1 } from '../lib/domain';
+import type { Entry, FoodKey } from '../types';
 
 // 熱量卡＋喝水卡（左欄上方 2 欄 grid）
 export function KcalWaterRow() {
@@ -8,7 +8,8 @@ export function KcalWaterRow() {
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
 
-  const totalKcal = kcalOfFood(dayFoodTotals(day.entries));
+  // 六大類份數熱量＋自定義熱量項目（含糖飲料、酒精等）
+  const totalKcal = kcalOfFood(dayFoodTotals(day.entries)) + dayCustomKcal(day.entries);
   const { water: waterGoal } = goalsFor(selected, goals);
   const waterOver = day.water > waterGoal * 1.2;
   const waterPct = Math.min(100, (day.water / waterGoal) * 100) + '%';
@@ -32,6 +33,102 @@ export function KcalWaterRow() {
           <div style={{ height: '100%', borderRadius: 99, background: '#5B8DB8', width: waterPct, transition: 'width .3s' }} />
         </div>
         <div style={{ fontSize: 12, color: '#8A9284' }}>目標 {waterGoal} ml</div>
+      </div>
+    </div>
+  );
+}
+
+// 熱量及三大營養素卡：六大類份數換算醣類／蛋白質／脂質公克數（每份營養素見 domain.MACROS），
+// 甜甜圈與百分比＝各營養素熱量（醣4／蛋白4／脂9 大卡每克）占總熱量的比例；
+// 酒精與自訂項目只計熱量無法歸類，故三者百分比加總可能小於 100%
+export function MacroCard() {
+  const day = useStore((s) => s.day);
+  return <MacroPanel entries={day.entries} />;
+}
+
+// 卡片本體（本人主頁與營養師檢視共用）
+export function MacroPanel({ entries }: { entries: Entry[] }) {
+  const m = dayMacros(entries);
+  const totalKcal = kcalOfFood(dayFoodTotals(entries)) + dayCustomKcal(entries);
+  const rows = [
+    { name: '醣類', grams: m.carb, kcal: m.carb * 4, color: '#C0564A', tint: '#F5E3DB' },
+    { name: '蛋白質', grams: m.protein, kcal: m.protein * 4, color: '#5B8DB8', tint: '#E5EBF1' },
+    { name: '脂質', grams: m.fat, kcal: m.fat * 9, color: '#C77B4A', tint: '#F3E7D8' },
+  ];
+  const pctOf = (kcal: number) => (totalKcal > 0 ? Math.round((kcal / totalKcal) * 100) : 0);
+
+  // 甜甜圈：三段弧依熱量占比排列，剩餘（酒精／自訂/四捨五入）留灰底
+  const R = 40;
+  const C = 2 * Math.PI * R;
+  let acc = 0;
+  const arcs = rows.map((r) => {
+    const frac = totalKcal > 0 ? Math.min(1, r.kcal / totalKcal) : 0;
+    const seg = { color: r.color, len: frac * C, offset: acc };
+    acc += frac * C;
+    return seg;
+  });
+
+  return (
+    <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 16, fontWeight: 900 }}>熱量及三大營養素</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* 左：三大營養素長條與公克數 */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {rows.map((r) => (
+            <div key={r.name} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: r.color, flex: 'none' }} />
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: '#2D3B2D' }}>{r.name}</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 99, background: r.tint, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 99, background: r.color, width: `${pctOf(r.kcal)}%`, transition: 'width .3s' }} />
+              </div>
+              <div style={{ fontSize: 12, color: '#8A9284' }}>
+                已攝取 <span style={{ fontSize: 14, fontWeight: 800, color: r.color, fontFamily: 'Outfit' }}>{r.grams}</span> 公克
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* 右：熱量甜甜圈＋占比 */}
+        <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative', width: 110, height: 110 }}>
+            <svg width="110" height="110" viewBox="0 0 110 110" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="55" cy="55" r={R} fill="none" stroke="#F0EDE3" strokeWidth="13" />
+              {arcs.map((a, i) =>
+                a.len > 0 ? (
+                  <circle
+                    key={i}
+                    cx="55" cy="55" r={R} fill="none"
+                    stroke={a.color} strokeWidth="13" strokeLinecap="butt"
+                    strokeDasharray={`${a.len} ${C - a.len}`} strokeDashoffset={-a.offset}
+                  />
+                ) : null
+              )}
+            </svg>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontFamily: 'Outfit', fontSize: 22, fontWeight: 800, color: '#2D3B2D', lineHeight: 1.1 }}>{totalKcal}</span>
+              <span style={{ fontSize: 11, color: '#8A9284' }}>大卡</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {rows.map((r) => (
+              <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flex: 'none' }} />
+                <span style={{ fontFamily: 'Outfit', fontSize: 13, fontWeight: 800, color: r.color }}>{pctOf(r.kcal)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* 精緻糖：自定義「糖」項目的克數累計 */}
+      <div style={{ background: '#F7F5EF', borderRadius: 12, padding: '9px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#A8433A', flex: 'none' }} />
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#4A5A4A' }}>精緻糖</span>
+        <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#A8433A' }}>{m.sugar}</span>
+        <span style={{ fontSize: 12.5, color: '#6B7565' }}>公克</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#8A9284', lineHeight: 1.6 }}>
+        依六大類份數與自定義項目換算（每份營養素見份數指南）；酒精與自訂項目僅計入熱量，不計入三大營養素。
       </div>
     </div>
   );

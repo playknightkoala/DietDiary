@@ -101,11 +101,42 @@ export const photoFoodsSchema = z
   .record(z.string().max(300), foodSchema)
   .refine((o) => Object.keys(o).length <= MAX_PHOTOS);
 
+// 自定義熱量項目：六大類份數無法表達的食物（含糖飲料、酒精等）直接記大卡。
+// custom＝自填名稱＋大卡；sugar/protein＝輸入公克、alcohol＝輸入毫升，大卡由係數換算。
+export const CUSTOM_ITEM_TYPES = ['custom', 'sugar', 'alcohol', 'protein'] as const;
+// 換算係數（大卡/公克或毫升）。與前端 domain.CUSTOM_KCAL_FACTOR 重複宣告，改任一邊要同步改另一邊
+export const CUSTOM_KCAL_FACTOR: Record<string, number> = { sugar: 4, alcohol: 7, protein: 4 };
+export const MAX_CUSTOM_ITEMS = 20;
+
+export const customItemSchema = z.object({
+  type: z.enum(CUSTOM_ITEM_TYPES),
+  name: z.string().trim().max(50),
+  amount: z.number().min(0).max(9999).nullable(),
+  kcal: z.number().min(0).max(9999),
+});
+export const customItemsSchema = z.array(customItemSchema).max(MAX_CUSTOM_ITEMS);
+
+// 逐張照片的自定義項目（photo url → CustomItem[]）
+export const photoCustomsSchema = z
+  .record(z.string().max(300), customItemsSchema)
+  .refine((o) => Object.keys(o).length <= MAX_PHOTOS);
+
+// 無照片的食物項目頁（每項＝六大類份數＋自定義；可與照片頁並存）
+export const MAX_ITEMS = 20;
+export const itemsSchema = z
+  .array(z.object({ food: foodSchema, customItems: customItemsSchema }))
+  .max(MAX_ITEMS);
+
 export const entryPatchSchema = z.object({
   desc: z.string().max(2000).optional(),
+  // 舊 client 相容：無照片單一份數（新 client 一律改送 photoFoods+photoCustoms+items）
   food: foodSchema.optional(),
-  // 逐張照片份數；提供時 food 欄位會改存各照片的總和
+  // 逐張照片份數；提供時 food 欄位會改存照片＋items 的總和
   photoFoods: photoFoodsSchema.optional(),
+  // 逐張照片的自定義熱量項目
+  photoCustoms: photoCustomsSchema.optional(),
+  // 無照片的食物項目頁
+  items: itemsSchema.optional(),
   // PATCH 只能「保留既有照片的子集合」（刪除用）；新增照片走 /photos 上傳
   photos: z.array(z.string().max(300)).max(MAX_PHOTOS).optional(),
   // 用餐日期／時間：改日期會把這筆紀錄移到該天

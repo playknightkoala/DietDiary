@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS entries (
   eat_time TEXT NOT NULL DEFAULT '',
   food TEXT NOT NULL DEFAULT '{}',
   photo_foods TEXT NOT NULL DEFAULT '{}',
+  custom_items TEXT NOT NULL DEFAULT '[]',
+  photo_customs TEXT NOT NULL DEFAULT '{}',
+  items TEXT NOT NULL DEFAULT '[]',
   food_edited_at INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -276,6 +279,49 @@ if (!entryCols.includes('food_edited_at')) {
 if (!entryCols.includes('photo_foods')) {
   // 逐張照片的六大類份數（photo url → food JSON；有照片時 food 欄位存總和）
   db.exec(`ALTER TABLE entries ADD COLUMN photo_foods TEXT NOT NULL DEFAULT '{}'`);
+}
+if (!entryCols.includes('custom_items')) {
+  // 自定義熱量項目（v1 過渡欄位，已改存 photo_customs/items；保留欄位供舊庫遷移判斷）
+  db.exec(`ALTER TABLE entries ADD COLUMN custom_items TEXT NOT NULL DEFAULT '[]'`);
+}
+if (!entryCols.includes('photo_customs')) {
+  // 逐張照片的自定義熱量項目（photo url → CustomItem[]；與 photo_foods 平行、同步修剪）
+  db.exec(`ALTER TABLE entries ADD COLUMN photo_customs TEXT NOT NULL DEFAULT '{}'`);
+}
+if (!entryCols.includes('items')) {
+  // 無照片的食物項目頁（[{food, customItems}]，可與照片頁並存）；
+  // 不變量：food 欄位 = photo_foods 各值加總 + items 各項 food 加總
+  db.exec(`ALTER TABLE entries ADD COLUMN items TEXT NOT NULL DEFAULT '[]'`);
+}
+
+// v1 過渡資料一次性遷移：per-entry custom_items → 有照片搬到第一張的 photo_customs、
+// 無照片搬成單一 items 項（連同既有 food）。搬完清空 custom_items，重跑即 no-op。
+{
+  const legacyCustomRows = db
+    .prepare(`SELECT id, photos, food, custom_items FROM entries WHERE custom_items != '[]'`)
+    .all() as { id: number; photos: string; food: string; custom_items: string }[];
+  if (legacyCustomRows.length) {
+    const tx = db.transaction(() => {
+      for (const r of legacyCustomRows) {
+        let photos: string[] = [];
+        try { photos = JSON.parse(r.photos) ?? []; } catch { /* 視為無照片 */ }
+        if (photos.length) {
+          db.prepare(`UPDATE entries SET photo_customs = ?, custom_items = '[]' WHERE id = ?`).run(
+            JSON.stringify({ [photos[0]]: JSON.parse(r.custom_items) }),
+            r.id
+          );
+        } else {
+          let food = {};
+          try { food = JSON.parse(r.food) ?? {}; } catch { /* 空 food */ }
+          db.prepare(`UPDATE entries SET items = ?, custom_items = '[]' WHERE id = ?`).run(
+            JSON.stringify([{ food, customItems: JSON.parse(r.custom_items) }]),
+            r.id
+          );
+        }
+      }
+    });
+    tx();
+  }
 }
 
 // 喝水／運動／身體數據的紀錄時間

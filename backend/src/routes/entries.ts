@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { MAX_PHOTOS, copyPhotoSchema, entryPatchSchema } from '../validation.js';
-import { UPLOAD_DIR, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, notifyFollowers, parseFood, parsePhotoFoods, parsePhotos, stripJpegExif, sumFoods, unlinkPhoto, type EntryRow } from '../helpers.js';
+import { FOOD_KEYS, MAX_PHOTOS, copyPhotoSchema, entryPatchSchema } from '../validation.js';
+import { ENTRY_COLS, UPLOAD_DIR, computeEntryFood, deletePhotoRatings, entryHasData, entryToJson, entryToJsonWithRatings, getEntryHistory, normalizeCustomItems, normalizeItems, notifyFollowers, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, stripJpegExif, unlinkPhoto, type CustomItem, type EntryItem, type EntryRow } from '../helpers.js';
+import type { Food } from '../helpers.js';
 import { kbActive } from '../llm.js';
 import { kbUpsert } from '../kb.js';
 
@@ -25,11 +26,11 @@ entriesRouter.use(requireAuth);
 
 function getOwnedEntry(userId: number, id: string | number) {
   return db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ? AND user_id = ?')
+    .prepare(`SELECT ${ENTRY_COLS} FROM entries WHERE id = ? AND user_id = ?`)
     .get(id, userId) as EntryRow | undefined;
 }
 
-// 最近記過份數的照片（新→舊），供「從歷史加入」；exclude 排除目前編輯中的紀錄
+// 最近記過份數的照片（新→舊），供「從歷史加入」；limit 為每餐別上限；exclude 排除目前編輯中的紀錄
 entriesRouter.get('/history', (req, res) => {
   const limit = Math.min(30, Math.max(1, Number(req.query.limit) || 30));
   const exclude = req.query.exclude ? Number(req.query.exclude) : undefined;
@@ -70,7 +71,7 @@ entriesRouter.patch('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   const parsed = entryPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { desc, food, photoFoods, photos, date, eatTime } = parsed.data;
+  const { desc, food, photoFoods, photoCustoms, items, photos, date, eatTime } = parsed.data;
 
   const sets: string[] = [];
   const args: string[] = [];
@@ -89,29 +90,78 @@ entriesRouter.patch('/:id', (req, res) => {
     finalPhotos = keep;
   }
 
-  if (photoFoods !== undefined) {
-    // 逐張照片份數：只保留現有照片的項目，food 欄位改存總和
-    const filtered = Object.fromEntries(Object.entries(photoFoods).filter(([url]) => finalPhotos.includes(url)));
-    const total = sumFoods(Object.values(filtered));
-    sets.push('photo_foods = ?', 'food = ?');
-    args.push(JSON.stringify(filtered), JSON.stringify(total));
-    // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留）
-    if (JSON.stringify(parsePhotoFoods(entry.photo_foods)) !== JSON.stringify(filtered)) {
-      sets.push('food_edited_at = 0');
+  // ---- 份量更新（統一維持不變量：food = 照片份數 + items 份數）----
+  const storedPf = parsePhotoFoods(entry.photo_foods);
+  const storedPc = parsePhotoCustoms(entry.photo_customs ?? '{}');
+  const storedItems = parseItems(entry.items ?? '[]');
+  const prunePf = (pf: Record<string, Food>) =>
+    Object.fromEntries(Object.entries(pf).filter(([url]) => finalPhotos.includes(url)));
+  const prunePc = (pc: Record<string, CustomItem[]>) =>
+    Object.fromEntries(
+      Object.entries(pc)
+        .map(([url, list]) => [url, normalizeCustomItems(list)] as const)
+        .filter(([url, list]) => finalPhotos.includes(url) && list.length)
+    );
+  // 「營養師調整」標記比對用：只看六大類份數的有效分佈（自定義項目不算份數變動）。
+  // legacy 無照片列（items 空、photo_foods 空、food>0）視為隱含單一項目，
+  // 新 client 原樣送回 items=[{food}] 時不會誤清標記
+  const effFoods = (pf: Record<string, Food>, its: EntryItem[], legacy: Food | null) => {
+    const itemFoods = its.length
+      ? its.map((it) => it.food)
+      : legacy && !Object.keys(pf).length && Object.values(legacy).some((v) => v > 0)
+        ? [legacy]
+        : [];
+    return JSON.stringify({
+      pf: Object.keys(pf).sort().map((url) => [url, FOOD_KEYS.map((k) => pf[url][k] || 0)]),
+      it: itemFoods.map((f) => FOOD_KEYS.map((k) => f[k] || 0)),
+    });
+  };
+  const storedEff = effFoods(storedPf, storedItems, parsePhotos(entry.photos).length ? null : parseFood(entry.food));
+
+  const portionProvided = photoFoods !== undefined || photoCustoms !== undefined || items !== undefined;
+  if (portionProvided || food !== undefined) {
+    let nextPf: Record<string, Food>;
+    let nextPc: Record<string, CustomItem[]>;
+    let nextItems: EntryItem[];
+    if (portionProvided) {
+      // 新 client：整組替換（未提供的部分保留原值，容忍部分更新）
+      nextPf = prunePf(photoFoods !== undefined ? (photoFoods as Record<string, Food>) : storedPf);
+      nextPc = prunePc(photoCustoms !== undefined ? (photoCustoms as Record<string, CustomItem[]>) : storedPc);
+      // 未帶 items 且無既有 items 的 legacy 無照片紀錄：整筆 food 視為隱含單一項目帶入，
+      // 避免部分更新（只送 photoCustoms 等）把 food 重算成 0
+      const fallbackItems =
+        !storedItems.length && !parsePhotos(entry.photos).length && Object.values(parseFood(entry.food)).some((v) => v > 0)
+          ? [{ food: parseFood(entry.food), customItems: [] }]
+          : storedItems;
+      nextItems = normalizeItems(items !== undefined ? items : fallbackItems);
+    } else {
+      // 舊 client（只送 food）：整筆份數改寫為單一 items 項；既有 items 的自定義項目併入避免遺失
+      nextPf = prunePf(storedPf);
+      nextPc = prunePc(storedPc);
+      nextItems = normalizeItems([{ food: food as Food, customItems: storedItems.flatMap((it) => it.customItems) }]);
     }
-  } else if (food !== undefined) {
-    sets.push('food = ?');
-    args.push(JSON.stringify(food));
-    if (JSON.stringify(parseFood(entry.food)) !== JSON.stringify(food)) {
+    sets.push('photo_foods = ?', 'photo_customs = ?', 'items = ?', 'food = ?');
+    args.push(
+      JSON.stringify(nextPf),
+      JSON.stringify(nextPc),
+      JSON.stringify(nextItems),
+      JSON.stringify(computeEntryFood(nextPf, nextItems))
+    );
+    // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留；只改自定義項目不清除）
+    if (storedEff !== effFoods(nextPf, nextItems, null)) {
       sets.push('food_edited_at = 0');
     }
   } else if (photos !== undefined) {
-    // 只刪照片：一併清掉該照片的份數並重算總和（原本就有逐張份數才需要）
-    const stored = parsePhotoFoods(entry.photo_foods);
-    if (Object.keys(stored).length) {
-      const pruned = Object.fromEntries(Object.entries(stored).filter(([url]) => finalPhotos.includes(url)));
-      sets.push('photo_foods = ?', 'food = ?');
-      args.push(JSON.stringify(pruned), JSON.stringify(sumFoods(Object.values(pruned))));
+    // 只刪照片：一併修剪該照片的份數與自定義項目，food 重算仍須包含 items 的份數。
+    // 三者皆空（legacy 整筆 food 的紀錄）則不動 food，維持舊行為
+    if (Object.keys(storedPf).length || Object.keys(storedPc).length || storedItems.length) {
+      const prunedPf = prunePf(storedPf);
+      sets.push('photo_foods = ?', 'photo_customs = ?', 'food = ?');
+      args.push(
+        JSON.stringify(prunedPf),
+        JSON.stringify(prunePc(storedPc)),
+        JSON.stringify(computeEntryFood(prunedPf, storedItems))
+      );
     }
   }
 
@@ -129,10 +179,12 @@ entriesRouter.patch('/:id', (req, res) => {
     notifyFollowers(req.userId, `entry:${entry.id}`);
   }
   // 學進共用知識庫（開關開啟時）：有敘述＋照片＋份數的已確認紀錄。fire-and-forget，不影響存檔回應。
+  // 只餵第一張照片「自己的」份數：整筆總和可能含其他照片與無照片項目，會污染該道菜的社群共識
   if (kbActive()) {
     const u = entryToJson(updated);
-    if (u.desc.trim() && u.photos.length && Object.values(u.food).some((v) => v > 0)) {
-      void kbUpsert(u.desc, u.food, u.photos[0]).catch(() => {});
+    const firstFood = u.photos.length ? u.photoFoods[u.photos[0]] : undefined;
+    if (u.desc.trim() && firstFood && Object.values(firstFood).some((v) => v > 0)) {
+      void kbUpsert(u.desc, firstFood, u.photos[0]).catch(() => {});
     }
   }
   return res.json(entryToJsonWithRatings(updated, req.userId));

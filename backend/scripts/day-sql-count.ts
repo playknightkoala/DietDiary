@@ -52,10 +52,13 @@ function seed(): number {
   const meals = ['breakfast', 'lunch', 'dinner', 'night', 'snack'];
   for (let i = 0; i < 10; i++) {
     const photos = i < 3 ? JSON.stringify([`/uploads/e${i}.jpg`]) : '[]';
+    // 第 0 筆帶照片自定義項目、第 1 筆帶無照片項目頁，鎖住 photoCustoms/items 的序列化形狀
+    const photoCustoms = i === 0 ? '{"/uploads/e0.jpg":[{"type":"sugar","name":"","amount":10,"kcal":40}]}' : '{}';
+    const items = i === 1 ? '[{"food":{"fruit":1},"customItems":[{"type":"custom","name":"珍珠奶茶","amount":null,"kcal":250}]}]' : '[]';
     const entryId = Number(
       db
-        .prepare(`INSERT INTO entries (user_id, date, meal, desc, photos, food) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(uid, DATE, meals[i % 5], `餐點 ${i}`, photos, JSON.stringify({ grain: 1, veg: 0.5 })).lastInsertRowid
+        .prepare(`INSERT INTO entries (user_id, date, meal, desc, photos, food, photo_customs, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(uid, DATE, meals[i % 5], `餐點 ${i}`, photos, JSON.stringify({ grain: 1, veg: 0.5 }), photoCustoms, items).lastInsertRowid
     );
     if (i < 3) {
       db.prepare(`INSERT INTO photo_ratings (entry_id, photo, rating, rated_by) VALUES (?, ?, 'green', ?)`).run(
@@ -126,6 +129,13 @@ assert.equal(json.entries[0].ratings['/uploads/e0.jpg'], 'green');
 assert.equal(json.entries[0].commentCount, 1);
 assert.equal(json.entries[9].commentCount, 0);
 assert.deepEqual(json.entries[9].ratings, {});
+assert.deepEqual(json.entries[0].photoCustoms, { '/uploads/e0.jpg': [{ type: 'sugar', name: '', amount: 10, kcal: 40 }] });
+assert.deepEqual(json.entries[1].items, [
+  { food: { ...Object.fromEntries(['meatLow','meatMed','meatHigh','meatXHigh','veg','grain','oil','fruit','milkSkim','milkLow','milkFull'].map((k) => [k, 0])), fruit: 1 },
+    customItems: [{ type: 'custom', name: '珍珠奶茶', amount: null, kcal: 250 }] },
+]);
+assert.deepEqual(json.entries[9].photoCustoms, {});
+assert.deepEqual(json.entries[9].items, []);
 assert.equal(json.waterLogs.length, 8);
 assert.equal(json.waterLogs[0].commentCount, 1);
 assert.equal(json.waterLogs[7].commentCount, 0);

@@ -19,11 +19,11 @@ const uid = Number(
     .lastInsertRowid
 );
 
-const insertEntry = (date: string, fields: { desc?: string; photos?: string; food?: string } = {}) =>
+const insertEntry = (date: string, fields: { desc?: string; photos?: string; food?: string; photoCustoms?: string; items?: string } = {}) =>
   Number(
     db
-      .prepare(`INSERT INTO entries (user_id, date, meal, desc, photos, food) VALUES (?, ?, 'lunch', ?, ?, ?)`)
-      .run(uid, date, fields.desc ?? '', fields.photos ?? '[]', fields.food ?? '{}').lastInsertRowid
+      .prepare(`INSERT INTO entries (user_id, date, meal, desc, photos, food, photo_customs, items) VALUES (?, ?, 'lunch', ?, ?, ?, ?, ?)`)
+      .run(uid, date, fields.desc ?? '', fields.photos ?? '[]', fields.food ?? '{}', fields.photoCustoms ?? '{}', fields.items ?? '[]').lastInsertRowid
   );
 
 // [日期, 建置測資, 預期 marker, 案例名]
@@ -75,6 +75,24 @@ const cases: [string, () => void, boolean, string][] = [
     },
     false,
     '只有 AI summary',
+  ],
+  [
+    '2026-07-10',
+    () =>
+      insertEntry('2026-07-10', {
+        photoCustoms: '{"/uploads/pc.jpg":[{"type":"sugar","name":"","amount":10,"kcal":40}]}',
+      }),
+    true,
+    'entry 只有照片自定義項目（photoCustoms 分支）',
+  ],
+  [
+    '2026-07-11',
+    () =>
+      insertEntry('2026-07-11', {
+        items: '[{"food":{},"customItems":[{"type":"alcohol","name":"","amount":30,"kcal":210}]}]',
+      }),
+    true,
+    'entry 只有無照片項目的自定義項目',
   ],
 ];
 

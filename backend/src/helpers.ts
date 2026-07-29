@@ -2,9 +2,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
-import { FOOD_KEYS } from './validation.js';
+import { CUSTOM_ITEM_TYPES, CUSTOM_KCAL_FACTOR, FOOD_KEYS, MAX_CUSTOM_ITEMS, MAX_ITEMS } from './validation.js';
 
 export type Food = Record<(typeof FOOD_KEYS)[number], number>;
+
+// 自定義熱量項目（六大類無法表達的食物）；預設類型（糖/酒精/蛋白質）的 kcal 由 amount×係數導出
+export interface CustomItem {
+  type: (typeof CUSTOM_ITEM_TYPES)[number];
+  name: string;
+  amount: number | null;
+  kcal: number;
+}
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -17,7 +25,19 @@ export interface EntryRow {
   eat_time: string;
   food: string;
   photo_foods: string;
+  photo_customs: string;
+  items: string;
   food_edited_at: number;
+}
+
+// entries 的標準欄位清單：所有讀 entry 的 SELECT 一律用這個常數，
+// 避免新增欄位時漏改某處（漏了不會爆錯、只會讓 marker/通知悄悄判斷錯誤）
+export const ENTRY_COLS = 'id, meal, desc, photos, eat_time, food, photo_foods, photo_customs, items, food_edited_at';
+
+// 無照片的食物項目頁（可與照片頁並存）
+export interface EntryItem {
+  food: Food;
+  customItems: CustomItem[];
 }
 
 export interface DayRow {
@@ -70,6 +90,103 @@ export function sumFoods(foods: Food[]): Food {
   return total;
 }
 
+// 自定義熱量項目清單；壞資料一律回空陣列（比照 parsePhotoFoods 的防禦式解析）
+export function parseCustomItems(json: string): CustomItem[] {
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (it): it is CustomItem =>
+        !!it && typeof it === 'object' && CUSTOM_ITEM_TYPES.includes(it.type) && typeof it.kcal === 'number'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function customItemsKcal(items: CustomItem[]): number {
+  return Math.round(items.reduce((a, it) => a + (it.kcal || 0), 0));
+}
+
+// 寫入前正規化：夾限範圍、預設類型的 kcal 一律由 amount×係數重新導出（不信任 client 算的值，
+// 確保 AI/UI 熱量一致）、去除完全空白的項目
+export function normalizeCustomItems(items: CustomItem[]): CustomItem[] {
+  const out: CustomItem[] = [];
+  for (const it of items) {
+    const factor = CUSTOM_KCAL_FACTOR[it.type];
+    const amount = it.amount == null ? null : Math.min(9999, Math.max(0, Math.round(it.amount * 10) / 10));
+    const kcal = factor
+      ? Math.round((amount || 0) * factor)
+      : Math.min(9999, Math.max(0, Math.round(it.kcal || 0)));
+    const name = it.type === 'custom' ? it.name.trim().slice(0, 50) : '';
+    if (!name && !kcal && !(amount && amount > 0)) continue; // 全空白的項目不存
+    out.push({ type: it.type, name, amount: factor ? amount : null, kcal });
+    if (out.length >= MAX_CUSTOM_ITEMS) break;
+  }
+  return out;
+}
+
+// 逐張照片的自定義項目（photo url → CustomItem[]）；防禦式解析
+export function parsePhotoCustoms(json: string): Record<string, CustomItem[]> {
+  try {
+    const o = JSON.parse(json);
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      const out: Record<string, CustomItem[]> = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (Array.isArray(v)) {
+          const list = parseCustomItems(JSON.stringify(v));
+          if (list.length) out[k] = list;
+        }
+      }
+      return out;
+    }
+  } catch { /* fallthrough */ }
+  return {};
+}
+
+// 無照片的食物項目頁；防禦式解析
+export function parseItems(json: string): EntryItem[] {
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((it): it is { food?: unknown; customItems?: unknown } => !!it && typeof it === 'object')
+      .map((it) => ({
+        food: { ...emptyFood(), ...(typeof it.food === 'object' && it.food ? (it.food as Partial<Food>) : {}) },
+        customItems: Array.isArray(it.customItems) ? parseCustomItems(JSON.stringify(it.customItems)) : [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// 寫入前正規化 items：food clamp（0–99、一位小數）＋ customs 正規化＋剔除全空項（無份數也無自定義）
+export function normalizeItems(items: EntryItem[]): EntryItem[] {
+  const out: EntryItem[] = [];
+  for (const it of items) {
+    const food = emptyFood();
+    for (const k of FOOD_KEYS) {
+      const v = Number(it.food?.[k]) || 0;
+      food[k] = Math.round(Math.min(99, Math.max(0, v)) * 10) / 10;
+    }
+    const customItems = normalizeCustomItems(it.customItems ?? []);
+    if (!FOOD_KEYS.some((k) => food[k] > 0) && !customItems.length) continue;
+    out.push({ food, customItems });
+    if (out.length >= MAX_ITEMS) break;
+  }
+  return out;
+}
+
+// 不變量：food 欄位 = 照片份數加總 + items 份數加總
+export function computeEntryFood(photoFoods: Record<string, Food>, items: EntryItem[]): Food {
+  return sumFoods([...Object.values(photoFoods), ...items.map((it) => it.food)]);
+}
+
+// 整筆的自定義項目彙總（照片綁定＋無照片項目），供顯示、AI 與 marker 判斷
+export function entryAllCustoms(e: { photoCustoms: Record<string, CustomItem[]>; items: EntryItem[] }): CustomItem[] {
+  return [...Object.values(e.photoCustoms).flat(), ...e.items.flatMap((it) => it.customItems)];
+}
+
 export function parsePhotos(json: string): string[] {
   try {
     const arr = JSON.parse(json);
@@ -111,19 +228,28 @@ export function entryToJson(e: EntryRow) {
     desc: e.desc,
     photos: parsePhotos(e.photos),
     eatTime: e.eat_time ?? '',
-    food: parseFood(e.food), // 有照片時為各照片份數的總和
+    food: parseFood(e.food), // = 照片份數＋items 份數的總和
     photoFoods: parsePhotoFoods(e.photo_foods ?? '{}'),
+    photoCustoms: parsePhotoCustoms(e.photo_customs ?? '{}'),
+    items: parseItems(e.items ?? '[]'),
     foodEditedAt: e.food_edited_at ?? 0, // >0＝營養師調整過份數
   };
 }
 
-// 最近記過份數的照片（新→舊），供「從歷史加入」快速帶入照片＋份數
-export interface HistoryItem {
+// 最近記過的「餐」（新→舊），供「從歷史加入」：以原始紀錄為單位分組，
+// 一張卡＝一餐（多張照片＋各自份數與自定義＋整筆敘述），可整餐或逐張帶入
+export interface HistoryPhoto {
   photo: string;
   food: Food;
-  desc: string;
-  meal: string;
+  customItems: CustomItem[];
+}
+
+export interface HistoryMeal {
+  entryId: number;
   date: string;
+  meal: string;
+  desc: string;
+  photos: HistoryPhoto[];
 }
 
 // 照片「內容指紋」：同一張圖（含逐位元組複製出來的副本）指紋相同、換一張新圖才會不同。
@@ -143,49 +269,64 @@ function photoFingerprint(photoUrl: string): string {
   return sig;
 }
 
-// 相同餐點只保留最新一張；只回傳有記份數的照片。
-// 去重身分＝「照片內容指紋 ＋ 六大類份數」（不含敘述）：改敘述不算新的一筆，改份數或換照片才算新的。
-export function getEntryHistory(userId: number, limit: number, excludeId?: number): HistoryItem[] {
+// 相同的一餐只保留最新一筆；每張卡＝一筆原始紀錄（只收有記份數或自定義項目的照片）。
+// limit 是「每餐別」的餐卡上限，冷門餐別（宵夜／點心）才不會被高頻餐別擠掉整個名額。
+// 去重身分＝「餐別 ＋ 各照片（內容指紋＋份數＋自定義）的集合」（不含敘述）：改敘述不算新的一筆，
+// 改份數／自定義或換照片才算新的；同一餐記在不同餐別會在各自的分頁出現。
+export function getEntryHistory(userId: number, limit: number, excludeId?: number): HistoryMeal[] {
   const rows = db
     .prepare(
-      `SELECT id, date, meal, desc, photos, food, photo_foods FROM entries
-       WHERE user_id = ? AND photos != '[]' AND id != ? ORDER BY date DESC, id DESC LIMIT 300`
+      `SELECT id, date, meal, desc, photos, food, photo_foods, photo_customs, items FROM entries
+       WHERE user_id = ? AND photos != '[]' AND id != ? ORDER BY date DESC, id DESC LIMIT 1000`
     )
     .all(userId, excludeId ?? -1) as (EntryRow & { date: string })[];
 
-  // 把所有照片攤平成候選（新→舊）；每張照片解析出自己的份數
-  const cands: (HistoryItem & { foodSig: string })[] = [];
+  const meals: HistoryMeal[] = [];
+  const seen = new Set<string>();
+  const perMeal = new Map<string, number>();
   for (const row of rows) {
+    if ((perMeal.get(row.meal) ?? 0) >= limit) continue; // 餐別額滿先跳過，避免多算照片指紋（要讀檔）
     const photos = parsePhotos(row.photos);
     if (!photos.length) continue;
     const pf = parsePhotoFoods(row.photo_foods);
+    const pc = parsePhotoCustoms(row.photo_customs ?? '{}');
+    const rowItems = parseItems(row.items ?? '[]');
     const entryFood = parseFood(row.food);
     const anyPerPhoto = photos.some((u) => FOOD_KEYS.some((k) => (pf[u]?.[k] ?? 0) > 0));
+
+    const cardPhotos: HistoryPhoto[] = [];
     for (const url of photos) {
+      const customItems = normalizeCustomItems(pc[url] ?? []);
       let food = pf[url];
       const hasOwn = food && FOOD_KEYS.some((k) => (food![k] || 0) > 0);
       if (!hasOwn) {
-        // 舊資料（無逐張份數）：整筆份數視為記在第一張
-        if (!anyPerPhoto && url === photos[0] && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) food = entryFood;
-        else continue;
+        // 舊資料（無逐張份數、無 items）：整筆份數視為記在第一張。
+        // items 非空時 food 含 items 的份數，不可再掛到照片上（會複製到重複的份數）
+        if (!anyPerPhoto && !rowItems.length && url === photos[0] && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) {
+          food = entryFood;
+        } else if (!customItems.length) {
+          continue; // 沒份數也沒自定義項目的照片不列入
+        } else {
+          food = emptyFood();
+        }
       }
-      const norm = { ...emptyFood(), ...food } as Food;
-      const foodSig = FOOD_KEYS.map((k) => norm[k] || 0).join(',');
-      cands.push({ photo: url, food: norm, desc: row.desc, meal: row.meal as HistoryItem['meal'], date: row.date, foodSig });
+      cardPhotos.push({ photo: url, food: { ...emptyFood(), ...food } as Food, customItems });
     }
-  }
+    if (!cardPhotos.length) continue;
 
-  // 去重：以「照片內容指紋＋份數」為身分，新→舊掃描保留最新一張（敘述不參與判斷）
-  const items: HistoryItem[] = [];
-  const seen = new Set<string>();
-  for (const c of cands) {
-    const key = photoFingerprint(c.photo) + '|' + c.foodSig;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push({ photo: c.photo, food: c.food, desc: c.desc, meal: c.meal, date: c.date });
-    if (items.length >= limit) break;
+    // 餐級指紋：各照片（內容指紋＋份數＋自定義）排序串接，與照片順序無關
+    const sig =
+      row.meal + '|' +
+      cardPhotos
+        .map((p) => `${photoFingerprint(p.photo)}:${FOOD_KEYS.map((k) => p.food[k] || 0).join(',')}:${JSON.stringify(p.customItems)}`)
+        .sort()
+        .join('||');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    perMeal.set(row.meal, (perMeal.get(row.meal) ?? 0) + 1);
+    meals.push({ entryId: row.id, date: row.date, meal: row.meal, desc: row.desc, photos: cardPhotos });
   }
-  return items;
+  return meals;
 }
 
 export type PhotoRating = 'green' | 'yellow' | 'red';
@@ -493,7 +634,7 @@ export function getDayJson(userId: number, date: string) {
     .prepare('SELECT * FROM days WHERE user_id = ? AND date = ?')
     .get(userId, date) as DayRow | undefined;
   const entryRows = db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE user_id = ? AND date = ? ORDER BY id')
+    .prepare(`SELECT ${ENTRY_COLS} FROM entries WHERE user_id = ? AND date = ? ORDER BY id`)
     .all(userId, date) as EntryRow[];
   const waterRows = db
     .prepare('SELECT id, ml, time FROM water_logs WHERE user_id = ? AND date = ? ORDER BY CASE WHEN time = ? THEN 1 ELSE 0 END, time, id')
@@ -572,8 +713,19 @@ export function getDayJson(userId: number, date: string) {
   };
 }
 
-export function entryHasData(e: { desc: string; photos: string[]; food: Food }) {
-  return !!(e.desc || e.photos.length || Object.values(e.food).some((v) => v > 0));
+export function entryHasData(e: {
+  desc: string;
+  photos: string[];
+  food: Food;
+  photoCustoms: Record<string, CustomItem[]>;
+  items: EntryItem[];
+}) {
+  return !!(
+    e.desc ||
+    e.photos.length ||
+    Object.values(e.food).some((v) => v > 0) ||
+    entryAllCustoms(e).length
+  );
 }
 
 export function ensureDayRow(userId: number, date: string) {
@@ -592,7 +744,7 @@ export function getMarkedDates(userId: number, from: string, to: string): string
     if (r.water > 0 || hasEx || hasBody) dates.add(r.date);
   }
   const entryRows = db
-    .prepare('SELECT date, desc, photos, food FROM entries WHERE user_id = ? AND date >= ? AND date <= ?')
+    .prepare('SELECT date, desc, photos, food, photo_customs, items FROM entries WHERE user_id = ? AND date >= ? AND date <= ?')
     .all(userId, from, to) as (EntryRow & { date: string })[];
   for (const r of entryRows) {
     if (!dates.has(r.date) && entryHasData(entryToJson(r))) dates.add(r.date);

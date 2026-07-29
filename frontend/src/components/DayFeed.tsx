@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../lib/api';
-import { MEALS, dstr, entryHasData, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, sortEntriesNewestFirst } from '../lib/domain';
+import { MEALS, customItemLabel, customItemsKcal, dstr, entryAllCustoms, entryHasData, entryKcal, entryMacros, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, sortEntriesNewestFirst } from '../lib/domain';
 import { useStore } from '../store';
 import { CommentsThread } from './CommentsThread';
-import { FoodSummaryGrid } from './FoodFields';
+import { CustomItemsSummary, FoodSummaryGrid, MacroSummaryRow } from './FoodFields';
 import { Lightbox } from './Lightbox';
 import { PhotoRatingBadge } from './PhotoRatingBadge';
 import type { CommentTarget } from '../types';
@@ -124,7 +124,7 @@ export function DayFeed() {
                     營養師調整份數
                   </span>
                 )}
-                <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#4A7C59' }}>{kcalOfFood(e.food)} kcal</span>
+                <span style={{ fontFamily: 'Outfit', fontSize: 14, fontWeight: 800, color: '#4A7C59' }}>{entryKcal(e)} kcal</span>
                 <button onClick={() => void openLogFood(e.id)} className="hv-cream" style={{ border: '1px solid #DDD8CA', background: '#fff', color: '#4A5A4A', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '4px 12px', cursor: 'pointer' }}>
                   編輯
                 </button>
@@ -142,8 +142,10 @@ export function DayFeed() {
               ))}
             </div>
           )}
-          {/* 這餐的六大類份數（唯讀，只列有填的欄位；要修改請按「編輯」） */}
+          {/* 這餐的六大類份數、自定義熱量項目與三大營養素（唯讀，彙總所有照片與項目；要修改請按「編輯」） */}
           <FoodSummaryGrid food={e.food} />
+          <CustomItemsSummary items={entryAllCustoms(e)} />
+          <MacroSummaryRow macros={entryMacros(e)} />
           <CommentsThread
             key={`ec${e.id}`}
             {...commentProps(`entry:${e.id}`, e.commentCount)}
@@ -285,13 +287,16 @@ export function DayFeed() {
           onClose={() => setLightbox(null)}
           caption={(url) => {
             const f = lightboxEntry ? photoFoodOf(lightboxEntry, url) : null;
+            const customs = lightboxEntry?.photoCustoms[url] ?? [];
             const summary = f ? foodSummary(f) : '';
+            const customText = customs.map((c) => `${customItemLabel(c)}・${c.kcal} kcal`).join('、');
+            const pageKcal = (f ? kcalOfFood(f) : 0) + customItemsKcal(customs);
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: '#B8CDBB' }}>
-                  這張照片的份數{f ? `・${kcalOfFood(f)} kcal` : ''}
+                  這張照片的份數{pageKcal ? `・${pageKcal} kcal` : ''}
                 </div>
-                <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{summary || '尚未記錄這張照片的份數'}</div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{[summary, customText].filter(Boolean).join('；') || '尚未記錄這張照片的份數'}</div>
               </div>
             );
           }}

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { DATE_RE, dayPatchSchema, entryCreateSchema, exLogCreateSchema, waterLogCreateSchema } from '../validation.js';
-import { getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, recomputeDayEx, recomputeDayWater, deleteExLog, deleteWaterLog, type EntryRow, type WaterLogRow } from '../helpers.js';
+import { ENTRY_COLS, getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, recomputeDayEx, recomputeDayWater, deleteExLog, deleteWaterLog, type EntryRow, type WaterLogRow } from '../helpers.js';
 
 export const daysRouter = Router();
 daysRouter.use(requireAuth);
@@ -113,7 +113,7 @@ daysRouter.post('/:date/entries', (req, res) => {
     .prepare("INSERT INTO entries (user_id, date, meal, eat_time, food) VALUES (?, ?, ?, ?, '{}')")
     .run(req.userId, date, parsed.data.meal, parsed.data.eatTime ?? '');
   const row = db
-    .prepare('SELECT id, meal, desc, photos, eat_time, food, photo_foods, food_edited_at FROM entries WHERE id = ?')
+    .prepare(`SELECT ${ENTRY_COLS} FROM entries WHERE id = ?`)
     .get(Number(info.lastInsertRowid)) as EntryRow;
   return res.status(201).json(entryToJsonWithRatings(row, req.userId));
 });

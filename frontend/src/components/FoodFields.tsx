@@ -1,6 +1,8 @@
+import type { Dispatch, SetStateAction } from 'react';
 import { GUIDE_DATA } from '../lib/guideData';
+import { CUSTOM_ITEM_DEFS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, type CustomDraft, type Macros } from '../lib/domain';
 import { useStore } from '../store';
-import type { Food, FoodKey } from '../types';
+import type { CustomItem, CustomItemType, Food, FoodKey } from '../types';
 
 export interface FoodInputGroup {
   name: string;
@@ -102,6 +104,146 @@ export function FoodSummaryGrid({ food }: { food: Food }) {
           <div style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13.5, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
           <span style={{ fontFamily: 'Outfit', fontSize: 15, fontWeight: 800, color: '#2D3B2D' }}>{total}</span>
         </div>
+      ))}
+    </div>
+  );
+}
+
+// 自定義熱量項目編輯器（記錄飲食視窗與營養師編輯份數共用）：
+// 四種新增按鈕＋逐項卡片；custom 自填名稱＋大卡，糖／酒精／蛋白質輸入重量自動換算
+export function CustomItemsEditor({ drafts, setDrafts }: { drafts: CustomDraft[]; setDrafts: Dispatch<SetStateAction<CustomDraft[]>> }) {
+  const full = drafts.length >= MAX_CUSTOM_ITEMS;
+  const setDraft = (i: number, patch: Partial<CustomDraft>) =>
+    setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const removeDraft = (i: number) => setDrafts((ds) => ds.filter((_, j) => j !== i));
+  const addDraft = (type: CustomItemType) =>
+    setDrafts((ds) => (ds.length >= MAX_CUSTOM_ITEMS ? ds : [...ds, { type, name: '', amountStr: '', kcalStr: '' }]));
+  const inputStyle = { height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' } as const;
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {CUSTOM_ITEM_DEFS.map((def) => (
+          <button
+            key={def.k}
+            onClick={() => addDraft(def.k)}
+            disabled={full}
+            className="hv-sand"
+            style={{
+              flex: 'none', height: 36, padding: '0 14px', borderRadius: 99, border: '1.5px solid #DDD8CA',
+              background: '#fff', color: '#4A5A4A', fontSize: 13, fontWeight: 800,
+              cursor: full ? 'default' : 'pointer', opacity: full ? 0.5 : 1,
+            }}
+          >
+            ＋{def.label}
+          </button>
+        ))}
+      </div>
+      {drafts.length === 0 && (
+        <div style={{ fontSize: 13, color: '#8A9284', padding: '14px 0', textAlign: 'center', lineHeight: 1.7 }}>
+          還沒有自定義項目。<br />點上方按鈕新增，例如手搖飲、酒類或蛋白粉。
+        </div>
+      )}
+      {drafts.map((d, i) => {
+        const def = CUSTOM_ITEM_DEFS.find((x) => x.k === d.type) ?? CUSTOM_ITEM_DEFS[0];
+        const isCustom = d.type === 'custom';
+        return (
+          <div key={i} style={{ flex: 'none', border: '1.5px solid #E4DFD2', borderRadius: 14, background: '#FBFAF6', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 900, color: '#2D3B2D' }}>{def.label}</span>
+              <span style={{ fontFamily: 'Outfit', fontSize: 13, fontWeight: 700, color: '#4A7C59' }}>{customDraftKcal(d)} kcal</span>
+              <span style={{ flex: 1 }} />
+              <button
+                onClick={() => removeDraft(i)}
+                title="移除這個項目"
+                style={{ width: 22, height: 22, border: 'none', borderRadius: '50%', background: 'rgba(45,59,45,.65)', color: '#fff', fontSize: 12, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ✕
+              </button>
+            </div>
+            {isCustom ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="名稱（例：珍珠奶茶）"
+                  value={d.name}
+                  maxLength={50}
+                  onChange={(e) => setDraft(i, { name: e.target.value })}
+                  style={{ ...inputStyle, flex: 2, minWidth: 0 }}
+                />
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="大卡"
+                    value={d.kcalStr}
+                    onChange={(e) => setDraft(i, { kcalStr: e.target.value })}
+                    onBlur={() => { const v = clampKcal(d.kcalStr); setDraft(i, { kcalStr: v ? String(v) : '' }); }}
+                    style={{ ...inputStyle, width: '100%', minWidth: 0 }}
+                  />
+                  <span style={{ flex: 'none', fontSize: 12.5, color: '#6B7565' }}>kcal</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={d.amountStr}
+                    onChange={(e) => setDraft(i, { amountStr: e.target.value })}
+                    onBlur={() => { const v = clampAmount(d.amountStr); setDraft(i, { amountStr: v ? String(v) : '' }); }}
+                    style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                  />
+                  <span style={{ flex: 'none', fontSize: 13, color: '#4A5A4A', fontWeight: 700 }}>{def.unit}</span>
+                  <span style={{ flex: 'none', fontSize: 12.5, color: '#8A9284' }}>= {customDraftKcal(d)} 大卡</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: '#8A9284' }}>{def.hint}</div>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// 唯讀版三大營養素列：動態牆貼文與營養師檢視共用（醣類／蛋白質／脂質公克數，依份數與自定義換算）
+export function MacroSummaryRow({ macros }: { macros: Macros }) {
+  if (!macros.carb && !macros.protein && !macros.fat) return null;
+  const parts: { name: string; grams: number; color: string }[] = [
+    { name: '醣類', grams: macros.carb, color: '#C0564A' },
+    { name: '蛋白質', grams: macros.protein, color: '#5B8DB8' },
+    { name: '脂質', grams: macros.fat, color: '#C77B4A' },
+  ];
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 14px', fontSize: 12, color: '#6B7565' }}>
+      {parts.map((p) => (
+        <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flex: 'none' }} />
+          {p.name} <span style={{ fontFamily: 'Outfit', fontWeight: 800, color: '#4A5A4A' }}>{p.grams}</span> g
+        </span>
+      ))}
+      {macros.sugar > 0 && (
+        <span style={{ color: '#A8433A' }}>（含精緻糖 <span style={{ fontFamily: 'Outfit', fontWeight: 800 }}>{macros.sugar}</span> g）</span>
+      )}
+    </div>
+  );
+}
+
+// 唯讀版自定義熱量項目列：動態牆貼文與營養師檢視共用（糖 10g・40 kcal）
+export function CustomItemsSummary({ items }: { items: CustomItem[] }) {
+  if (!items.length) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, borderTop: '1px solid #F0EDE3', paddingTop: 10 }}>
+      {items.map((it, i) => (
+        <span
+          key={i}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #E4DFD2', borderRadius: 99, background: '#FBFAF6', padding: '3px 10px', fontSize: 12, color: '#4A5A4A', fontWeight: 700 }}
+        >
+          {customItemLabel(it)}
+          <span style={{ fontFamily: 'Outfit', color: '#4A7C59' }}>{it.kcal} kcal</span>
+        </span>
       ))}
     </div>
   );

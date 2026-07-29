@@ -1,4 +1,4 @@
-import type { AdminUser, CommentTarget, DayData, Entry, EntryComment, Food, Goal, GoalInput, HistoryItem, MealKey, MemberInfo, NotificationItem, PhotoRating, Role, TrendPoint } from '../types';
+import type { AdminUser, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, MealKey, MemberInfo, NotificationItem, PhotoRating, Role, TrendPoint } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -147,7 +147,7 @@ export const api = {
 
   createEntry: (date: string, meal: MealKey, eatTime?: string) =>
     request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal, eatTime }) }),
-  patchEntry: (id: number, patch: { desc?: string; food?: Food; photoFoods?: Record<string, Food>; photos?: string[]; date?: string; eatTime?: string }) =>
+  patchEntry: (id: number, patch: { desc?: string; food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[]; photos?: string[]; date?: string; eatTime?: string }) =>
     request<Entry>(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, { method: 'DELETE' }),
   uploadPhotos: (id: number, blobs: Blob[]) => {
@@ -155,9 +155,9 @@ export const api = {
     blobs.forEach((b, i) => form.append('photos', b, `photo-${i}.jpg`));
     return request<{ photos: string[] }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
-  // 從歷史加入：最近記過份數的照片（新→舊）
+  // 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組）；limit 為每餐別的餐卡上限
   entryHistory: (excludeId?: number, limit = 30) =>
-    request<HistoryItem[]>(`/api/entries/history?limit=${limit}${excludeId ? `&exclude=${excludeId}` : ''}`),
+    request<HistoryMeal[]>(`/api/entries/history?limit=${limit}${excludeId ? `&exclude=${excludeId}` : ''}`),
   // 把一張歷史照片複製到目前這筆紀錄，回傳更新後的照片清單與新照片 URL
   copyPhoto: (id: number, photo: string) =>
     request<{ photos: string[]; photo: string }>(`/api/entries/${id}/photos/copy`, {
@@ -241,7 +241,7 @@ export const api = {
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
-  proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food> }) =>
+  proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[] }) =>
     request<Entry>(`/api/pro/members/${memberId}/entries/${entryId}/food`, {
       method: 'PUT',
       body: JSON.stringify(payload),

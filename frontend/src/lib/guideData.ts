@@ -11,9 +11,20 @@ export interface GuideSection {
   image?: string;
 }
 
+// 每份營養成分小卡（衛福部食物代換表；「微量」「-」照原表呈現）
+export interface GuideMacro {
+  label: string; // 每份／低脂／脫脂…
+  kcal: string;
+  carb: string;
+  protein: string;
+  fat: string;
+}
+
 export interface GuideCategory {
   name: string;
   color: string;
+  // 每份熱量與三大營養素（顯示在該分類最上方的小圖）
+  macros?: GuideMacro[];
   sections: GuideSection[];
 }
 
@@ -24,7 +35,13 @@ export const GUIDE_DATA: GuideCategory[] = [
     { title: '標準杯、新鮮屋牛奶照片舉例', image: '/guide/cup-milk.jpg' },
     { title: '標準匙、一姆指堅果照片舉例', image: '/guide/spoon-thumb.jpg' },
   ]},
-  { name: '蛋豆魚肉', color: '#C0564A', sections: [
+  { name: '蛋豆魚肉', color: '#C0564A', macros: [
+    { label: '低脂', kcal: '55 大卡', carb: '微量', protein: '7 克', fat: '3 克' },
+    { label: '中脂', kcal: '75 大卡', carb: '微量', protein: '7 克', fat: '5 克' },
+    { label: '高脂', kcal: '120 大卡', carb: '微量', protein: '7 克', fat: '10 克' },
+    { label: '超高脂', kcal: '135 大卡↑', carb: '微量', protein: '7 克', fat: '10 克↑' },
+  ], 
+    sections: [
     { title: '低脂（55 卡/份）一份舉例', items: [
       { qty: '1/4掌', desc: '里肌肉（可食生重35g、熟重30g）' },
       { qty: '1/2支', desc: '小雞腿（可食生重40g）' },
@@ -65,7 +82,10 @@ export const GUIDE_DATA: GuideCategory[] = [
     ]},
     { title: '什麼是豆魚蛋肉類', text: '營養學上將豆魚蛋肉類分成低脂、中脂、高脂與超高脂 4 種，每份熱量不同：低脂含 3g 脂肪（55 大卡）、中脂含 5g 脂肪加 7g 蛋白質（75 大卡）、高脂含 10g 脂肪加 7g 蛋白質（120 大卡）、超高脂含超過 10g 脂肪（超過 135 大卡）。豆魚蛋肉類主要提供蛋白質，一天建議吃 3-8 份。一個掌心大小的肉片約 2-3 份，1 顆蛋等於 1 份，市售 480ml 紙盒豆漿約 2.5 份。建議一餐不要吃超過一個掌心大的肉喔！' },
   ]},
-  { name: '蔬菜', color: '#4A7C59', sections: [
+  { name: '蔬菜', color: '#4A7C59', macros: [
+    { label: '每份', kcal: '25 大卡', carb: '5 克', protein: '1 克', fat: '-' },
+  ], 
+    sections: [
     { title: '一份（可食部分 100g）舉例', items: [
       { qty: '1/2碗', desc: '葉菜類' },
       { qty: '1碗', desc: '筍類、蘿蔔' },
@@ -74,7 +94,10 @@ export const GUIDE_DATA: GuideCategory[] = [
     ]},
     { title: '什麼是蔬菜類', text: '蔬菜最重要的就是提供膳食纖維，膳食纖維每天最少要 25 克，然而國人平均攝取量只有 16 克。缺乏膳食纖維容易增加罹患腸胃道疾病、高血脂及高血膽固醇的風險，也不容易瘦！因此蔬菜一天 3-5 份較為剛好，每餐最好都要吃到 1 份蔬菜才健康喔！' },
   ]},
-  { name: '全穀雜糧', color: '#A8842E', sections: [
+  { name: '全穀雜糧', color: '#A8842E', macros: [
+    { label: '每份', kcal: '70 大卡', carb: '15 克', protein: '2 克', fat: '微量' },
+  ], 
+    sections: [
     { title: '常見早餐一份舉例', items: [
       { qty: '1片', desc: '薄吐司（30g）' },
       { qty: '1/2片', desc: '一般吐司（30g）、蛋餅皮（30g）' },
@@ -102,7 +125,10 @@ export const GUIDE_DATA: GuideCategory[] = [
     ]},
     { title: '什麼是全穀雜糧類', text: '常見的飯、麵、馬鈴薯等主食類歸類在全穀雜糧類中。一天建議量是 1.5~4 碗飯，一個拳頭大小的飯約等於一碗！當便當配菜出現地瓜、玉米、南瓜，或吃地瓜、燕麥飯時，記得飯吃少一點——它們都是全穀雜糧類，才不會額外造成負擔！' },
   ]},
-  { name: '油脂堅果', color: '#C77B4A', sections: [
+  { name: '油脂堅果', color: '#C77B4A', macros: [
+    { label: '每份', kcal: '45 大卡', carb: '-', protein: '-', fat: '5 克' },
+  ], 
+    sections: [
     { title: '一份舉例', items: [
       { qty: '1茶匙', desc: '油（可食量5g）、美乃滋（10g）' },
       { qty: '5粒', desc: '腰果、杏仁果（可食量10g）' },
@@ -113,7 +139,10 @@ export const GUIDE_DATA: GuideCategory[] = [
     ]},
     { title: '什麼是油脂類', text: '油脂類除了常見的植物油、動物油，還包含加工過的醬料，像是奶油、沙拉醬、花生醬，以及培根，需留意攝取。一天攝取量建議 3-7 茶匙，一個食指指節的大小就是一茶匙。堅果種子類每天建議攝取 1 份，相當於一個大拇指。' },
   ]},
-  { name: '水果', color: '#B5537A', sections: [
+  { name: '水果', color: '#B5537A', macros: [
+    { label: '每份', kcal: '60 大卡', carb: '15 克', protein: '微量', fat: '-' },
+  ], 
+    sections: [
     { title: '一份舉例', items: [
       { qty: '1個', desc: '橘子（可食量150g）、蘋果（130g）' },
       { qty: '1/2根', desc: '香蕉（可食量70g）' },
@@ -123,7 +152,12 @@ export const GUIDE_DATA: GuideCategory[] = [
     ]},
     { title: '什麼是水果類', text: '水果切塊裝碗 8 分滿，也是一個拳頭大，一天吃 2-4 份剛剛好！提醒你水果吃的比喝的健康，盡量避免選擇現榨果汁，很容易不小心攝取過多的水果和糖份，過濾後也少了蔬果的纖維喔！世界衛生組織把果汁和一般的糖視為同樣的分類，喝多了也會造成糖尿病風險。' },
   ]},
-  { name: '乳品', color: '#5B8DB8', sections: [
+  { name: '乳品', color: '#5B8DB8', macros: [
+    { label: '脫脂', kcal: '80 大卡', carb: '12 克', protein: '8 克', fat: '微量' },
+    { label: '低脂', kcal: '120 大卡', carb: '12 克', protein: '8 克', fat: '4 克' },
+    { label: '全脂', kcal: '150 大卡', carb: '12 克', protein: '8 克', fat: '8 克' },
+  ], 
+    sections: [
     { title: '一份舉例', items: [
       { qty: '240ml', desc: '鮮奶、保久乳、優酪乳' },
       { qty: '210克', desc: '優格' },

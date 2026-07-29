@@ -7,6 +7,17 @@ export type FoodKey =
 
 export type Food = Record<FoodKey, number>;
 
+// 自定義熱量項目：六大類無法表達的食物（含糖飲料、酒精等）直接記大卡。
+// custom＝自填名稱＋大卡；sugar/protein＝輸入公克、alcohol＝輸入毫升，大卡由係數換算
+export type CustomItemType = 'custom' | 'sugar' | 'alcohol' | 'protein';
+
+export interface CustomItem {
+  type: CustomItemType;
+  name: string; // custom 才有名稱；預設類型存空字串（標籤由 type 導出）
+  amount: number | null; // 糖/蛋白質＝公克、酒精＝毫升；custom 為 null
+  kcal: number; // 整數；預設類型由 amount×係數導出
+}
+
 // 營養師對單張照片的評分：綠燈（均衡）／黃燈（尚可）／紅燈（需改善）
 export type PhotoRating = 'green' | 'yellow' | 'red';
 
@@ -24,17 +35,33 @@ export interface Entry {
   food: Food;
   // 逐張照片的份數（photo url → Food；尚未記錄的照片不會出現）
   photoFoods: Partial<Record<string, Food>>;
+  // 逐張照片的自定義熱量項目（photo url → CustomItem[]；沒有的照片不會出現）
+  photoCustoms: Partial<Record<string, CustomItem[]>>;
+  // 無照片的食物項目頁（每項＝六大類份數＋自定義；可與照片頁並存）
+  items: EntryFoodItem[];
   // 營養師調整份數的時間戳（Unix ms，0＝未被調整）
   foodEditedAt: number;
 }
 
-// 從歷史加入：一張記過份數的照片＋其六大類份數（快速帶入用）
-export interface HistoryItem {
+// 無照片的食物項目頁
+export interface EntryFoodItem {
+  food: Food;
+  customItems: CustomItem[];
+}
+
+// 從歷史加入：以「餐」為單位（一筆原始紀錄），含多張照片與各自的份數／自定義項目、整筆敘述
+export interface HistoryPhoto {
   photo: string;
   food: Food;
-  desc: string;
-  meal: MealKey;
+  customItems: CustomItem[];
+}
+
+export interface HistoryMeal {
+  entryId: number;
   date: string;
+  meal: MealKey;
+  desc: string;
+  photos: HistoryPhoto[];
 }
 
 // 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某筆運動（ex:<id>）

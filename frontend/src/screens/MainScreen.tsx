@@ -2,7 +2,7 @@ import { useStore } from '../store';
 import { TopBar } from '../components/TopBar';
 import { VersionFooter } from '../components/VersionFooter';
 import { WeekStrip } from '../components/WeekStrip';
-import { KcalWaterRow, FoodGroupsCard } from '../components/OverviewCards';
+import { KcalWaterRow, FoodGroupsCard, MacroCard } from '../components/OverviewCards';
 import { BodyCard } from '../components/BodyCard';
 import { DayFeed } from '../components/DayFeed';
 import { AddMenuSheet } from '../components/modals/AddMenuSheet';
@@ -27,6 +27,7 @@ export function MainScreen() {
       <div style={{ display: 'grid', gap: 16, padding: '12px 16px 0', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <KcalWaterRow />
+          <MacroCard />
           <FoodGroupsCard />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
