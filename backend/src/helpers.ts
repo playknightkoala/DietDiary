@@ -237,7 +237,7 @@ export function entryToJson(e: EntryRow) {
 }
 
 // 最近記過的「餐」（新→舊），供「從歷史加入」：以原始紀錄為單位分組，
-// 一張卡＝一餐（多張照片＋各自份數與自定義＋整筆敘述），可整餐或逐張帶入
+// 一張卡＝一餐（照片頁＋無照片項目頁，各自份數與自定義＋整筆敘述），可整餐或逐頁帶入
 export interface HistoryPhoto {
   photo: string;
   food: Food;
@@ -250,6 +250,7 @@ export interface HistoryMeal {
   meal: string;
   desc: string;
   photos: HistoryPhoto[];
+  items: EntryItem[];
 }
 
 // 照片「內容指紋」：同一張圖（含逐位元組複製出來的副本）指紋相同、換一張新圖才會不同。
@@ -277,7 +278,7 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
   const rows = db
     .prepare(
       `SELECT id, date, meal, desc, photos, food, photo_foods, photo_customs, items FROM entries
-       WHERE user_id = ? AND photos != '[]' AND id != ? ORDER BY date DESC, id DESC LIMIT 1000`
+       WHERE user_id = ? AND (photos != '[]' OR items != '[]') AND id != ? ORDER BY date DESC, id DESC LIMIT 1000`
     )
     .all(userId, excludeId ?? -1) as (EntryRow & { date: string })[];
 
@@ -287,7 +288,6 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
   for (const row of rows) {
     if ((perMeal.get(row.meal) ?? 0) >= limit) continue; // 餐別額滿先跳過，避免多算照片指紋（要讀檔）
     const photos = parsePhotos(row.photos);
-    if (!photos.length) continue;
     const pf = parsePhotoFoods(row.photo_foods);
     const pc = parsePhotoCustoms(row.photo_customs ?? '{}');
     const rowItems = parseItems(row.items ?? '[]');
@@ -312,19 +312,28 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
       }
       cardPhotos.push({ photo: url, food: { ...emptyFood(), ...food } as Food, customItems });
     }
-    if (!cardPhotos.length) continue;
+    // 無照片項目頁：只收有份數或自定義的（寫入時已正規化，這裡再保險過濾一次）
+    const cardItems = rowItems.filter(
+      (it) => FOOD_KEYS.some((k) => (it.food[k] || 0) > 0) || it.customItems.length
+    );
+    // 無照片單一份數的 legacy 紀錄（items 空、photo 也沒有）：整筆份數視為一個項目頁
+    if (!photos.length && !cardItems.length && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) {
+      cardItems.push({ food: entryFood, customItems: [] });
+    }
+    if (!cardPhotos.length && !cardItems.length) continue;
 
-    // 餐級指紋：各照片（內容指紋＋份數＋自定義）排序串接，與照片順序無關
-    const sig =
-      row.meal + '|' +
-      cardPhotos
-        .map((p) => `${photoFingerprint(p.photo)}:${FOOD_KEYS.map((k) => p.food[k] || 0).join(',')}:${JSON.stringify(p.customItems)}`)
-        .sort()
-        .join('||');
+    // 餐級指紋：各照片（內容指紋＋份數＋自定義）＋各項目頁（份數＋自定義）排序串接，與順序無關
+    const photoSigs = cardPhotos.map(
+      (p) => `p:${photoFingerprint(p.photo)}:${FOOD_KEYS.map((k) => p.food[k] || 0).join(',')}:${JSON.stringify(p.customItems)}`
+    );
+    const itemSigs = cardItems.map(
+      (it) => `i:${FOOD_KEYS.map((k) => it.food[k] || 0).join(',')}:${JSON.stringify(it.customItems)}`
+    );
+    const sig = row.meal + '|' + [...photoSigs, ...itemSigs].sort().join('||');
     if (seen.has(sig)) continue;
     seen.add(sig);
     perMeal.set(row.meal, (perMeal.get(row.meal) ?? 0) + 1);
-    meals.push({ entryId: row.id, date: row.date, meal: row.meal, desc: row.desc, photos: cardPhotos });
+    meals.push({ entryId: row.id, date: row.date, meal: row.meal, desc: row.desc, photos: cardPhotos, items: cardItems });
   }
   return meals;
 }

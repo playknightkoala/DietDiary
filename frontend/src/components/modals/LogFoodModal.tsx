@@ -125,10 +125,11 @@ export function LogFoodModal() {
   });
   // AI 幫每張照片寫的敘述（本回合暫存，不持久化）；用來在 desc 內「替換自己那行」而不重複、不蓋掉手打的字
   const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
-  // 從歷史帶入的敘述（來源紀錄 id → 帶入的文字）：同一餐只帶一次，該來源照片全移除時收回
+  // 從歷史帶入的敘述（來源紀錄 id → 帶入的文字）：同一餐只帶一次，該來源的頁面全移除時收回
   const [historyDescs, setHistoryDescs] = useState<Record<number, string>>({});
-  // 這次視窗內從歷史加入的照片來源（新照片 url → 歷史紀錄 id），供收回敘述判斷
+  // 這次視窗內從歷史加入的頁面來源（新照片 url／項目頁 key → 歷史紀錄 id），供收回敘述判斷
   const [photoSources, setPhotoSources] = useState<Record<string, number>>({});
+  const [itemSources, setItemSources] = useState<Record<string, number>>({});
   // 每張照片最近一次 OCR 的結果（敘述、AI 估的份數摘要、知識庫命中），供顯示參考與評價用
   type OcrMeta = {
     caption: string;
@@ -215,6 +216,37 @@ export function LogFoodModal() {
   const MAX_PHOTOS = 10;
   const MAX_ITEM_PAGES = 20;
 
+  // 移除某頁後檢查：該頁若來自歷史，且同來源（照片＋項目）已無其他頁，收回帶入的敘述
+  const reclaimHistorySource = (removed: { photoUrl?: string; itemKey?: string }) => {
+    const src = removed.photoUrl !== undefined ? photoSources[removed.photoUrl] : itemSources[removed.itemKey ?? ''];
+    if (src === undefined) return;
+    if (removed.photoUrl !== undefined) {
+      setPhotoSources((s) => {
+        const next = { ...s };
+        delete next[removed.photoUrl!];
+        return next;
+      });
+    } else {
+      setItemSources((s) => {
+        const next = { ...s };
+        delete next[removed.itemKey!];
+        return next;
+      });
+    }
+    const stillHas =
+      Object.entries(photoSources).some(([u, v]) => u !== removed.photoUrl && v === src) ||
+      Object.entries(itemSources).some(([k, v]) => k !== removed.itemKey && v === src);
+    const line = historyDescs[src];
+    if (!stillHas && line) {
+      setDesc((d) => (d.includes(line) ? d.replace(line, '').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '') : d));
+      setHistoryDescs((s) => {
+        const next = { ...s };
+        delete next[src];
+        return next;
+      });
+    }
+  };
+
   // 新增／移除無照片項目頁（純草稿；完成才寫入、取消即捨棄）
   const addItemPage = () => {
     if (itemState.order.length >= MAX_ITEM_PAGES) return;
@@ -228,6 +260,7 @@ export function LogFoodModal() {
       delete drafts[key];
       return { order: s.order.filter((k) => k !== key), drafts };
     });
+    reclaimHistorySource({ itemKey: key });
     setPageIdx((p) => Math.max(0, Math.min(p, pages.length - 2)));
   };
 
@@ -415,41 +448,65 @@ export function LogFoodModal() {
     }
   };
 
-  // 從歷史加入：複製一餐（或其中幾張）到這筆紀錄，帶入各照片的份數與自定義項目。
-  // 敘述以「來源紀錄」為單位只帶一次——同一餐再加第二張照片不會重複貼；
-  // 該來源的照片全部移除時，帶入的敘述會自動收回（使用者手打的其他文字不動）
-  const addFromHistory = async (meal: HistoryMeal, picks: HistoryPhoto[]): Promise<boolean> => {
-    const room = MAX_PHOTOS - photos.length;
-    const list = picks.slice(0, room);
-    if (!list.length) return false;
+  // 從歷史加入：複製一餐（或其中幾頁）到這筆紀錄——照片頁走 copy API，
+  // 無照片項目頁直接建立草稿（完成才存檔），各自帶入份數與自定義項目。
+  // 敘述以「來源紀錄」為單位只帶一次——同一餐再加第二頁不會重複貼；
+  // 該來源的頁面（照片＋項目）全部移除時，帶入的敘述會自動收回（使用者手打的其他文字不動）
+  const addFromHistory = async (
+    meal: HistoryMeal,
+    picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }
+  ): Promise<boolean> => {
+    const photoList = picks.photos.slice(0, MAX_PHOTOS - photos.length);
+    const itemList = picks.items.slice(0, MAX_ITEM_PAGES - itemState.order.length);
+    if (!photoList.length && !itemList.length) return false;
     try {
       let urls = photos;
       const added: { url: string; item: HistoryPhoto }[] = [];
-      for (const item of list) {
+      for (const item of photoList) {
         const { photos: next, photo: newUrl } = await api.copyPhoto(entry.id, item.photo);
         urls = next;
         added.push({ url: newUrl, item });
       }
-      setPhotoFoodsStr((s) => {
-        const next = { ...s };
-        added.forEach(({ url, item }) => (next[url] = foodToStr(item.food)));
-        return next;
-      });
-      setPhotoCustomDrafts((s) => {
-        const next = { ...s };
-        added.forEach(({ url, item }) => {
-          if (item.customItems.length) next[url] = customItemsToDrafts(item.customItems);
+      if (added.length) {
+        setPhotoFoodsStr((s) => {
+          const next = { ...s };
+          added.forEach(({ url, item }) => (next[url] = foodToStr(item.food)));
+          return next;
         });
-        return next;
-      });
-      setPhotoSources((s) => ({ ...s, ...Object.fromEntries(added.map(({ url }) => [url, meal.entryId])) }));
+        setPhotoCustomDrafts((s) => {
+          const next = { ...s };
+          added.forEach(({ url, item }) => {
+            if (item.customItems.length) next[url] = customItemsToDrafts(item.customItems);
+          });
+          return next;
+        });
+        setPhotoSources((s) => ({ ...s, ...Object.fromEntries(added.map(({ url }) => [url, meal.entryId])) }));
+        setPhotos(urls);
+      }
+      // 無照片項目頁：純前端草稿
+      const newItemKeys: string[] = [];
+      if (itemList.length) {
+        setItemState((s) => {
+          const order = [...s.order];
+          const drafts = { ...s.drafts };
+          itemList.forEach((it) => {
+            const key = `i${itemSeq.current++}`;
+            newItemKeys.push(key);
+            order.push(key);
+            drafts[key] = { foodStr: foodToStr(it.food), customs: customItemsToDrafts(it.customItems) };
+          });
+          return { order, drafts };
+        });
+        setItemSources((s) => ({ ...s, ...Object.fromEntries(newItemKeys.map((k) => [k, meal.entryId])) }));
+      }
       const line = meal.desc.trim();
       if (line && historyDescs[meal.entryId] === undefined) {
         setDesc((d) => (d.includes(line) ? d : d.trim() ? `${d.replace(/\s+$/, '')}\n${line}` : line));
         setHistoryDescs((s) => ({ ...s, [meal.entryId]: line }));
       }
-      setPhotos(urls);
-      setPageIdx(urls.length - 1); // 跳到剛加入的最後一張（照片頁在項目頁之前）
+      // 跳到剛加入的最後一頁（照片頁在項目頁之前）
+      const itemCount = itemState.order.length + itemList.length;
+      setPageIdx(itemList.length ? urls.length + itemCount - 1 : urls.length - 1);
       if (step === 'photos') setStep('detail');
       return true;
     } catch {
@@ -492,25 +549,8 @@ export function LogFoodModal() {
           return next;
         });
       }
-      // 從歷史帶入的照片：該來源的照片全移除時，收回帶入的敘述
-      const src = photoSources[url];
-      if (src !== undefined) {
-        const stillHas = Object.entries(photoSources).some(([u, v]) => u !== url && v === src);
-        setPhotoSources((s) => {
-          const next = { ...s };
-          delete next[url];
-          return next;
-        });
-        const line = historyDescs[src];
-        if (!stillHas && line) {
-          setDesc((d) => (d.includes(line) ? d.replace(line, '').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '') : d));
-          setHistoryDescs((s) => {
-            const next = { ...s };
-            delete next[src];
-            return next;
-          });
-        }
-      }
+      // 從歷史帶入的照片：該來源的頁面全移除時，收回帶入的敘述
+      reclaimHistorySource({ photoUrl: url });
       setPageIdx((p) => Math.max(0, Math.min(p, pages.length - 2)));
     } catch {
       /* ignore */
@@ -560,6 +600,7 @@ export function LogFoodModal() {
     <HistoryPickerSheet
       excludeId={entry.id}
       remaining={MAX_PHOTOS - photos.length}
+      remainingItems={MAX_ITEM_PAGES - itemState.order.length}
       onPick={(meal, picks) => addFromHistory(meal, picks)}
       onClose={() => setShowHistory(false)}
     />

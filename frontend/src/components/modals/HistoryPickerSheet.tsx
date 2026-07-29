@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { MEALS, customItemLabel, customItemsKcal, foodSummary, kcalOfFood } from '../../lib/domain';
-import type { HistoryMeal, HistoryPhoto, MealKey } from '../../types';
+import type { EntryFoodItem, HistoryMeal, HistoryPhoto, MealKey } from '../../types';
 import { CloseButton, ModalShell } from './ModalShell';
 
 // M/D
@@ -10,24 +10,33 @@ const fmtMD = (d: string) => {
   return p.length === 3 ? `${+p[1]}/${+p[2]}` : d;
 };
 
-const photoKcal = (p: HistoryPhoto) => kcalOfFood(p.food) + customItemsKcal(p.customItems);
+const pageKcal = (p: { food: HistoryPhoto['food']; customItems: HistoryPhoto['customItems'] }) =>
+  kcalOfFood(p.food) + customItemsKcal(p.customItems);
+const pageSummary = (p: { food: HistoryPhoto['food']; customItems: HistoryPhoto['customItems'] }) =>
+  [foodSummary(p.food), p.customItems.map((c) => customItemLabel(c)).join('、')].filter(Boolean).join('、') || '未記份數';
+// 項目頁的識別鍵（同一張卡內以索引區分）
+const itemKey = (m: HistoryMeal, idx: number) => `${m.entryId}:item:${idx}`;
 
-// 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組成卡）。
-// 「加入整餐」＝所有照片＋各自份數與自定義＋敘述一次；也可點單張照片只加那張（敘述同樣只帶一次）
+// 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組成卡），照片頁與無照片項目頁都會列出。
+// 「加入整餐」＝所有頁面＋各自份數與自定義＋敘述一次；也可點單頁只加那頁（敘述同樣只帶一次）
 export function HistoryPickerSheet({
   excludeId,
   remaining,
+  remainingItems,
   onPick,
   onClose,
 }: {
   excludeId: number;
   remaining: number; // 目前還能再加幾張照片
-  onPick: (meal: HistoryMeal, picks: HistoryPhoto[]) => Promise<boolean>;
+  remainingItems: number; // 目前還能再加幾個無照片項目頁
+  onPick: (meal: HistoryMeal, picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [meals, setMeals] = useState<HistoryMeal[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null); // `${entryId}` 整餐或 `${entryId}:${photo}` 單張
-  const [added, setAdded] = useState<string[]>([]); // 已加入的照片（來源 url）
+  const [busy, setBusy] = useState<string | null>(null); // `${entryId}` 整餐或 `${entryId}:...` 單頁
+  const [added, setAdded] = useState<string[]>([]); // 已加入的頁（照片 url／項目鍵）
+  const [addedPhotoCount, setAddedPhotoCount] = useState(0);
+  const [addedItemCount, setAddedItemCount] = useState(0);
   const [activeTab, setActiveTab] = useState<MealKey | null>(null);
 
   useEffect(() => {
@@ -41,17 +50,28 @@ export function HistoryPickerSheet({
     };
   }, [excludeId]);
 
-  const room = remaining - added.length;
-  const full = room <= 0;
+  const photoRoom = remaining - addedPhotoCount;
+  const itemRoom = remainingItems - addedItemCount;
+  const full = photoRoom <= 0 && itemRoom <= 0;
 
-  const pickPhotos = async (meal: HistoryMeal, picks: HistoryPhoto[], busyKey: string) => {
+  const pick = async (
+    meal: HistoryMeal,
+    photos: { p: HistoryPhoto }[],
+    items: { it: EntryFoodItem; key: string }[],
+    busyKey: string
+  ) => {
     if (busy) return;
-    const fresh = picks.filter((p) => !added.includes(p.photo)).slice(0, Math.max(0, room));
-    if (!fresh.length) return;
+    const freshPhotos = photos.filter(({ p }) => !added.includes(p.photo)).slice(0, Math.max(0, photoRoom));
+    const freshItems = items.filter(({ key }) => !added.includes(key)).slice(0, Math.max(0, itemRoom));
+    if (!freshPhotos.length && !freshItems.length) return;
     setBusy(busyKey);
-    const ok = await onPick(meal, fresh);
+    const ok = await onPick(meal, { photos: freshPhotos.map(({ p }) => p), items: freshItems.map(({ it }) => it) });
     setBusy(null);
-    if (ok) setAdded((a) => [...a, ...fresh.map((p) => p.photo)]);
+    if (ok) {
+      setAdded((a) => [...a, ...freshPhotos.map(({ p }) => p.photo), ...freshItems.map(({ key }) => key)]);
+      setAddedPhotoCount((n) => n + freshPhotos.length);
+      setAddedItemCount((n) => n + freshItems.length);
+    }
   };
 
   // 依餐別分組（早餐／午餐／晚餐／宵夜／點心），只顯示有紀錄的分類；組內維持新→舊
@@ -63,11 +83,24 @@ export function HistoryPickerSheet({
   const active = activeTab && tabMeals.includes(activeTab) ? activeTab : tabMeals[0];
   const activeList = groups.find((g) => g.meal.k === active)?.list ?? [];
 
+  const badge = (state: 'added' | 'busy' | 'idle') => (
+    <span
+      style={{
+        position: 'absolute', right: 3, bottom: 3, minWidth: 18, height: 18, borderRadius: 9,
+        background: state === 'added' ? '#4A7C59' : 'rgba(45,59,45,.65)', color: '#fff',
+        fontSize: 11, lineHeight: '18px', fontWeight: 800, padding: '0 4px',
+      }}
+    >
+      {state === 'busy' ? '…' : state === 'added' ? '✓' : '＋'}
+    </span>
+  );
+
   const card = (m: HistoryMeal) => {
     const mealDef = MEALS.find((x) => x.k === m.meal) || MEALS[0];
-    const totalKcal = m.photos.reduce((a, p) => a + photoKcal(p), 0);
-    const freshCount = m.photos.filter((p) => !added.includes(p.photo)).length;
-    const allAdded = freshCount === 0;
+    const totalKcal = m.photos.reduce((a, p) => a + pageKcal(p), 0) + m.items.reduce((a, it) => a + pageKcal(it), 0);
+    const pageCount = m.photos.length + m.items.length;
+    const allAdded =
+      m.photos.every((p) => added.includes(p.photo)) && m.items.every((_, i) => added.includes(itemKey(m, i)));
     const mealBusy = busy === String(m.entryId);
     const mealDisabled = allAdded || !!busy || (full && !allAdded);
     return (
@@ -84,10 +117,17 @@ export function HistoryPickerSheet({
           <span style={{ fontSize: 12.5, fontWeight: 800, color: mealDef.color, flex: 'none' }}>{mealDef.name}</span>
           <span style={{ fontSize: 12, color: '#8A9284', flex: 'none' }}>{fmtMD(m.date)}</span>
           <span style={{ fontFamily: 'Outfit', fontSize: 12.5, fontWeight: 700, color: '#4A7C59', flex: 'none' }}>{totalKcal} kcal</span>
-          {m.photos.length > 1 && <span style={{ fontSize: 11.5, color: '#8A9284', flex: 'none' }}>共 {m.photos.length} 張</span>}
+          {pageCount > 1 && <span style={{ fontSize: 11.5, color: '#8A9284', flex: 'none' }}>共 {pageCount} 頁</span>}
           <span style={{ flex: 1 }} />
           <button
-            onClick={() => void pickPhotos(m, m.photos, String(m.entryId))}
+            onClick={() =>
+              void pick(
+                m,
+                m.photos.map((p) => ({ p })),
+                m.items.map((it, i) => ({ it, key: itemKey(m, i) })),
+                String(m.entryId)
+              )
+            }
             disabled={mealDisabled}
             className="hv-green"
             style={{
@@ -97,7 +137,7 @@ export function HistoryPickerSheet({
               opacity: mealBusy ? 0.7 : 1,
             }}
           >
-            {mealBusy ? '加入中…' : allAdded ? '已加入' : m.photos.length > 1 ? '加入整餐' : '加入'}
+            {mealBusy ? '加入中…' : allAdded ? '已加入' : pageCount > 1 ? '加入整餐' : '加入'}
           </button>
         </div>
         {m.desc && (
@@ -105,43 +145,45 @@ export function HistoryPickerSheet({
             {m.desc}
           </div>
         )}
-        {/* 照片列：點單張只加那張（份數與自定義跟著照片；敘述同一餐只帶一次） */}
+        {/* 頁面列：照片縮圖＋無照片項目圖格；點單頁只加那頁（份數與自定義跟著頁；敘述同一餐只帶一次） */}
         <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
           {m.photos.map((p) => {
             const isAdded = added.includes(p.photo);
             const isBusy = busy === `${m.entryId}:${p.photo}`;
-            const disabled = isAdded || !!busy || full;
-            const summary = [foodSummary(p.food), p.customItems.map((c) => customItemLabel(c)).join('、')]
-              .filter(Boolean)
-              .join('、');
+            const disabled = isAdded || !!busy || photoRoom <= 0;
             return (
               <button
                 key={p.photo}
-                onClick={() => void pickPhotos(m, [p], `${m.entryId}:${p.photo}`)}
+                onClick={() => void pick(m, [{ p }], [], `${m.entryId}:${p.photo}`)}
                 disabled={disabled}
-                title={m.photos.length > 1 ? `只加入這張：${summary || '未記份數'}` : summary}
+                title={`只加入這張：${pageSummary(p)}`}
                 style={{ flex: 'none', position: 'relative', width: 64, height: 64, borderRadius: 12, border: isAdded ? '2.5px solid #4A7C59' : '1.5px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${p.photo}')`, cursor: disabled ? 'default' : 'pointer', padding: 0 }}
               >
-                <span
-                  style={{
-                    position: 'absolute', right: 3, bottom: 3, minWidth: 18, height: 18, borderRadius: 9,
-                    background: isAdded ? '#4A7C59' : 'rgba(45,59,45,.65)', color: '#fff',
-                    fontSize: 11, lineHeight: '18px', fontWeight: 800, padding: '0 4px',
-                  }}
-                >
-                  {isBusy ? '…' : isAdded ? '✓' : '＋'}
-                </span>
+                {badge(isBusy ? 'busy' : isAdded ? 'added' : 'idle')}
+              </button>
+            );
+          })}
+          {m.items.map((it, i) => {
+            const key = itemKey(m, i);
+            const isAdded = added.includes(key);
+            const isBusy = busy === key;
+            const disabled = isAdded || !!busy || itemRoom <= 0;
+            return (
+              <button
+                key={key}
+                onClick={() => void pick(m, [], [{ it, key }], key)}
+                disabled={disabled}
+                title={`只加入這個無照片項目：${pageSummary(it)}`}
+                style={{ flex: 'none', position: 'relative', width: 64, height: 64, borderRadius: 12, border: isAdded ? '2.5px solid #4A7C59' : '1.5px solid #E4DFD2', background: '#F0EDE3', color: '#8A9284', cursor: disabled ? 'default' : 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><path d="M6 20a6 6 0 0 1 12 0" /><circle cx="12" cy="9" r="1.2" /></svg>
+                {badge(isBusy ? 'busy' : isAdded ? 'added' : 'idle')}
               </button>
             );
           })}
         </div>
         <div style={{ fontSize: 11.5, color: '#8A9284', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {m.photos
-            .map((p) => {
-              const parts = [foodSummary(p.food), p.customItems.map((c) => customItemLabel(c)).join('、')].filter(Boolean).join('、');
-              return parts || '未記份數';
-            })
-            .join('｜')}
+          {[...m.photos.map(pageSummary), ...m.items.map(pageSummary)].join('｜')}
         </div>
       </div>
     );
@@ -158,8 +200,8 @@ export function HistoryPickerSheet({
       {/* 固定表頭：說明 + 餐別分頁（不隨清單捲動，避免項目多時最上方的分頁被捲掉遮住） */}
       <div style={{ flex: 'none', padding: '10px 20px 0' }}>
         <div style={{ fontSize: 13, color: '#6B7565', lineHeight: 1.6 }}>
-          一張卡＝過去的一餐。「加入整餐」帶入<b>所有照片、各自份數與敘述</b>；點單張照片只加那張（每個餐別顯示最近 30 餐）。
-          {full && <span style={{ color: '#C0564A' }}>　已達照片上限</span>}
+          一張卡＝過去的一餐（含照片與無照片項目）。「加入整餐」帶入<b>所有頁面、各自份數與敘述</b>；點單頁只加那頁（每個餐別顯示最近 30 餐）。
+          {full && <span style={{ color: '#C0564A' }}>　已達頁面上限</span>}
         </div>
         {groups.length > 0 && (
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, margin: '10px -2px 0' }}>
@@ -190,7 +232,7 @@ export function HistoryPickerSheet({
         {meals === null && <div style={{ fontSize: 13, color: '#8A9284', padding: '20px 0', textAlign: 'center' }}>載入中…</div>}
         {meals !== null && meals.length === 0 && (
           <div style={{ fontSize: 13, color: '#8A9284', padding: '24px 0', textAlign: 'center', lineHeight: 1.7 }}>
-            還沒有記過份數的照片。<br />先記幾餐，之後就能從這裡快速加入。
+            還沒有記過份數的紀錄。<br />先記幾餐，之後就能從這裡快速加入。
           </div>
         )}
         {activeList.map(card)}

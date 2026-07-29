@@ -49,7 +49,7 @@ export interface EntryFoodItem {
   customItems: CustomItem[];
 }
 
-// 從歷史加入：以「餐」為單位（一筆原始紀錄），含多張照片與各自的份數／自定義項目、整筆敘述
+// 從歷史加入：以「餐」為單位（一筆原始紀錄），含照片頁與無照片項目頁各自的份數／自定義、整筆敘述
 export interface HistoryPhoto {
   photo: string;
   food: Food;
@@ -62,6 +62,7 @@ export interface HistoryMeal {
   meal: MealKey;
   desc: string;
   photos: HistoryPhoto[];
+  items: EntryFoodItem[];
 }
 
 // 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某筆運動（ex:<id>）
