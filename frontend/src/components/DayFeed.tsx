@@ -146,8 +146,8 @@ export function DayFeed() {
           <FoodSummaryGrid food={e.food} />
           <CustomItemsSummary items={entryAllCustoms(e)} />
           <MacroSummaryRow macros={entryMacros(e)} />
-          {/* 營養師調整過的紀錄：主要顯示調整後數值，這裡附上自己原本記的內容 */}
-          {e.orig && <OrigSummary orig={e.orig} label="你原本記的（營養師調整前）" />}
+          {/* 營養師調整過的紀錄：主要顯示調整後數值，這裡逐頁附上自己原本記的內容與調整對照 */}
+          {e.orig && <OrigSummary orig={e.orig} current={e} label="你原本記的（營養師調整前）" />}
           <CommentsThread
             key={`ec${e.id}`}
             {...commentProps(`entry:${e.id}`, e.commentCount)}

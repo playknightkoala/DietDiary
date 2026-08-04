@@ -709,8 +709,8 @@ export function LogFoodModal() {
             此筆份數已由營養師於 {fmtCommentTime(entry.foodEditedAt)} 調整；若自行修改，此標記將移除。
           </div>
         )}
-        {/* 營養師調整過：下方欄位是調整後的數值，這裡附上自己原本記的內容供對照 */}
-        {entry.orig && <OrigSummary orig={entry.orig} label="你原本記的（營養師調整前）" />}
+        {/* 營養師調整過：下方欄位是調整後的數值，這裡逐頁附上自己原本記的內容與調整對照 */}
+        {entry.orig && <OrigSummary orig={entry.orig} current={entry} label="你原本記的（營養師調整前）" />}
 
         {!cur ? (
           // 沒有任何頁：加照片或加無照片項目

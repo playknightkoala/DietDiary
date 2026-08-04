@@ -1,8 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { GUIDE_DATA } from '../lib/guideData';
-import { CUSTOM_ITEM_DEFS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, foodSummary, origTotals, type CustomDraft, type Macros } from '../lib/domain';
+import { CUSTOM_ITEM_DEFS, FOOD_KEYS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, foodSummary, origTotals, type CustomDraft, type Macros } from '../lib/domain';
 import { useStore } from '../store';
-import type { CustomItem, CustomItemType, EntryOrig, Food, FoodKey } from '../types';
+import type { CustomItem, CustomItemType, Entry, EntryOrig, Food, FoodKey } from '../types';
 
 export interface FoodInputGroup {
   name: string;
@@ -275,22 +275,113 @@ export function MacroSummaryRow({ macros }: { macros: Macros }) {
 }
 
 // 營養師調整前的會員原始紀錄（動態牆貼文、營養師檢視與編輯視窗共用）：
-// 調整後的數值為主要顯示，這裡以低調的一小塊呈現「調整前」的份數摘要＋自定義項目＋熱量
-export function OrigSummary({ orig, label = '調整前的原始紀錄' }: { orig: EntryOrig; label?: string }) {
+// 調整後的數值為主要顯示，這裡逐頁（每張照片／每個無照片項目）列出原始內容；
+// 帶入 current（目前的 entry）時，被調整過的頁面會顯示「調整前 → 調整後」對照，
+// 沒動過的頁面維持一行灰字，這樣看得出「是哪個食物」被改了什麼
+export function OrigSummary({
+  orig,
+  current,
+  label = '調整前的原始紀錄',
+}: {
+  orig: EntryOrig;
+  current?: Pick<Entry, 'photos' | 'photoFoods' | 'photoCustoms' | 'items'>;
+  label?: string;
+}) {
   const t = origTotals(orig);
-  const parts = [
-    foodSummary(t.food),
-    t.customs.map((c) => `${customItemLabel(c)} ${c.kcal} kcal`).join('、'),
-  ].filter(Boolean);
+  const pageText = (food: Food | undefined, customs: CustomItem[]): string => {
+    const parts = [
+      food ? foodSummary(food) : '',
+      customs.map((c) => `${customItemLabel(c)} ${c.kcal} kcal`).join('、'),
+    ].filter(Boolean);
+    return parts.join('；');
+  };
+  const sameFood = (a?: Food, b?: Food) => FOOD_KEYS.every((k) => (a?.[k] || 0) === (b?.[k] || 0));
+  const cKey = (c: CustomItem) => `${c.type}|${c.name}|${c.amount ?? ''}|${c.kcal}`;
+  const sameCustoms = (a: CustomItem[], b: CustomItem[]) =>
+    a.length === b.length && a.every((c, i) => cKey(c) === cKey(b[i]));
+
+  // after === null＝這一頁沒被調整（單行灰字）；removed＝照片已被移除
+  type Row = { id: string; thumb?: string; itemNo?: number; before: string; after: string | null; removed?: boolean };
+  const rows: Row[] = [];
+
+  // 照片頁：以目前照片順序為主，只存在快照的照片（已被移除）附在後面
+  const curPhotos = current?.photos ?? [];
+  const origUrls = new Set([...Object.keys(orig.photoFoods), ...Object.keys(orig.photoCustoms)]);
+  const urls = [...curPhotos, ...[...origUrls].filter((u) => !curPhotos.includes(u))];
+  for (const url of urls) {
+    const oF = orig.photoFoods[url];
+    const oC = orig.photoCustoms[url] ?? [];
+    const before = pageText(oF, oC);
+    if (!current) {
+      if (before) rows.push({ id: `p${url}`, thumb: url, before, after: null });
+      continue;
+    }
+    const exists = curPhotos.includes(url);
+    const after = exists ? pageText(current.photoFoods[url], current.photoCustoms[url] ?? []) : '';
+    const changed = !exists || !sameFood(oF, current.photoFoods[url]) || !sameCustoms(oC, current.photoCustoms[url] ?? []);
+    if (!before && !after && !changed) continue; // 前後都空白的照片不列
+    rows.push({ id: `p${url}`, thumb: url, before, after: changed ? after : null, removed: !exists });
+  }
+
+  // 無照片項目頁：依序對照（營養師編輯器保留項目順序）
+  const itemCount = Math.max(orig.items.length, current?.items.length ?? 0);
+  for (let i = 0; i < itemCount; i++) {
+    const o = orig.items[i];
+    const c = current?.items[i];
+    const before = o ? pageText(o.food, o.customItems) : '';
+    if (!current) {
+      if (before) rows.push({ id: `i${i}`, itemNo: i + 1, before, after: null });
+      continue;
+    }
+    const changed = !sameFood(o?.food, c?.food) || !sameCustoms(o?.customItems ?? [], c?.customItems ?? []);
+    const after = c ? pageText(c.food, c.customItems) : '';
+    if (!before && !after && !changed) continue;
+    rows.push({ id: `i${i}`, itemNo: i + 1, before, after: changed ? after : null });
+  }
+
+  // legacy 紀錄（份數只存在整筆 food、無逐頁資料）：退回整餐摘要
+  if (!rows.length && FOOD_KEYS.some((k) => (orig.food[k] || 0) > 0)) {
+    rows.push({ id: 'legacy', before: pageText(orig.food, []), after: null });
+  }
+
   return (
-    <div style={{ background: '#FBFAF6', border: '1px dashed #DDD8CA', borderRadius: 11, padding: '7px 11px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div style={{ background: '#FBFAF6', border: '1px dashed #DDD8CA', borderRadius: 11, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 7 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: '#8A9284' }}>
         {label}
         <span style={{ fontFamily: 'Outfit', fontWeight: 700, color: '#A39C8C', marginLeft: 6 }}>{t.kcal} kcal</span>
       </div>
-      <div style={{ fontSize: 12, color: '#6B7565', lineHeight: 1.6, wordBreak: 'break-word' }}>
-        {parts.join('；') || '（原本未記份數）'}
-      </div>
+      {rows.length === 0 && (
+        <div style={{ fontSize: 12, color: '#6B7565', lineHeight: 1.6 }}>（原本未記份數）</div>
+      )}
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          {r.thumb ? (
+            <div
+              title={r.removed ? '這張照片已被移除' : undefined}
+              style={{ width: 26, height: 26, flex: 'none', borderRadius: 7, border: '1px solid #E4DFD2', backgroundColor: '#F0EDE3', backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url('${r.thumb}')`, opacity: r.removed ? 0.5 : 1 }}
+            />
+          ) : r.itemNo !== undefined ? (
+            <div
+              title={`無照片項目 ${r.itemNo}`}
+              style={{ width: 26, height: 26, flex: 'none', borderRadius: 7, border: '1px solid #E4DFD2', background: '#F0EDE3', color: '#8A9284', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><path d="M6 20a6 6 0 0 1 12 0" /><circle cx="12" cy="9" r="1.2" /></svg>
+            </div>
+          ) : null}
+          <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.55, wordBreak: 'break-word' }}>
+            {r.after === null ? (
+              <span style={{ color: '#6B7565' }}>{r.before || '（未記份數）'}</span>
+            ) : (
+              <>
+                <div style={{ color: '#6B7565' }}>調整前：{r.before || '未記'}</div>
+                <div style={{ color: '#5B8DB8', fontWeight: 700 }}>
+                  調整後：{r.removed ? '照片已移除' : r.after || '清空'}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
