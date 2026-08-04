@@ -1,4 +1,4 @@
-import type { BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
+import type { BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, EntryOrig, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
 
 // 每份熱量（kcal/份）— 與原型 Component.KCAL 一致
 export const KCAL: Record<FoodKey, number> = {
@@ -191,6 +191,13 @@ export function customItemsKcal(items: CustomItem[]): number {
 // 一筆紀錄的總熱量＝六大類份數熱量（food 已含照片＋items 的總和）＋所有自定義項目熱量
 export function entryKcal(e: Pick<Entry, 'food' | 'photoCustoms' | 'items'>): number {
   return kcalOfFood(e.food) + customItemsKcal(entryAllCustoms(e));
+}
+
+// 原始資料快照的彙總（顯示「調整前」用）：份數以快照的 food 總和為準（含 legacy 整筆份數）、
+// 自定義＝照片綁定＋無照片項目，熱量口徑與 entryKcal 相同
+export function origTotals(o: EntryOrig): { food: Food; customs: CustomItem[]; kcal: number } {
+  const customs = entryAllCustoms(o);
+  return { food: o.food, customs, kcal: kcalOfFood(o.food) + customItemsKcal(customs) };
 }
 
 // 當日自定義熱量總和（今日攝取熱量卡用）

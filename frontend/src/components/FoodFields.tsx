@@ -1,8 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { GUIDE_DATA } from '../lib/guideData';
-import { CUSTOM_ITEM_DEFS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, type CustomDraft, type Macros } from '../lib/domain';
+import { CUSTOM_ITEM_DEFS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, foodSummary, origTotals, type CustomDraft, type Macros } from '../lib/domain';
 import { useStore } from '../store';
-import type { CustomItem, CustomItemType, Food, FoodKey } from '../types';
+import type { CustomItem, CustomItemType, EntryOrig, Food, FoodKey } from '../types';
 
 export interface FoodInputGroup {
   name: string;
@@ -270,6 +270,27 @@ export function MacroSummaryRow({ macros }: { macros: Macros }) {
       {macros.sugar > 0 && (
         <span style={{ color: '#A8433A' }}>（含精緻糖 <span style={{ fontFamily: 'Outfit', fontWeight: 800 }}>{macros.sugar}</span> g）</span>
       )}
+    </div>
+  );
+}
+
+// 營養師調整前的會員原始紀錄（動態牆貼文、營養師檢視與編輯視窗共用）：
+// 調整後的數值為主要顯示，這裡以低調的一小塊呈現「調整前」的份數摘要＋自定義項目＋熱量
+export function OrigSummary({ orig, label = '調整前的原始紀錄' }: { orig: EntryOrig; label?: string }) {
+  const t = origTotals(orig);
+  const parts = [
+    foodSummary(t.food),
+    t.customs.map((c) => `${customItemLabel(c)} ${c.kcal} kcal`).join('、'),
+  ].filter(Boolean);
+  return (
+    <div style={{ background: '#FBFAF6', border: '1px dashed #DDD8CA', borderRadius: 11, padding: '7px 11px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: '#8A9284' }}>
+        {label}
+        <span style={{ fontFamily: 'Outfit', fontWeight: 700, color: '#A39C8C', marginLeft: 6 }}>{t.kcal} kcal</span>
+      </div>
+      <div style={{ fontSize: 12, color: '#6B7565', lineHeight: 1.6, wordBreak: 'break-word' }}>
+        {parts.join('；') || '（原本未記份數）'}
+      </div>
     </div>
   );
 }

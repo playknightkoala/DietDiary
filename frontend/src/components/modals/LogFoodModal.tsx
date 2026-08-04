@@ -5,7 +5,7 @@ import { compressImage } from '../../lib/photo';
 import { FOOD_KEYS, MEALS, clampPortion, customDraftsKcal, customDraftsToItems, customItemsToDrafts, emptyFood, entryHasData, fmtCommentTime, foodSummary, kcalOfFood, sumFoods, type CustomDraft } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { CustomItem, EntryFoodItem, Food, FoodKey, HistoryMeal, HistoryPhoto } from '../../types';
-import { CustomItemsEditor, FoodFields } from '../FoodFields';
+import { CustomItemsEditor, FoodFields, OrigSummary } from '../FoodFields';
 import { Lightbox } from '../Lightbox';
 import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { PickerInput } from '../PickerInput';
@@ -709,6 +709,8 @@ export function LogFoodModal() {
             此筆份數已由營養師於 {fmtCommentTime(entry.foodEditedAt)} 調整；若自行修改，此標記將移除。
           </div>
         )}
+        {/* 營養師調整過：下方欄位是調整後的數值，這裡附上自己原本記的內容供對照 */}
+        {entry.orig && <OrigSummary orig={entry.orig} label="你原本記的（營養師調整前）" />}
 
         {!cur ? (
           // 沒有任何頁：加照片或加無照片項目

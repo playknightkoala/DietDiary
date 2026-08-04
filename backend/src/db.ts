@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS entries (
   custom_items TEXT NOT NULL DEFAULT '[]',
   photo_customs TEXT NOT NULL DEFAULT '{}',
   items TEXT NOT NULL DEFAULT '[]',
+  orig_data TEXT NOT NULL DEFAULT '',
   food_edited_at INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -292,6 +293,11 @@ if (!entryCols.includes('items')) {
   // 無照片的食物項目頁（[{food, customItems}]，可與照片頁並存）；
   // 不變量：food 欄位 = photo_foods 各值加總 + items 各項 food 加總
   db.exec(`ALTER TABLE entries ADD COLUMN items TEXT NOT NULL DEFAULT '[]'`);
+}
+if (!entryCols.includes('orig_data')) {
+  // 營養師調整前的會員原始資料快照（{photoFoods, photoCustoms, items, food} JSON；''＝未被調整）。
+  // 營養師第一次實際改動份數或自定義時寫入、之後的調整不再覆蓋；會員自行再改份數時清除
+  db.exec(`ALTER TABLE entries ADD COLUMN orig_data TEXT NOT NULL DEFAULT ''`);
 }
 
 // v1 過渡資料一次性遷移：per-entry custom_items → 有照片搬到第一張的 photo_customs、

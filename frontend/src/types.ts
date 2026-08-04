@@ -39,8 +39,19 @@ export interface Entry {
   photoCustoms: Partial<Record<string, CustomItem[]>>;
   // 無照片的食物項目頁（每項＝六大類份數＋自定義；可與照片頁並存）
   items: EntryFoodItem[];
+  // 營養師調整前的會員原始資料（null＝未被調整過；會員自行再改份數後清除）
+  orig: EntryOrig | null;
   // 營養師調整份數的時間戳（Unix ms，0＝未被調整）
   foodEditedAt: number;
+}
+
+// 營養師第一次調整時快照的會員原始資料；food 為快照當下的整筆份數總和
+// （legacy 紀錄的份數只存在 food，顯示原始份數一律以此為準）
+export interface EntryOrig {
+  photoFoods: Partial<Record<string, Food>>;
+  photoCustoms: Partial<Record<string, CustomItem[]>>;
+  items: EntryFoodItem[];
+  food: Food;
 }
 
 // 無照片的食物項目頁

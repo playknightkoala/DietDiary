@@ -27,12 +27,13 @@ export interface EntryRow {
   photo_foods: string;
   photo_customs: string;
   items: string;
+  orig_data: string;
   food_edited_at: number;
 }
 
 // entries 的標準欄位清單：所有讀 entry 的 SELECT 一律用這個常數，
 // 避免新增欄位時漏改某處（漏了不會爆錯、只會讓 marker/通知悄悄判斷錯誤）
-export const ENTRY_COLS = 'id, meal, desc, photos, eat_time, food, photo_foods, photo_customs, items, food_edited_at';
+export const ENTRY_COLS = 'id, meal, desc, photos, eat_time, food, photo_foods, photo_customs, items, orig_data, food_edited_at';
 
 // 無照片的食物項目頁（可與照片頁並存）
 export interface EntryItem {
@@ -187,6 +188,31 @@ export function entryAllCustoms(e: { photoCustoms: Record<string, CustomItem[]>;
   return [...Object.values(e.photoCustoms).flat(), ...e.items.flatMap((it) => it.customItems)];
 }
 
+// 營養師調整前的會員原始資料快照（''＝未被調整過）。
+// food 為快照當下的整筆份數總和（legacy 紀錄的份數只存在 food 欄位，必須一併快照才不會遺失）
+export interface OrigData {
+  photoFoods: Record<string, Food>;
+  photoCustoms: Record<string, CustomItem[]>;
+  items: EntryItem[];
+  food: Food;
+}
+
+export function parseOrigData(json: string): OrigData | null {
+  if (!json) return null;
+  try {
+    const o = JSON.parse(json);
+    if (!o || typeof o !== 'object') return null;
+    return {
+      photoFoods: parsePhotoFoods(JSON.stringify(o.photoFoods ?? {})),
+      photoCustoms: parsePhotoCustoms(JSON.stringify(o.photoCustoms ?? {})),
+      items: parseItems(JSON.stringify(o.items ?? [])),
+      food: { ...emptyFood(), ...(typeof o.food === 'object' && o.food ? o.food : {}) },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function parsePhotos(json: string): string[] {
   try {
     const arr = JSON.parse(json);
@@ -232,6 +258,7 @@ export function entryToJson(e: EntryRow) {
     photoFoods: parsePhotoFoods(e.photo_foods ?? '{}'),
     photoCustoms: parsePhotoCustoms(e.photo_customs ?? '{}'),
     items: parseItems(e.items ?? '[]'),
+    orig: parseOrigData(e.orig_data ?? ''), // 營養師調整前的會員原始資料（null＝未被調整）
     foodEditedAt: e.food_edited_at ?? 0, // >0＝營養師調整過份數
   };
 }

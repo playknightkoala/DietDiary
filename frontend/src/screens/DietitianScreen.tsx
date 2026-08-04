@@ -5,7 +5,7 @@ import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, customDra
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
-import { CustomItemsEditor, CustomItemsSummary, FoodFields, FoodSummaryGrid, MacroSummaryRow } from '../components/FoodFields';
+import { CustomItemsEditor, CustomItemsSummary, FoodFields, FoodSummaryGrid, MacroSummaryRow, OrigSummary } from '../components/FoodFields';
 import { MacroPanel } from '../components/OverviewCards';
 import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
@@ -699,6 +699,8 @@ export function DietitianScreen() {
                     <FoodSummaryGrid food={e.food} />
                     <CustomItemsSummary items={entryAllCustoms(e)} />
                     <MacroSummaryRow macros={entryMacros(e)} />
+                    {/* 已調整過的紀錄：主要顯示調整後數值，附上會員原本記的內容供對照 */}
+                    {e.orig && <OrigSummary orig={e.orig} label="會員原本記的（調整前）" />}
                     <CommentsThread
                       key={`e-${e.id}${focusTarget === `entry:${e.id}` ? '-f' : ''}`}
                       {...commentProps(`entry:${e.id}`, e.commentCount)}
@@ -737,6 +739,8 @@ export function DietitianScreen() {
             <div style={{ fontSize: 12.5, color: '#6B7565' }}>
               儲存後會員端會標示「營養師調整份數」（只調整自定義項目不會標示）；會員若自行再修改份數，標示會移除。
             </div>
+            {/* 會員原始紀錄對照：已調整過用第一次調整前的快照；尚未調整過＝目前內容即原始 */}
+            <OrigSummary orig={foodEditing.orig ?? foodEditing} label="會員原本記的" />
             {editCur ? (
               <>
                 {/* 逐頁編輯：照片頁或無照片項目頁 */}

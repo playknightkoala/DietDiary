@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { COMMENT_TARGET_RE, DATE_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
-import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
+import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
@@ -168,14 +168,29 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
       it: its.map((it) => FOOD_KEYS.map((k) => it.food[k] || 0)),
     });
   const foodsChanged = eff(storedPf, storedItems) !== eff(nextPf, nextItems);
+  // 自定義項目是否變動（不蓋章，但一樣要保留原始資料）
+  const effCustoms = (pc: Record<string, CustomItem[]>, its: EntryItem[]) =>
+    JSON.stringify({
+      pc: Object.keys(pc).sort().map((url) => [url, pc[url]]),
+      it: its.map((it) => it.customItems),
+    });
+  const customsChanged = effCustoms(storedPc, storedItems) !== effCustoms(nextPc, nextItems);
 
+  // 第一次實際改動時快照會員的原始資料（含 legacy 只存在 food 欄位的份數）；
+  // 之後的調整不再覆蓋，原始資料永遠是會員自己最後記的內容
+  const snapshotOrig = (foodsChanged || customsChanged) && !entry.orig_data;
+  const setOrig = snapshotOrig ? ', orig_data = ?' : '';
+  const origArgs = snapshotOrig
+    ? [JSON.stringify({ photoFoods: storedPf, photoCustoms: storedPc, items: storedItems, food: parseFood(entry.food) })]
+    : [];
   const setEdited = foodsChanged ? ', food_edited_at = ?' : '';
   const editedArgs = foodsChanged ? [Date.now()] : [];
-  db.prepare(`UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?${setEdited} WHERE id = ?`).run(
+  db.prepare(`UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?${setOrig}${setEdited} WHERE id = ?`).run(
     JSON.stringify(nextPf),
     JSON.stringify(nextPc),
     JSON.stringify(nextItems),
     JSON.stringify(computeEntryFood(nextPf, nextItems)),
+    ...origArgs,
     ...editedArgs,
     entry.id
   );
