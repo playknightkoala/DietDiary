@@ -3,7 +3,7 @@ import { api } from '../../lib/api';
 import { BODY_DEFS, dayHasData, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { BodyKey } from '../../types';
-import { PickerInput } from '../PickerInput';
+import { TimeSelect } from '../TimeSelect';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function BodyModal() {
@@ -39,11 +39,10 @@ export function BodyModal() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 12, color: '#6B7565' }}>測量時間</label>
-        <PickerInput
-          type="time"
+        <TimeSelect
           value={time}
-          onChange={(e) => setTime(e.target.value)}
-          style={{ height: 44, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 12px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+          onChange={setTime}
+          style={{ height: 44, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 12px', fontSize: 15, background: '#FBFAF6' }}
         />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>

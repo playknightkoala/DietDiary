@@ -9,6 +9,7 @@ import { CustomItemsEditor, FoodFields, OrigSummary } from '../FoodFields';
 import { Lightbox } from '../Lightbox';
 import { PhotoRatingBadge } from '../PhotoRatingBadge';
 import { PickerInput } from '../PickerInput';
+import { TimeSelect } from '../TimeSelect';
 import { HistoryPickerSheet } from './HistoryPickerSheet';
 import { CloseButton, ModalShell } from './ModalShell';
 
@@ -682,11 +683,10 @@ export function LogFoodModal() {
               onChange={(e) => setEatDate(e.target.value)}
               style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
             />
-            <PickerInput
-              type="time"
+            <TimeSelect
               value={eatTime}
-              onChange={(e) => setEatTime(e.target.value)}
-              style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, outline: 'none', background: '#FBFAF6' }}
+              onChange={setEatTime}
+              style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, background: '#FBFAF6' }}
             />
           </div>
         </div>

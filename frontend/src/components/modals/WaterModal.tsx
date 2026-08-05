@@ -4,6 +4,7 @@ import { dayHasData, dstr, goalsFor, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import type { DayData } from '../../types';
 import { PickerInput } from '../PickerInput';
+import { TimeSelect } from '../TimeSelect';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function WaterModal() {
@@ -80,11 +81,10 @@ export function WaterModal() {
             onChange={(e) => void changeDate(e.target.value)}
             style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
           />
-          <PickerInput
-            type="time"
+          <TimeSelect
             value={time}
-            onChange={(e) => setTime(e.target.value)}
-            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, outline: 'none', background: '#FBFAF6' }}
+            onChange={setTime}
+            style={{ flex: 1, minWidth: 0, height: 46, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 10px', fontSize: 15, background: '#FBFAF6' }}
           />
         </div>
       </div>
