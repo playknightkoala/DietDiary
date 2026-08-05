@@ -17,6 +17,8 @@ export function BodyModal() {
   const [body, setBody] = useState<Record<BodyKey, string>>({ ...day.body });
   const [time, setTime] = useState(day.bodyTime || nowHM());
   const closing = useRef(false);
+  // 「重置」恢復的原始時間：當天已有身體紀錄＝開窗當下的測量時間；首次記錄＝不指定（當下時間）
+  const resetTime = useRef(day.bodyTime || undefined);
 
   const finish = async () => {
     if (closing.current) return;
@@ -42,6 +44,7 @@ export function BodyModal() {
         <TimeSelect
           value={time}
           onChange={setTime}
+          resetTo={resetTime.current}
           style={{ height: 44, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 12px', fontSize: 15, background: '#FBFAF6' }}
         />
       </div>

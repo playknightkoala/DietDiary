@@ -20,9 +20,10 @@ const LIST_H = ROW_H * VISIBLE_ROWS;
 const PAD = (LIST_H - ROW_H) / 2; // 上下留白，讓第一／最後一列也能捲到中間
 const FOOTER_H = 46;
 
-export function TimeSelect({ value, onChange, style }: {
+export function TimeSelect({ value, onChange, resetTo, style }: {
   value: string;
   onChange: (v: string) => void;
+  resetTo?: string; // 「重置」恢復的時間：編輯既有紀錄傳原始時間；不傳（新增）＝當下時間
   style?: CSSProperties;
 }) {
   const [open, setOpen] = useState(false);
@@ -217,7 +218,7 @@ export function TimeSelect({ value, onChange, style }: {
               type="button"
               style={footBtn}
               onClick={() => {
-                const t = nowHM();
+                const t = /^\d{2}:\d{2}/.test(resetTo ?? '') ? (resetTo as string) : nowHM();
                 onChange(t);
                 centerOn(Number(t.slice(0, 2)), Number(t.slice(3, 5)));
               }}

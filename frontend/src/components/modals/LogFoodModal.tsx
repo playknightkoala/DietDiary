@@ -152,6 +152,8 @@ export function LogFoodModal() {
   const closing = useRef(false);
   // 開啟視窗當下就有的照片；用來區分「這次視窗內新增的照片」（取消時要還原）
   const initialPhotos = useRef<string[]>(entry?.photos ?? []);
+  // 時間選單「重置」要恢復的原始時間：編輯既有紀錄＝開窗當下的用餐時間；新增＝不指定（當下時間）
+  const resetTime = useRef(isNew ? undefined : entry?.eatTime || undefined);
 
   if (!entry || editingId === null) return null;
   const mealDef = MEALS.find((m) => m.k === entry.meal) || MEALS[0];
@@ -686,6 +688,7 @@ export function LogFoodModal() {
             <TimeSelect
               value={eatTime}
               onChange={setEatTime}
+              resetTo={resetTime.current}
               style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px solid #DDD8CA', borderRadius: 11, padding: '0 10px', fontSize: 14, background: '#FBFAF6' }}
             />
           </div>
