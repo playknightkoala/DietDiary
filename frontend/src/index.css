@@ -14,3 +14,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
 .hv-blue:hover { background:#4A7CA5 !important; }
 .hv-red-tint:hover { background:#F5E3DB !important; }
 .hv-arrow:hover { color:#4A7C59 !important; }
+
+/* TimeSelect 滾輪欄：藏捲軸（iOS 滾輪外觀） */
+.time-wheel { scrollbar-width:none; }
+.time-wheel::-webkit-scrollbar { display:none; }
