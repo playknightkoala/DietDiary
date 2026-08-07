@@ -1,15 +1,29 @@
 import { useStore } from '../store';
-import { BODY_DEFS } from '../lib/domain';
+import { ACTIVITY_DEFS, BODY_DEFS, bmrOf } from '../lib/domain';
 import { TrendChart } from './TrendChart';
 
 export function BodyCard() {
   const day = useStore((s) => s.day);
   const trendOpen = useStore((s) => s.trendOpen);
-  const trendField = useStore((s) => s.trendField);
-  const trendPoints = useStore((s) => s.trendPoints);
+  const trendRows = useStore((s) => s.trendRows);
   const setTrendOpen = useStore((s) => s.setTrendOpen);
-  const setTrendField = useStore((s) => s.setTrendField);
   const setModal = useStore((s) => s.setModal);
+  const profile = useStore((s) => s.profile);
+
+  // BMR／TDEE：以基本資料＋最近一次體重計算（公式見 domain.bmrOf / ACTIVITY_DEFS；資料不齊顯示 —）
+  const act = profile ? ACTIVITY_DEFS.find((a) => a.k === profile.activity) : undefined;
+  const age = profile && profile.birthYear !== '' ? new Date().getFullYear() - Number(profile.birthYear) : null;
+  const complete =
+    !!profile && profile.height !== '' && age !== null && profile.gender !== '' && !!act && !!profile.weight;
+  const bmr = complete
+    ? Math.round(bmrOf(profile.gender as 'male' | 'female', profile.weight!.value, Number(profile.height), age!))
+    : null;
+  // 體重目標調整：減重－goalKcal、增重＋goalKcal、一般不調整
+  const goalAdj =
+    profile && profile.goal !== 'normal' && profile.goalKcal !== '' && isFinite(Number(profile.goalKcal))
+      ? (profile.goal === 'cut' ? -1 : 1) * Number(profile.goalKcal)
+      : 0;
+  const tdee = bmr !== null ? Math.round(bmr * act!.factor) + goalAdj : null;
 
   return (
     <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -36,21 +50,8 @@ export function BodyCard() {
         </div>
       </div>
       {trendOpen ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {BODY_DEFS.map((b) => (
-              <button
-                key={b.k}
-                onClick={() => setTrendField(b.k)}
-                style={{ border: 'none', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '5px 11px', cursor: 'pointer', background: trendField === b.k ? '#4A7C59' : '#F0EDE3', color: trendField === b.k ? '#fff' : '#4A5A4A' }}
-              >
-                {b.name}
-              </button>
-            ))}
-          </div>
-          <div style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 14, padding: 10 }}>
-            <TrendChart points={trendPoints} field={trendField} />
-          </div>
+        <div style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 14, padding: 10 }}>
+          <TrendChart rows={trendRows} />
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10 }}>
@@ -60,6 +61,16 @@ export function BodyCard() {
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
                 <span style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 700, color: '#2D3B2D' }}>{day.body[b.k] !== '' ? day.body[b.k] : '—'}</span>
                 <span style={{ fontSize: 11, color: '#8A9284' }}>{b.unit}</span>
+              </div>
+            </div>
+          ))}
+          {/* BMR／TDEE：基本資料與活動量在「＋ 記錄」視窗內設定 */}
+          {([['BMR', bmr], ['TDEE', tdee]] as const).map(([name, v]) => (
+            <div key={name} style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 14, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ fontSize: 11.5, color: '#8A9284' }}>{name}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                <span style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 700, color: '#2D3B2D' }}>{v ?? '—'}</span>
+                <span style={{ fontSize: 11, color: '#8A9284' }}>kcal</span>
               </div>
             </div>
           ))}

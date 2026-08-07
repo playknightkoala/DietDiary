@@ -104,7 +104,8 @@ docker compose up -d --build
 | DELETE | `/api/comments/:cid` | 刪除自己的留言 |
 | GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
 | PUT / DELETE | `/api/goals/:id` | 編輯／刪除單組目標（營養師設定的目標會員不可改）|
-| GET | `/api/body-trend?field=weight&limit=30` | 身體數據趨勢 |
+| GET | `/api/body-trend?field=all&limit=30` | 身體組成歷程紀錄：所有指標以量測日對齊的資料列（舊→新）；`field=<指標>` 為舊版單指標格式（相容保留）|
+| GET / PUT | `/api/profile` | TDEE 基本資料：`{height, birthYear, gender, activity, goal, goalKcal}`（出生年而非年齡，年齡逐年自增；goal：normal/cut/gain，cut/gain 時 TDEE 減/加 goalKcal；GET 另回傳最近一次體重）；BMR/TDEE 公式與活動量係數在前端 `domain.ts` |
 | GET | `/api/admin/users` | （admin）會員清單 |
 | POST | `/api/admin/users/:id/approve` | （admin）開通帳號 |
 | PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |
@@ -119,5 +120,6 @@ docker compose up -d --build
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
 | POST | `/api/ai/research` | （dietitian/admin）`{question}` → 網路搜尋＋AI 整理成含來源的摘要（需 `LLM_TOKEN` 與 `TAVILY_API_KEY`）|
+| POST | `/api/ai/inbody` | （需 `ai_enabled`）`{image: dataURI}` InBody 報告照片 → 檢測日期／時間＋體重／骨骼肌重／體脂肪重／體脂肪率／腹圍＋身高／年齡／性別（自動補齊未設定的 TDEE 基本資料）＋前次量測對照（記錄身體數據視窗的「掃描自動填入」）；照片僅在記憶體辨識、不落地儲存 |
 
 熱量計算與超標（>目標×1.2 轉紅）規則依 README domain rules，由前端 `src/lib/domain.ts` 以常數表計算；後端僅存份數。

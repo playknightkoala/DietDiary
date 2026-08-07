@@ -1,4 +1,4 @@
-import type { BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, EntryOrig, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
+import type { ActivityKey, BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, EntryOrig, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
 
 // 每份熱量（kcal/份）— 與原型 Component.KCAL 一致
 export const KCAL: Record<FoodKey, number> = {
@@ -66,6 +66,20 @@ export const BODY_DEFS: { k: BodyKey; name: string; unit: string }[] = [
   { k: 'muscle', name: '肌肉重', unit: 'kg' },
   { k: 'fatkg', name: '體脂重', unit: 'kg' },
 ];
+
+// TDEE 活動量：TDEE＝BMR×係數
+export const ACTIVITY_DEFS: { k: ActivityKey; name: string; desc: string; factor: number }[] = [
+  { k: 'sedentary', name: '無活動', desc: '久坐', factor: 1.2 },
+  { k: 'light', name: '輕量活動', desc: '每週輕鬆運動 1～3 天', factor: 1.375 },
+  { k: 'moderate', name: '中度活動', desc: '站走稍多、每週中強度運動 3～5 天', factor: 1.55 },
+  { k: 'high', name: '高度活動', desc: '站走為主、每週高強度運動 6～7 天', factor: 1.725 },
+  { k: 'veryhigh', name: '非常高度活動', desc: '幾乎整天高強度運動或勞力型工作', factor: 1.9 },
+];
+
+// BMR（Mifflin-St Jeor）：9.99×體重＋6.25×身高－4.92×年齡＋（166×性別－161），性別男＝1、女＝0
+export function bmrOf(gender: 'male' | 'female', weightKg: number, heightCm: number, age: number): number {
+  return 9.99 * weightKg + 6.25 * heightCm - 4.92 * age + (166 * (gender === 'male' ? 1 : 0) - 161);
+}
 
 export const FOOD_KEYS = Object.keys(KCAL) as FoodKey[];
 

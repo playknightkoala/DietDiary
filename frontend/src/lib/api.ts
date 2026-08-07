@@ -1,4 +1,4 @@
-import type { AdminUser, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, MealKey, MemberInfo, NotificationItem, PhotoRating, Role, TrendPoint } from '../types';
+import type { AdminUser, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, NotificationItem, PhotoRating, Profile, Role } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -188,8 +188,14 @@ export const api = {
     request<Goal>(`/api/goals/${id}`, { method: 'PUT', body: JSON.stringify(goal) }),
   deleteGoal: (id: number) => request<void>(`/api/goals/${id}`, { method: 'DELETE' }),
 
-  getTrend: (field: string, limit = 30) =>
-    request<{ points: TrendPoint[] }>(`/api/body-trend?field=${field}&limit=${limit}`),
+  // TDEE 基本資料（身高／出生年／性別／活動量）＋最近一次體重
+  getProfile: () => request<Profile>('/api/profile'),
+  putProfile: (p: Omit<Profile, 'weight'>) =>
+    request<Profile>('/api/profile', { method: 'PUT', body: JSON.stringify(p) }),
+
+  // 身體數據歷程紀錄：所有指標一次取回、以量測日對齊（舊→新）
+  getBodyTrend: (limit = 30) =>
+    request<{ rows: BodyTrendRow[] }>(`/api/body-trend?field=all&limit=${limit}`),
 
   // 管理者後台
   adminUsers: () => request<AdminUser[]>('/api/admin/users'),
@@ -208,6 +214,9 @@ export const api = {
       // 品牌品項且 KB 未命中時，份數已依網路營養資訊校正（未觸發為 null）
       web: { query: string; sources: { title: string; url: string }[] } | null;
     }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ entryId, photo }) }),
+  // 辨識 InBody 報告照片（照片僅供辨識、不儲存），回傳數值與前次量測供比較
+  aiInbody: (image: string) =>
+    request<InbodyResult>('/api/ai/inbody', { method: 'POST', body: JSON.stringify({ image }) }),
   // 營養師查詢輔助：問題 → 網路搜尋 → AI 整理成含來源的摘要（營養師／管理者）
   aiResearch: (question: string) =>
     request<{ answer: string; sources: { title: string; url: string }[]; model: string }>('/api/ai/research', {

@@ -246,6 +246,20 @@ if (!userCols2.includes('ai_enabled')) {
   db.exec(`ALTER TABLE users ADD COLUMN ai_enabled INTEGER NOT NULL DEFAULT 0`);
 }
 
+// TDEE 基本資料：身高（cm）／出生年／生理性別／活動量，計算 BMR 與 TDEE 用。
+// 存「出生年」而非年齡，年齡隨年份自動增加；''＝未設定（與 body 欄位同樣以 TEXT 空字串表示）
+if (!userCols2.includes('profile_height')) {
+  db.exec(`ALTER TABLE users ADD COLUMN profile_height TEXT NOT NULL DEFAULT ''`);
+  db.exec(`ALTER TABLE users ADD COLUMN profile_birth_year TEXT NOT NULL DEFAULT ''`);
+  db.exec(`ALTER TABLE users ADD COLUMN profile_gender TEXT NOT NULL DEFAULT '' CHECK (profile_gender IN ('', 'male', 'female'))`);
+  db.exec(`ALTER TABLE users ADD COLUMN profile_activity TEXT NOT NULL DEFAULT ''`);
+}
+// 體重目標：normal＝一般（TDEE 不調整）、cut＝減重（TDEE－goal_kcal）、gain＝增重（TDEE＋goal_kcal）
+if (!userCols2.includes('profile_goal')) {
+  db.exec(`ALTER TABLE users ADD COLUMN profile_goal TEXT NOT NULL DEFAULT 'normal' CHECK (profile_goal IN ('normal', 'cut', 'gain'))`);
+  db.exec(`ALTER TABLE users ADD COLUMN profile_goal_kcal TEXT NOT NULL DEFAULT ''`);
+}
+
 // entry_comments 增加 is_ai 標記（1＝AI 產生的評語）：顯示 AI 標籤、不可被當成本人留言編輯
 const commentCols = (db.pragma('table_info(entry_comments)') as { name: string }[]).map((c) => c.name);
 if (!commentCols.includes('is_ai')) {

@@ -193,6 +193,15 @@ export const aiOcrSchema = z.object({
   photo: z.string().max(300),
 });
 
+// AI：辨識 InBody 報告照片（前端壓縮後以 data URI 上傳，不落地存檔；
+// 上限抓在 express json limit 1mb 之內）
+export const aiInbodySchema = z.object({
+  image: z
+    .string()
+    .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/)
+    .max(1_000_000),
+});
+
 // AI 評語：目前僅支援飲食貼文（entry:<id>）
 export const aiCommentSchema = z.object({
   target: z.string().regex(/^entry:\d{1,10}$/),
@@ -235,3 +244,23 @@ export const goalsSchema = z.object({
 });
 
 export const BODY_FIELDS = ['weight', 'fat', 'waist', 'muscle', 'fatkg'] as const;
+
+// TDEE 活動量（係數定義於前端 domain.ACTIVITY_DEFS：1.2／1.375／1.55／1.725／1.9）
+export const ACTIVITY_KEYS = ['sedentary', 'light', 'moderate', 'high', 'veryhigh'] as const;
+
+// TDEE 基本資料：''＝未設定；數值以字串存（與 body 欄位一致）
+const numField = (min: number, max: number, integer = false) =>
+  z.string().max(10).refine((s) => {
+    if (s === '') return true;
+    const n = Number(s);
+    return isFinite(n) && n >= min && n <= max && (!integer || Number.isInteger(n));
+  });
+export const profileSchema = z.object({
+  height: numField(50, 250),
+  birthYear: numField(1900, 2100, true),
+  gender: z.enum(['', 'male', 'female']),
+  activity: z.enum(['', ...ACTIVITY_KEYS]),
+  // 體重目標：normal＝TDEE 不調整；cut／gain＝TDEE 減／加 goalKcal
+  goal: z.enum(['normal', 'cut', 'gain']),
+  goalKcal: numField(0, 5000, true),
+});

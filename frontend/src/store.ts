@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
 import { isOutdated } from './lib/version';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
-import type { BodyKey, DayData, Goal, NotificationItem, Role, TrendPoint } from './types';
+import type { BodyTrendRow, DayData, Goal, NotificationItem, Profile, Role } from './types';
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
@@ -32,12 +32,14 @@ interface AppState {
   // 營養師點通知後要聚焦的會員貼文（DietitianScreen 讀取後清除）
   proFocus: { memberId: number; date: string; target: string } | null;
   trendOpen: boolean;
-  trendField: BodyKey;
 
   day: DayData;
   marks: Record<string, true>;
   goals: Goal[];
-  trendPoints: TrendPoint[];
+  // 身體數據歷程紀錄（所有指標、以量測日對齊，舊→新）
+  trendRows: BodyTrendRow[];
+  // TDEE 基本資料＋最近體重（null＝尚未載入）
+  profile: Profile | null;
   notifications: NotificationItem[];
   unreadCount: number;
 
@@ -64,6 +66,8 @@ interface AppState {
   refresh: () => Promise<void>;
   loadGoals: () => Promise<void>;
   loadTrend: () => Promise<void>;
+  loadProfile: () => Promise<void>;
+  setProfile: (p: Profile) => void;
   setNickname: (nickname: string) => void;
   loadNotifications: () => Promise<void>;
   readNotification: (id: number) => Promise<void>;
@@ -81,7 +85,6 @@ interface AppState {
   clearProFocus: () => void;
   setGuideTab: (i: number) => void;
   setTrendOpen: (open: boolean) => void;
-  setTrendField: (f: BodyKey) => void;
   setCalMonth: (cm: { y: number; m: number }) => void;
 }
 
@@ -102,12 +105,12 @@ export const useStore = create<AppState>((set, get) => ({
   guideTab: 0,
   proFocus: null,
   trendOpen: false,
-  trendField: 'weight',
 
   day: emptyDay(),
   marks: {},
   goals: [],
-  trendPoints: [],
+  trendRows: [],
+  profile: null,
   notifications: [],
   unreadCount: 0,
 
@@ -130,7 +133,7 @@ export const useStore = create<AppState>((set, get) => ({
     clearAuth();
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
-      day: emptyDay(), marks: {}, goals: [], trendPoints: [], notifications: [], unreadCount: 0,
+      day: emptyDay(), marks: {}, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
   },
@@ -203,9 +206,14 @@ export const useStore = create<AppState>((set, get) => ({
     set({ goals });
   },
   loadTrend: async () => {
-    const { points } = await api.getTrend(get().trendField);
-    set({ trendPoints: points });
+    const { rows } = await api.getBodyTrend();
+    set({ trendRows: rows });
   },
+  loadProfile: async () => {
+    const profile = await api.getProfile();
+    set({ profile });
+  },
+  setProfile: (profile) => set({ profile }),
   loadNotifications: async () => {
     try {
       const { unread, items } = await api.getNotifications();
@@ -236,7 +244,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications()]);
+    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
   setModal: (modal) => set({ modal }),
@@ -268,10 +276,6 @@ export const useStore = create<AppState>((set, get) => ({
   setTrendOpen: (trendOpen) => {
     set({ trendOpen });
     if (trendOpen) void get().loadTrend();
-  },
-  setTrendField: (trendField) => {
-    set({ trendField });
-    void get().loadTrend();
   },
   setCalMonth: (calMonth) => {
     set({ calMonth });

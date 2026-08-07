@@ -147,9 +147,37 @@ export interface Goal {
 // 建立／更新目標時送出的內容（不含 id / setBy）
 export type GoalInput = Omit<Goal, 'id' | 'setBy'>;
 
-export interface TrendPoint {
-  date: string;
-  value: number;
+// 身體數據歷程紀錄：一列＝一次量測日，各指標沒記為 null（InBody 樣式趨勢用）
+export type BodyTrendRow = { date: string } & Record<BodyKey, number | null>;
+
+// InBody 報告辨識結果
+export interface InbodyResult {
+  date: string; // 檢測日期 YYYY-MM-DD，讀不到為 ''
+  time: string; // 檢測時間 HH:MM，讀不到為 ''
+  values: Record<BodyKey, number | null>;
+  score: number | null;
+  // 報告上方的基本資料（補 TDEE 基本資料用）
+  profile: { height: number | null; age: number | null; gender: 'male' | 'female' | null };
+  // 前一次量測（供本次 vs 前次比較），沒有為 null
+  prev: { date: string; body: Record<BodyKey, string> } | null;
+  model: string;
+}
+
+// TDEE 活動量等級
+export type ActivityKey = 'sedentary' | 'light' | 'moderate' | 'high' | 'veryhigh';
+
+// 體重目標：normal＝一般（TDEE 不調整）、cut＝減重（TDEE－goalKcal）、gain＝增重（TDEE＋goalKcal）
+export type GoalMode = 'normal' | 'cut' | 'gain';
+
+// TDEE 基本資料（''＝未設定）＋計算用的最近一次體重紀錄
+export interface Profile {
+  height: string;
+  birthYear: string;
+  gender: '' | 'male' | 'female';
+  activity: '' | ActivityKey;
+  goal: GoalMode;
+  goalKcal: string;
+  weight: { date: string; value: number } | null;
 }
 
 // citizen（駒駒國民）：權限與 member 完全相同，僅名稱不同

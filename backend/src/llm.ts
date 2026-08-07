@@ -96,6 +96,33 @@ export function bufferDataUri(buf: Buffer): string {
   return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }
 
+// 文件照片（InBody 報告等）專用：轉灰階、優先保留解析度再降品質——
+// 報告上的數字比餐點照片細小得多，同樣的位元組預算下灰階＋高解析度的可讀性最好
+export async function documentDataUri(input: Buffer, maxBytes = MAX_IMAGES_TOTAL_BYTES): Promise<string | null> {
+  try {
+    for (const { size, quality } of [
+      { size: 1100, quality: 55 },
+      { size: 1000, quality: 50 },
+      { size: 900, quality: 50 },
+      { size: 800, quality: 48 },
+      { size: 700, quality: 45 },
+      { size: 640, quality: 45 },
+      { size: 512, quality: 42 },
+    ]) {
+      const out = await sharp(input)
+        .rotate() // 依 EXIF 方向轉正後再去除中繼資料（sharp 輸出不帶 EXIF）
+        .resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true })
+        .grayscale()
+        .jpeg({ quality })
+        .toBuffer();
+      if (out.length <= maxBytes) return bufferDataUri(out);
+    }
+    return null; // 極端情況壓不進預算：放棄，讓呼叫端回報
+  } catch {
+    return null; // 不是可解析的圖片
+  }
+}
+
 // 單張照片版（OCR 用）：整個請求只有這一張，可用完整總量預算
 export async function photoDataUri(photoUrl: string): Promise<string | null> {
   const buf = await photoBufferForLlm(photoUrl, MAX_IMAGES_TOTAL_BYTES);
