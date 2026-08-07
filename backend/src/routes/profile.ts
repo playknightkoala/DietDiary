@@ -16,7 +16,8 @@ interface ProfileRow {
 }
 
 // TDEE 基本資料＋計算用的最近一次體重紀錄（BMR/TDEE 公式與活動量係數在前端 domain.ts）
-function profileJson(userId: number) {
+// pro 路由（營養師檢視會員）也共用
+export function profileJson(userId: number) {
   const row = db
     .prepare('SELECT profile_height, profile_birth_year, profile_gender, profile_activity, profile_goal, profile_goal_kcal FROM users WHERE id = ?')
     .get(userId) as ProfileRow;

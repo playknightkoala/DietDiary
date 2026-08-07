@@ -275,6 +275,8 @@ export const api = {
   proSetFollow: (memberId: number, follow: boolean) =>
     request<{ ok: true; followed: boolean }>(`/api/pro/members/${memberId}/follow`, { method: 'PUT', body: JSON.stringify({ follow }) }),
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
+  // 會員的 TDEE 基本資料＋最近體重（營養師頁顯示 BMR/TDEE 與熱量目標比對）
+  proProfile: (memberId: number) => request<Profile>(`/api/pro/members/${memberId}/profile`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
   proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[] }) =>

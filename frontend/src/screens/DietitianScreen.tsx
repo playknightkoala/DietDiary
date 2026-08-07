@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, clampPortion, customDraftsKcal, customDraftsToItems, customItemLabel, customItemsKcal, customItemsToDrafts, dayCustomKcal, dayFoodTotals, dstr, emptyFood, entryAllCustoms, entryHasData, entryKcal, entryMacros, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, round1, sortEntriesNewestFirst, sumFoods, type CustomDraft } from '../lib/domain';
+import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, bmrTdeeOf, clampPortion, customDraftsKcal, customDraftsToItems, customItemLabel, customItemsKcal, customItemsToDrafts, dayCustomKcal, dayFoodTotals, dstr, emptyFood, entryAllCustoms, entryHasData, entryKcal, entryMacros, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, round1, sortEntriesNewestFirst, sumFoods, type CustomDraft } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
 import { PhotoRatingBadge, RATING_DEFS, RATING_KEYS } from '../components/PhotoRatingBadge';
 import { CommentsThread } from '../components/CommentsThread';
@@ -11,7 +11,7 @@ import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
 import { NotificationsModal } from '../components/modals/NotificationsModal';
-import type { CommentTarget, CustomItem, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating } from '../types';
+import type { CommentTarget, CustomItem, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating, Profile } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -41,6 +41,8 @@ export function DietitianScreen() {
   const [memberId, setMemberId] = useState<number | ''>('');
   const [date, setDate] = useState(todayStr);
   const [day, setDay] = useState<DayData | null>(null);
+  // 選定會員的 TDEE 基本資料＋最近體重（BMR/TDEE 顯示與熱量目標比對）
+  const [memberProfile, setMemberProfile] = useState<Profile | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [marks, setMarks] = useState<Record<string, true>>({});
   const [calMonth, setCalMonth] = useState<{ y: number; m: number }>(() => {
@@ -95,6 +97,17 @@ export function DietitianScreen() {
       setError(e instanceof Error ? e.message : '載入會員資料失敗')
     );
   }, [memberId, calMonth, loadGoals, loadMarks]);
+
+  // 選定會員後載入其 TDEE 基本資料（換會員先清空，避免顯示到上一位的 BMR/TDEE）
+  useEffect(() => {
+    setMemberProfile(null);
+    if (memberId === '') return;
+    let cancelled = false;
+    api.proProfile(memberId)
+      .then((p) => { if (!cancelled) setMemberProfile(p); })
+      .catch(() => { /* 載入失敗就不顯示 BMR/TDEE，不擋其他資料 */ });
+    return () => { cancelled = true; };
+  }, [memberId]);
 
   // 選定會員＋日期後載入當日紀錄
   useEffect(() => {
@@ -331,6 +344,9 @@ export function DietitianScreen() {
   const gInfo = goalsFor(date, goals);
   // 六大類份數熱量＋自定義熱量項目
   const totalKcal = kcalOfFood(totals) + dayCustomKcal(entries);
+  // BMR/TDEE：與會員主頁同一套（基本資料＋最近體重；資料不齊為 null 就不顯示）
+  const { bmr, tdee } = bmrTdeeOf(memberProfile);
+  const kcalOver = tdee !== null && totalKcal > tdee;
   const totalExMin = Math.round((day?.exLogs ?? []).reduce((a, l) => a + (Number(l.min) || 0), 0) * 10) / 10;
   const bodyItems = day ? BODY_DEFS.filter((b) => day.body[b.k] !== '') : [];
   const member = members.find((m) => m.id === memberId);
@@ -530,8 +546,16 @@ export function DietitianScreen() {
             <div style={cardStyle}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ fontSize: 16, fontWeight: 900 }}>{dateLabel}</div>
-                <div style={{ fontFamily: 'Outfit', fontSize: 20, fontWeight: 800, color: '#4A7C59' }}>
-                  {totalKcal} <span style={{ fontSize: 12, fontWeight: 500, color: '#8A9284' }}>kcal</span>
+                {/* 與會員主頁同一套機制：有 TDEE 顯示「攝取 / TDEE」與剩餘或超過；沒有就只顯示攝取熱量 */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                  <div style={{ fontFamily: 'Outfit', fontSize: 20, fontWeight: 800, color: kcalOver ? '#C0564A' : '#4A7C59' }}>
+                    {totalKcal} <span style={{ fontSize: 12, fontWeight: 500, color: '#8A9284' }}>{tdee !== null ? `/ ${tdee} kcal` : 'kcal'}</span>
+                  </div>
+                  {tdee !== null && (
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: kcalOver ? '#C0564A' : '#8A9284' }}>
+                      {kcalOver ? `超過目標 ${totalKcal - tdee} kcal` : `距離目標還可吃 ${tdee - totalKcal} kcal`}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -602,6 +626,13 @@ export function DietitianScreen() {
                     ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、') + (day!.bodyTime ? `（${day!.bodyTime}）` : '')
                     : '未記錄'}
                 </div>
+                {/* BMR/TDEE：依會員基本資料與最近體重計算，資料不齊就不顯示 */}
+                {(bmr !== null || tdee !== null) && (
+                  <div>
+                    代謝估算：{[bmr !== null ? `BMR ${bmr} kcal` : '', tdee !== null ? `TDEE ${tdee} kcal` : ''].filter(Boolean).join('、')}
+                    <span style={{ fontSize: 11.5, color: '#8A9284' }}>（依基本資料與最近體重）</span>
+                  </div>
+                )}
               </div>
             </div>
 

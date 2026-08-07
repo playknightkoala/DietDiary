@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { COMMENT_TARGET_RE, DATE_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
 import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
+import { profileJson } from './profile.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
 export const proRouter = Router();
@@ -61,6 +62,13 @@ proRouter.put('/members/:id/alias', (req, res) => {
     ).run(req.userId, member.id, alias);
   }
   return res.json({ ok: true, alias });
+});
+
+// 會員的 TDEE 基本資料＋最近一次體重：營養師頁顯示 BMR/TDEE 與熱量目標比對用
+proRouter.get('/members/:id/profile', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  return res.json(profileJson(member.id));
 });
 
 proRouter.get('/members/:id/days/:date', (req, res) => {
