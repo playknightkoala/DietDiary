@@ -778,9 +778,10 @@ export function DietitianScreen() {
                         key={p.key}
                         onClick={() => setFoodPage(i)}
                         title="無照片的食物項目"
-                        style={{ flex: 'none', width: 58, height: 58, borderRadius: 12, border: i === editCurIdx ? '2.5px solid #4A7C59' : '1.5px solid #E4DFD2', background: '#F0EDE3', color: '#8A9284', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        style={{ flex: 'none', width: 58, height: 58, borderRadius: 12, border: i === editCurIdx ? '2.5px solid #4A7C59' : '1.5px solid #E4DFD2', background: '#F0EDE3', color: '#8A9284', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, lineHeight: 1 }}
                       >
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><path d="M6 20a6 6 0 0 1 12 0" /><circle cx="12" cy="9" r="1.2" /></svg>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><path d="M6 20a6 6 0 0 1 12 0" /><circle cx="12" cy="9" r="1.2" /></svg>
+                        無照片
                       </button>
                     )
                   )}
@@ -788,10 +789,10 @@ export function DietitianScreen() {
                     <button
                       onClick={addEditItemPage}
                       title="新增無照片的食物項目"
-                      style={{ flex: 'none', width: 58, height: 58, border: '1.5px dashed #C9C2B2', borderRadius: 12, background: '#FBFAF6', color: '#8A9284', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0 }}
+                      style={{ flex: 'none', width: 58, height: 58, border: '1.5px dashed #C9C2B2', borderRadius: 12, background: '#FBFAF6', color: '#8A9284', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: 0, lineHeight: 1 }}
                     >
-                      <span style={{ fontSize: 17, lineHeight: 1 }}>＋</span>
-                      項目
+                      <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span>
+                      無照片
                     </button>
                   )}
                 </div>
