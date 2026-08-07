@@ -1,7 +1,8 @@
 import { Router } from 'express';
+import bcrypt from 'bcrypt';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { adminPatchUserSchema } from '../validation.js';
+import { adminPatchUserSchema, adminResetPasswordSchema } from '../validation.js';
 import { deleteUserData } from '../helpers.js';
 import { mailerConfigured, sendAccountApproved } from '../mailer.js';
 
@@ -75,6 +76,17 @@ adminRouter.patch('/users/:id', (req, res) => {
   if (aiEnabled !== undefined) db.prepare('UPDATE users SET ai_enabled = ? WHERE id = ?').run(aiEnabled ? 1 : 0, user.id);
   const row = db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(user.id) as AdminUserRow;
   return res.json(userToJson(row));
+});
+
+// 替會員重置密碼（會員忘記密碼且收不到信時的後台救援管道）
+adminRouter.post('/users/:id/reset-password', async (req, res) => {
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id) as { id: number } | undefined;
+  if (!user) return res.status(404).json({ error: 'not found' });
+  const parsed = adminResetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入至少 6 碼的新密碼' });
+  const hash = await bcrypt.hash(parsed.data.password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  return res.json({ ok: true });
 });
 
 // 刪除會員（連同其所有紀錄與照片）

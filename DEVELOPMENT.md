@@ -93,6 +93,8 @@ docker compose up -d --build
 | POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
 | GET | `/api/auth/me` | 目前登入者 `{username, role, createdAt}` |
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
+| POST | `/api/auth/forgot/send-code` | `{email, captchaId(已驗證)}` → 寄送密碼重設認證碼；帳號不存在／未開通時**靜默回成功**（不寄信、不寫碼，避免帳號探測）|
+| POST | `/api/auth/forgot/reset` | `{email, code, newPassword, confirmPassword}` → 驗證認證碼並重設密碼（成功即消耗認證碼）|
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
 | GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
@@ -109,6 +111,7 @@ docker compose up -d --build
 | GET | `/api/admin/users` | （admin）會員清單 |
 | POST | `/api/admin/users/:id/approve` | （admin）開通帳號 |
 | PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |
+| POST | `/api/admin/users/:id/reset-password` | （admin）`{password}` 替會員重置密碼（會員收不到重設信時的後台救援管道）|
 | DELETE | `/api/admin/users/:id` | （admin）刪除會員與其所有資料 |
 | GET | `/api/pro/members` | （dietitian/admin）會員清單 |
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |

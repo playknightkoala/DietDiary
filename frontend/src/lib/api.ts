@@ -107,6 +107,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code }),
     }),
+  // 忘記密碼：寄重設認證碼（帳號不存在／未開通時後端靜默回成功）→ 驗證後重設
+  forgotSendCode: (email: string, captchaId: string) =>
+    request<{ ok: true }>('/api/auth/forgot/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, captchaId }),
+    }),
+  forgotReset: (email: string, code: string, newPassword: string, confirmPassword: string) =>
+    request<{ ok: true }>('/api/auth/forgot/reset', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, newPassword, confirmPassword }),
+    }),
   register: (username: string, password: string, confirmPassword: string, code: string) =>
     request<{ pending: true; message: string }>('/api/auth/register', {
       method: 'POST',
@@ -240,6 +251,11 @@ export const api = {
     request<{ vote: number }>('/api/ai/feedback', {
       method: 'POST',
       body: JSON.stringify({ kind, ref, vote, ...opts }),
+    }),
+  adminResetPassword: (id: number, password: string) =>
+    request<{ ok: true }>(`/api/admin/users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
     }),
   adminDeleteUser: (id: number) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 

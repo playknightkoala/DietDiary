@@ -41,6 +41,19 @@ export function sendVerifyCode(to: string, code: string) {
   );
 }
 
+export function sendResetCode(to: string, code: string) {
+  return sendMail(
+    to,
+    '【均衡日記】密碼重設認證碼',
+    `<div style="font-family:sans-serif;max-width:480px">
+      <h2 style="color:#4A7C59">均衡日記 密碼重設認證碼</h2>
+      <p>您申請了重設密碼，認證碼為：</p>
+      <div style="font-size:32px;font-weight:800;letter-spacing:8px;color:#2D3B2D">${code}</div>
+      <p style="color:#6B7565">認證碼 10 分鐘內有效。若非您本人操作，請忽略此信，您的密碼不會被變更。</p>
+    </div>`
+  );
+}
+
 export function sendAccountApproved(to: string) {
   return sendMail(
     to,

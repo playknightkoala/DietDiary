@@ -67,6 +67,18 @@ export function AdminScreen() {
       if (!window.confirm(`確定要刪除 ${u.username}？此操作會一併刪除該會員的所有紀錄與照片，且無法復原。`)) return;
       await api.adminDeleteUser(u.id);
     });
+  // 後台救援管道：會員收不到重設認證碼時，由管理者直接設定新密碼再轉告會員
+  const resetPassword = (u: AdminUser) =>
+    run(u.id, async () => {
+      const pw = window.prompt(`為 ${u.username} 設定新密碼（至少 6 碼）：`);
+      if (pw === null) return;
+      if (pw.length < 6) {
+        setError('密碼至少 6 碼');
+        return;
+      }
+      await api.adminResetPassword(u.id, pw);
+      window.alert(`已重設 ${u.username} 的密碼，請轉告會員以新密碼登入。`);
+    });
 
   return (
     <div style={{ minHeight: '100vh', maxWidth: 900, margin: '0 auto', padding: '0 16px 40px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -150,6 +162,11 @@ export function AdminScreen() {
                       停用
                     </button>
                   )
+                )}
+                {!isSelf && (
+                  <button onClick={() => void resetPassword(u)} disabled={busy} style={{ height: 34, padding: '0 12px', border: '1px solid #DDD8CA', borderRadius: 10, background: '#fff', color: '#6B7565', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    重置密碼
+                  </button>
                 )}
                 {!isSelf && (
                   <button onClick={() => void remove(u)} disabled={busy} className="hv-red-tint" style={{ height: 34, padding: '0 12px', border: '1px solid #E0C5C0', borderRadius: 10, background: 'transparent', color: '#C0564A', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>

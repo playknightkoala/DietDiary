@@ -53,6 +53,21 @@ export const registerSchema = z
   })
   .refine((d) => d.password === d.confirmPassword, { message: '兩次輸入的密碼不一致' });
 
+// 忘記密碼：以 Email 認證碼重設（send-code 部分沿用 sendCodeSchema）
+export const forgotResetSchema = z
+  .object({
+    email: emailSchema,
+    code: z.string().trim().regex(/^\d{6}$/),
+    newPassword: z.string().min(6).max(200),
+    confirmPassword: z.string().min(6).max(200),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, { message: '兩次輸入的密碼不一致' });
+
+// 管理者替會員重置密碼
+export const adminResetPasswordSchema = z.object({
+  password: z.string().min(6).max(200),
+});
+
 export const dateSchema = z.string().regex(DATE_RE);
 
 const numText = z.string().max(20); // body/ex values stored as strings, '' = not set

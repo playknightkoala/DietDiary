@@ -6,8 +6,8 @@ import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
 import { db, promoteAdminIfConfigured } from '../db.js';
 import { JWT_SECRET, requireAuth, type Role } from '../middleware/auth.js';
-import { authSchema, changePasswordSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema, verifyCodeSchema } from '../validation.js';
-import { mailerConfigured, sendVerifyCode } from '../mailer.js';
+import { authSchema, changePasswordSchema, forgotResetSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema, verifyCodeSchema } from '../validation.js';
+import { mailerConfigured, sendResetCode, sendVerifyCode } from '../mailer.js';
 
 export const authRouter = Router();
 
@@ -92,27 +92,36 @@ authRouter.post('/send-code', async (req, res) => {
   const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(email);
   if (exists) return res.status(409).json({ error: '此 Email 已註冊過' });
 
-  const prev = db.prepare('SELECT sent_at FROM email_codes WHERE email = ?').get(email) as
-    | { sent_at: number }
-    | undefined;
-  const now = Date.now();
-  if (prev && now - prev.sent_at < CODE_RESEND_MS) {
-    const wait = Math.ceil((CODE_RESEND_MS - (now - prev.sent_at)) / 1000);
-    return res.status(429).json({ error: `請稍候 ${wait} 秒後再重新寄送` });
-  }
-
   // 原子地把驗證碼「認領」給這個 Email：必須已驗證、未過期，且尚未綁定或已綁定同一個 Email。
   // 這是單一 UPDATE（同步、原子），在 await 寄信之前執行，因此並行請求無法用同一張驗證碼寄給不同 Email。
   const claim = db
     .prepare('UPDATE captchas SET email = ? WHERE id = ? AND verified = 1 AND expires_at >= ? AND (email IS NULL OR email = ?)')
-    .run(email, captchaId, now, email);
+    .run(email, captchaId, Date.now(), email);
   if (claim.changes !== 1) {
     return res.status(400).json({ error: '圖形驗證碼已失效或已用於其他 Email，請重新驗證' });
   }
 
+  const issue = await issueEmailCode(email, sendVerifyCode);
+  if (issue) return res.status(issue.status).json({ error: issue.error });
+  return res.json({ ok: true });
+});
+
+// 產生認證碼、原子寫入 email_codes（同一句強制 60 秒節流：寫在 await 之前 → 並行的「同 Email」請求
+// 只有第一個成功，其餘 changes=0 直接擋下），再寄信。避免同一地址被並行濫發、或收到多組只有最後一組有效的碼。
+// 回傳 null＝成功；否則回傳該回應的 status 與錯誤訊息。註冊與忘記密碼共用（信件內容不同）。
+async function issueEmailCode(
+  email: string,
+  mail: (to: string, code: string) => Promise<void>
+): Promise<{ status: number; error: string } | null> {
+  const now = Date.now();
+  const prev = db.prepare('SELECT sent_at FROM email_codes WHERE email = ?').get(email) as
+    | { sent_at: number }
+    | undefined;
+  if (prev && now - prev.sent_at < CODE_RESEND_MS) {
+    const wait = Math.ceil((CODE_RESEND_MS - (now - prev.sent_at)) / 1000);
+    return { status: 429, error: `請稍候 ${wait} 秒後再重新寄送` };
+  }
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
-  // 先原子寫入認證碼並在同一句強制 60 秒節流（寫在 await 之前 → 並行的「同 Email」請求只有第一個成功，
-  // 其餘 changes=0 直接擋下），再寄信。避免同一地址被並行濫發、或收到多組只有最後一組有效的碼。
   const upsert = db
     .prepare(
       `INSERT INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, 0)
@@ -121,16 +130,87 @@ authRouter.post('/send-code', async (req, res) => {
     )
     .run(email, code, now + CODE_TTL_MS, now, now - CODE_RESEND_MS);
   if (upsert.changes !== 1) {
-    return res.status(429).json({ error: '寄送太頻繁，請稍候再試' });
+    return { status: 429, error: '寄送太頻繁，請稍候再試' };
   }
   try {
-    await sendVerifyCode(email, code);
+    await mail(email, code);
   } catch (e) {
-    console.error('send-code mail failed:', e);
+    console.error('send email code failed:', e);
     // 補償：只在 DB 的碼仍等於這次產生的碼時才刪除，避免清掉另一個較新請求寫入的認證碼
     db.prepare('DELETE FROM email_codes WHERE email = ? AND code = ?').run(email, code);
-    return res.status(502).json({ error: '認證信寄送失敗，請確認 Email 是否正確或稍後再試' });
+    return { status: 502, error: '認證信寄送失敗，請確認 Email 是否正確或稍後再試' };
   }
+  return null;
+}
+
+// ---- 忘記密碼：圖形驗證碼 → 寄重設認證碼 → 驗證後重設密碼 ----
+// 寄送重設認證碼。帳號不存在或尚未開通時「靜默回成功」且不寄信、不寫碼——
+// 不讓此端點被當成帳號探測工具，也不寄信打擾非會員信箱。
+authRouter.post('/forgot/send-code', async (req, res) => {
+  const parsed = sendCodeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: '請輸入正確的 Email 與圖形驗證碼' });
+  const { email, captchaId } = parsed.data;
+
+  if (!mailerConfigured()) {
+    return res.status(503).json({ error: '系統尚未設定寄信服務，請聯絡管理員' });
+  }
+
+  // 圖形驗證碼認領（與註冊相同的原子規則）；無論帳號是否存在都先消耗，回應行為才一致
+  const claim = db
+    .prepare('UPDATE captchas SET email = ? WHERE id = ? AND verified = 1 AND expires_at >= ? AND (email IS NULL OR email = ?)')
+    .run(email, captchaId, Date.now(), email);
+  if (claim.changes !== 1) {
+    return res.status(400).json({ error: '圖形驗證碼已失效或已用於其他 Email，請重新驗證' });
+  }
+
+  // 只有「已開通」帳號才真的寄（舊帳號可能非小寫，故不分大小寫比對；email 為 ASCII，NOCASE 足夠）
+  const user = db.prepare('SELECT id, status FROM users WHERE username = ? COLLATE NOCASE').get(email) as
+    | { id: number; status: string }
+    | undefined;
+  if (!user || user.status !== 'active') return res.json({ ok: true });
+
+  const issue = await issueEmailCode(email, sendResetCode);
+  if (issue) return res.status(issue.status).json({ error: issue.error });
+  return res.json({ ok: true });
+});
+
+// 驗證認證碼並重設密碼（成功即消耗認證碼；認證碼本身只會寄給「已開通帳號」的信箱本人）
+authRouter.post('/forgot/reset', async (req, res) => {
+  const parsed = forgotResetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message;
+    return res.status(400).json({
+      error: msg === '兩次輸入的密碼不一致' ? msg : 'Email、認證碼或新密碼（至少 6 碼）格式不正確',
+    });
+  }
+  const { email, code, newPassword } = parsed.data;
+
+  const row = db
+    .prepare('SELECT code, expires_at, attempts FROM email_codes WHERE email = ?')
+    .get(email) as { code: string; expires_at: number; attempts: number } | undefined;
+  if (!row || Date.now() > row.expires_at) {
+    return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
+  }
+  if (row.attempts >= CODE_MAX_ATTEMPTS) {
+    db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
+    return res.status(400).json({ error: '認證碼錯誤次數過多，請重新取得認證碼' });
+  }
+  if (row.code !== code) {
+    db.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE email = ?').run(email);
+    return res.status(400).json({ error: '認證碼錯誤' });
+  }
+
+  const user = db.prepare('SELECT id, status FROM users WHERE username = ? COLLATE NOCASE').get(email) as
+    | { id: number; status: string }
+    | undefined;
+  // 理論上不會發生（未開通／不存在的帳號根本不會寄出認證碼），保險再擋一次
+  if (!user || user.status !== 'active') {
+    return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
   return res.json({ ok: true });
 });
 

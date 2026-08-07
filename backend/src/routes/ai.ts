@@ -351,6 +351,69 @@ function bodyStrFrom(b: Record<string, string>): string {
   return BODY_LABELS.filter(([k]) => (b[k] ?? '') !== '').map(([k, n, u]) => `${n} ${b[k]} ${u}`).join('、');
 }
 
+// ---- 每日消耗量（BMR/TDEE）----
+// 活動量係數與 BMR 公式（Mifflin-St Jeor）與前端 domain.ts 的 ACTIVITY_DEFS / bmrOf 一致——改任一邊要同步改另一邊
+const ACTIVITY_FACTORS: Record<string, [factor: number, name: string]> = {
+  sedentary: [1.2, '無活動（久坐）'], light: [1.375, '輕量活動'], moderate: [1.55, '中度活動'],
+  high: [1.725, '高度活動'], veryhigh: [1.9, '非常高度活動'],
+};
+
+// 使用者的每日消耗量資訊：today 總評用。基本資料不齊或完全沒有體重紀錄時回 null。
+// 體重取 date 當天，否則取 date 之前最近一次（與身體數據行的邏輯一致）。
+// 比較一律由後端算好成文字，模型只需引用，避免小模型算錯數字。
+function tdeeInfoFor(
+  userId: number,
+  date: string,
+  dayBody: Record<string, string>
+): { line: string; target: number } | null {
+  const u = db
+    .prepare(
+      'SELECT profile_height, profile_birth_year, profile_gender, profile_activity, profile_goal, profile_goal_kcal FROM users WHERE id = ?'
+    )
+    .get(userId) as
+    | { profile_height: string; profile_birth_year: string; profile_gender: string; profile_activity: string; profile_goal: string; profile_goal_kcal: string }
+    | undefined;
+  if (!u) return null;
+  const act = ACTIVITY_FACTORS[u.profile_activity];
+  const height = parseFloat(u.profile_height);
+  const birthYear = parseInt(u.profile_birth_year, 10);
+  if (!act || !isFinite(height) || !isFinite(birthYear) || (u.profile_gender !== 'male' && u.profile_gender !== 'female')) {
+    return null;
+  }
+  let weight = parseFloat(dayBody.weight);
+  if (!isFinite(weight)) {
+    const row = db
+      .prepare(`SELECT body_weight FROM days WHERE user_id = ? AND date <= ? AND body_weight != '' ORDER BY date DESC LIMIT 1`)
+      .get(userId, date) as { body_weight: string } | undefined;
+    weight = row ? parseFloat(row.body_weight) : NaN;
+  }
+  if (!isFinite(weight)) return null;
+
+  const age = Number(date.slice(0, 4)) - birthYear;
+  const bmr = Math.round(9.99 * weight + 6.25 * height - 4.92 * age + (166 * (u.profile_gender === 'male' ? 1 : 0) - 161));
+  const base = Math.round(bmr * act[0]);
+  const goalKcal = parseInt(u.profile_goal_kcal, 10);
+  const adj = (u.profile_goal === 'cut' || u.profile_goal === 'gain') && isFinite(goalKcal) && goalKcal > 0
+    ? (u.profile_goal === 'cut' ? -goalKcal : goalKcal)
+    : 0;
+  const target = base + adj;
+  let line = `基礎代謝（BMR）約 ${bmr} 大卡、每日總消耗（TDEE，活動量：${act[1]}）約 ${base} 大卡`;
+  if (adj !== 0) {
+    line += `；使用者的體重目標為${adj < 0 ? '減重' : '增重'}（每日${adj < 0 ? '減少' : '增加'} ${Math.abs(adj)} 大卡），因此目標攝取約 ${target} 大卡`;
+  } else {
+    line += `；目標攝取約 ${target} 大卡`;
+  }
+  return { line, target };
+}
+
+// 當日總攝取 vs 目標攝取的比較（後端算好；±10% 內視為接近）
+function kcalVsTargetZh(eaten: number, target: number): string {
+  const diff = eaten - target;
+  if (Math.abs(diff) <= target * 0.1) return `今天總攝取約 ${eaten} 大卡，與目標攝取相近，大致合適`;
+  if (diff > 0) return `今天總攝取約 ${eaten} 大卡，超過目標攝取約 ${diff} 大卡`;
+  return `今天總攝取約 ${eaten} 大卡，低於目標攝取約 ${-diff} 大卡`;
+}
+
 // 身體數據：優先用當天，否則找 date 當天或之前「最近一次」有量測的紀錄（都沒有回 '未記錄'）
 function bodyLineFor(userId: number, date: string, dayBody: Record<string, string>, dayBodyTime: string): string {
   const today = bodyStrFrom(dayBody);
@@ -816,11 +879,14 @@ aiRouter.post('/daily', async (req, res) => {
         .join('；')
     : '未記錄';
   const bodyStr = bodyLineFor(req.userId, date, day.body, day.bodyTime);
+  const dayKcal = kcalOfFood(dayTotal) + dayCustomKcal;
+  // 每日消耗量（BMR/TDEE/體重目標）：基本資料齊全才提供；比較由後端算好
+  const tdee = tdeeInfoFor(req.userId, date, day.body);
 
   const context =
     `以下是使用者在 ${date} 這一天的完整飲食與健康紀錄，請據此給出「一整天」的綜合總評。\n\n` +
     `【當天各餐】\n${mealLines}\n\n` +
-    `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${kcalOfFood(dayTotal) + dayCustomKcal} 大卡${
+    `【當天六大類總份數】${foodSummaryZh(dayTotal)}（全天約 ${dayKcal} 大卡${
       dayCustomKcal ? `，其中自定義熱量項目 ${dayCustomKcal} 大卡——這部分不屬於六大類份數，與目標比對時請勿當成某類份數` : ''
     }）\n` +
     `【當天三大營養素】${macrosZh(macrosOf(dayTotal, entries.flatMap((e) => entryAllCustoms(e))))}` +
@@ -833,7 +899,10 @@ aiRouter.post('/daily', async (req, res) => {
         : ''
     }\n` +
     `【運動】${exStr}\n` +
-    `【身體數據】${bodyStr}\n`;
+    `【身體數據】${bodyStr}\n` +
+    (tdee
+      ? `【每日消耗量與熱量目標（系統已算好，請直接採用，不要自行加減或重算）】${tdee.line}。${kcalVsTargetZh(dayKcal, tdee.target)}\n`
+      : '');
 
   const system =
     '你是一位親切、專業的營養師，正在均衡飲食日記 App 中替使用者做「一整天」的飲食與健康總評。' +
@@ -852,6 +921,10 @@ aiRouter.post('/daily', async (req, res) => {
     '（例如蔬菜已達標或超標時，不要寫「多吃蔬菜」「多加深綠色葉菜」「多一些生菜或鮮蔬」「增加蔬菜種類」——' +
     '「多吃蔬菜」是營養師最常見的反射式建議，蔬菜夠了就是夠了）。' +
     '同一個餐別（例如晚餐）可能分成多筆紀錄（分次吃或補記），每一筆都要分開納入考量，不要漏掉或混為一談。' +
+    '若提供了【每日消耗量與熱量目標】，請把「總攝取 vs 目標攝取」的比較自然納入總評，一律以系統算好的結果為準：' +
+    '目標為減重卻明顯超過目標攝取時要溫和提醒；明顯低於目標攝取時，先想想是否只是餐點少記了' +
+    '（例如整天只記了一兩餐），記錄看起來完整才提醒攝取偏低——目標是減重也不建議吃得遠低於目標攝取，過度節食不利健康也難持續。' +
+    '未提供每日消耗量資訊時，不要自行推算或臆測 BMR、TDEE。' +
     '身體數據若只有較早日期的紀錄，當作參考背景即可，不要當成今天的數字。' +
     '批評對事不對人，不要讓使用者因為誠實記錄而覺得被責備。' +
     '請用繁體中文、溫暖鼓勵的口吻，寫成通順的 3～5 句短文（約 120～250 字），直接寫內容，不要用標題或條列、不要逐項複述所有數字。';

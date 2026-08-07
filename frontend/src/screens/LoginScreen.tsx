@@ -14,7 +14,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function LoginScreen() {
   const loginSuccess = useStore((s) => s.loginSuccess);
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  // forgot＝忘記密碼：帳號自動帶入登入頁輸入的內容（也可自行修改），寄認證碼驗證後重設密碼
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [username, setUsername] = useState(() => getRememberedAccount());
   const [rememberAccount, setRememberAccount] = useState(() => getRememberedAccount() !== '');
   const [autoLogin, setAutoLogin] = useState(false);
@@ -38,9 +39,10 @@ export function LoginScreen() {
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
-  // 圖形驗證碼確認 / 寄送認證碼的前置條件：Email 格式正確 + 密碼 ≥6 碼 + 兩次密碼一致
-  const prereqsOk =
-    EMAIL_RE.test(username.trim()) && password.length >= 6 && confirmPassword === password;
+  // 圖形驗證碼確認 / 寄送認證碼的前置條件：
+  // 註冊＝Email 格式正確 + 密碼 ≥6 碼 + 兩次密碼一致；忘記密碼＝Email 格式正確即可（新密碼於驗證後才輸入）
+  const emailOk = EMAIL_RE.test(username.trim());
+  const prereqsOk = mode === 'forgot' ? emailOk : emailOk && password.length >= 6 && confirmPassword === password;
 
   const loadCaptcha = async () => {
     setCaptchaAnswer('');
@@ -56,7 +58,7 @@ export function LoginScreen() {
   };
 
   useEffect(() => {
-    if (mode === 'register') void loadCaptcha();
+    if (mode !== 'login') void loadCaptcha();
   }, [mode]);
 
   const startCooldown = (sec: number) => {
@@ -70,7 +72,7 @@ export function LoginScreen() {
     }, 1000);
   };
 
-  const switchMode = (next: 'login' | 'register') => {
+  const switchMode = (next: 'login' | 'register' | 'forgot') => {
     setMode(next);
     setError('');
     setNotice('');
@@ -95,7 +97,7 @@ export function LoginScreen() {
     try {
       await api.verifyCaptcha(captchaId, captchaAnswer.trim());
       setCaptchaVerified(true);
-      setNotice('圖形驗證碼確認成功，請寄送 Email 認證碼');
+      setNotice(mode === 'forgot' ? '圖形驗證碼確認成功，請寄送密碼重設認證碼' : '圖形驗證碼確認成功，請寄送 Email 認證碼');
     } catch (e) {
       setError(e instanceof Error ? e.message : '圖形驗證碼確認失敗，請再試一次');
       void loadCaptcha(); // 答錯即作廢，換一張新的
@@ -110,11 +112,13 @@ export function LoginScreen() {
     setNotice('');
     setSendingCode(true);
     try {
-      await api.sendCode(username.trim(), captchaId);
+      if (mode === 'forgot') await api.forgotSendCode(username.trim(), captchaId);
+      else await api.sendCode(username.trim(), captchaId);
       setCodeSent(true);
       setCode('');
       setCodeVerified(false);
-      setNotice('認證碼已寄出，請至信箱查收（10 分鐘內有效）');
+      // 忘記密碼：帳號不存在／未開通時後端也回成功但不寄信（避免探測帳號），提示措辭保持中性
+      setNotice(mode === 'forgot' ? '若此 Email 為已開通的帳號，認證碼已寄出（10 分鐘內有效）' : '認證碼已寄出，請至信箱查收（10 分鐘內有效）');
       startCooldown(60);
     } catch (e) {
       const msg = e instanceof Error ? e.message : '認證碼寄送失敗，請再試一次';
@@ -137,7 +141,7 @@ export function LoginScreen() {
     try {
       await api.verifyCode(username.trim(), code.trim());
       setCodeVerified(true);
-      setNotice('認證碼確認成功，請按下方「註冊」完成');
+      setNotice(mode === 'forgot' ? '認證碼確認成功，請設定新密碼' : '認證碼確認成功，請按下方「註冊」完成');
     } catch (e) {
       setError(e instanceof Error ? e.message : '認證碼確認失敗，請再試一次');
     } finally {
@@ -150,9 +154,27 @@ export function LoginScreen() {
     setError('');
     setNotice('');
     const account = username.trim();
-    if (!account || !password) {
-      setError('請輸入帳號與密碼');
+    if (!account || (mode !== 'forgot' && !password)) {
+      setError(mode === 'forgot' ? '請輸入帳號' : '請輸入帳號與密碼');
       return;
+    }
+    if (mode === 'forgot') {
+      if (!EMAIL_RE.test(account)) {
+        setError('帳號必須是有效的 Email');
+        return;
+      }
+      if (!codeVerified) {
+        setError('請先按「確認」驗證 Email 認證碼');
+        return;
+      }
+      if (password.length < 6) {
+        setError('新密碼至少 6 碼');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('兩次輸入的密碼不一致');
+        return;
+      }
     }
     if (mode === 'register') {
       if (!EMAIL_RE.test(account)) {
@@ -182,10 +204,14 @@ export function LoginScreen() {
         const res = await api.login(account, password, autoLogin);
         setRememberedAccount(rememberAccount ? account : null);
         loginSuccess(res.token, res.username, res.role, autoLogin);
-      } else {
+      } else if (mode === 'register') {
         const res = await api.register(account, password, confirmPassword, code.trim());
         switchMode('login');
         setNotice(res.message || '註冊成功！請等待管理員開通帳號。');
+      } else {
+        await api.forgotReset(account, code.trim(), password, confirmPassword);
+        switchMode('login');
+        setNotice('密碼已重設，請以新密碼登入');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '發生錯誤，請再試一次');
@@ -217,7 +243,7 @@ export function LoginScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={labelStyle}>{mode === 'login' ? '帳號' : 'Email（帳號）'}</label>
             <input
-              type={mode === 'register' ? 'email' : 'text'}
+              type={mode === 'login' ? 'text' : 'email'}
               placeholder="you@example.com"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -225,10 +251,17 @@ export function LoginScreen() {
               style={inputStyle}
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={labelStyle}>密碼</label>
-            <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} style={inputStyle} />
-          </div>
+          {mode === 'forgot' && (
+            <div style={{ fontSize: 12.5, color: '#6B7565', lineHeight: 1.6 }}>
+              輸入註冊時的 Email，通過圖形驗證後我們會寄送認證碼；認證成功即可設定新密碼。
+            </div>
+          )}
+          {mode !== 'forgot' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={labelStyle}>密碼</label>
+              <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} style={inputStyle} />
+            </div>
+          )}
           {mode === 'login' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', gap: 20 }}>
@@ -259,11 +292,13 @@ export function LoginScreen() {
             </div>
           )}
           {mode === 'register' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={labelStyle}>確認密碼</label>
+              <input type="password" placeholder="再輸入一次密碼" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+            </div>
+          )}
+          {mode !== 'login' && (
             <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={labelStyle}>確認密碼</label>
-                <input type="password" placeholder="再輸入一次密碼" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
-              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>圖形驗證碼</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
@@ -314,7 +349,9 @@ export function LoginScreen() {
                     ? captchaVerified
                       ? '圖形驗證碼已確認'
                       : '不分大小寫，點擊圖片可更換'
-                    : '請先填寫 Email 與兩次相同的密碼（至少 6 碼）'}
+                    : mode === 'forgot'
+                      ? '請先輸入註冊時的 Email'
+                      : '請先填寫 Email 與兩次相同的密碼（至少 6 碼）'}
                 </div>
               </div>
               {captchaVerified && (
@@ -374,7 +411,9 @@ export function LoginScreen() {
                 )}
                 <div style={{ fontSize: 12, color: '#6B7565' }}>
                   {codeVerified
-                    ? 'Email 認證碼已確認，可按下方「註冊」完成'
+                    ? mode === 'forgot'
+                      ? 'Email 認證碼已確認，請在下方設定新密碼'
+                      : 'Email 認證碼已確認，可按下方「註冊」完成'
                     : codeSent
                       ? '請輸入信箱收到的 6 位數認證碼並按「確認」'
                       : '請按「寄送認證碼」，認證碼將寄到你的 Email'}
@@ -383,11 +422,23 @@ export function LoginScreen() {
               )}
             </>
           )}
+          {mode === 'forgot' && codeVerified && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={labelStyle}>新密碼</label>
+                <input type="password" placeholder="至少 6 碼" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={labelStyle}>確認新密碼</label>
+                <input type="password" placeholder="再輸入一次新密碼" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" style={inputStyle} />
+              </div>
+            </>
+          )}
           {error && <div style={{ fontSize: 13, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
           {notice && <div style={{ fontSize: 13, color: '#4A7C59', fontWeight: 700 }}>{notice}</div>}
           {mode === 'register' && <div style={{ fontSize: 12.5, color: '#6B7565' }}>密碼至少 6 碼。註冊後需等待管理員開通帳號，開通後才能登入。</div>}
           {(() => {
-            const disabled = busy || (mode === 'register' && !codeVerified);
+            const disabled = busy || (mode !== 'login' && !codeVerified);
             return (
               <button
                 type="submit"
@@ -395,12 +446,16 @@ export function LoginScreen() {
                 disabled={disabled}
                 style={{ height: 50, border: 'none', borderRadius: 14, background: '#4A7C59', color: '#fff', fontSize: 16, fontWeight: 700, cursor: disabled ? 'default' : 'pointer', marginTop: 4, boxShadow: '0 6px 16px rgba(74,124,89,.28)', opacity: disabled ? 0.55 : 1 }}
               >
-                {mode === 'login' ? '登入' : '註冊'}
+                {mode === 'login' ? '登入' : mode === 'register' ? '註冊' : '重設密碼'}
               </button>
             );
           })()}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-            <a href="#" onClick={(e) => { e.preventDefault(); setNotice(''); setError('請聯絡管理員重設密碼'); }} style={{ textDecoration: 'none' }}>忘記密碼？</a>
+            {mode === 'login' ? (
+              <a href="#" onClick={(e) => { e.preventDefault(); switchMode('forgot'); }} style={{ textDecoration: 'none' }}>忘記密碼？</a>
+            ) : (
+              <span />
+            )}
             <a
               href="#"
               onClick={(e) => { e.preventDefault(); switchMode(mode === 'login' ? 'register' : 'login'); }}
