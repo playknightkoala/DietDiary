@@ -2,11 +2,9 @@ import { useStore } from '../store';
 import { KCAL, bmrTdeeOf, dayCustomKcal, dayFoodTotals, dayMacros, goalsFor, kcalOfFood, round1 } from '../lib/domain';
 import type { Entry, FoodKey } from '../types';
 
-// 熱量卡＋喝水卡（左欄上方 2 欄 grid）
-export function KcalWaterRow() {
+// 熱量卡（今日攝取熱量；TDEE 當作當日目標）。與喝水卡在自定義順序相鄰時由 MainScreen 併成一列
+export function KcalCard() {
   const day = useStore((s) => s.day);
-  const selected = useStore((s) => s.selected);
-  const goals = useStore((s) => s.goals);
   const profile = useStore((s) => s.profile);
 
   // 六大類份數熱量＋自定義熱量項目（含糖飲料、酒精等）
@@ -15,41 +13,50 @@ export function KcalWaterRow() {
   const { tdee } = bmrTdeeOf(profile);
   const kcalOver = tdee !== null && totalKcal > tdee;
   const kcalPct = tdee !== null ? Math.min(100, (totalKcal / tdee) * 100) + '%' : '0%';
+
+  return (
+    <div style={{ background: '#4A7C59', color: '#F4F1EA', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 13, opacity: 0.85 }}>今日攝取熱量</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <span style={{ fontFamily: 'Outfit', fontSize: 34, fontWeight: 800 }}>{totalKcal}</span>
+        <span style={{ fontSize: 14, opacity: 0.8 }}>{tdee !== null ? `/ ${tdee} kcal` : 'kcal'}</span>
+      </div>
+      {tdee !== null ? (
+        <>
+          <div style={{ height: 7, borderRadius: 99, background: 'rgba(244,241,234,.25)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: 99, background: kcalOver ? '#F0B4A6' : '#F4F1EA', width: kcalPct, transition: 'width .3s' }} />
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.9, fontWeight: kcalOver ? 800 : 400, color: kcalOver ? '#F0B4A6' : undefined }}>
+            {kcalOver ? `超過目標 ${totalKcal - tdee} kcal` : `距離目標還可吃 ${tdee - totalKcal} kcal`}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12, opacity: 0.75 }}>依各餐份數自動累計</div>
+      )}
+    </div>
+  );
+}
+
+// 喝水卡
+export function WaterCard() {
+  const day = useStore((s) => s.day);
+  const selected = useStore((s) => s.selected);
+  const goals = useStore((s) => s.goals);
+
   const { water: waterGoal } = goalsFor(selected, goals);
   const waterOver = day.water > waterGoal * 1.2;
   const waterPct = Math.min(100, (day.water / waterGoal) * 100) + '%';
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <div style={{ background: '#4A7C59', color: '#F4F1EA', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontSize: 13, opacity: 0.85 }}>今日攝取熱量</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-          <span style={{ fontFamily: 'Outfit', fontSize: 34, fontWeight: 800 }}>{totalKcal}</span>
-          <span style={{ fontSize: 14, opacity: 0.8 }}>{tdee !== null ? `/ ${tdee} kcal` : 'kcal'}</span>
-        </div>
-        {tdee !== null ? (
-          <>
-            <div style={{ height: 7, borderRadius: 99, background: 'rgba(244,241,234,.25)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 99, background: kcalOver ? '#F0B4A6' : '#F4F1EA', width: kcalPct, transition: 'width .3s' }} />
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: kcalOver ? 800 : 400, color: kcalOver ? '#F0B4A6' : undefined }}>
-              {kcalOver ? `超過目標 ${totalKcal - tdee} kcal` : `距離目標還可吃 ${tdee - totalKcal} kcal`}
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 12, opacity: 0.75 }}>依各餐份數自動累計</div>
-        )}
+    <div style={{ background: '#FFFFFF', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 8, border: '1.5px solid #E4DFD2' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 13, color: '#6B7565' }}>喝水</div>
+        <div style={{ fontSize: 12, color: waterOver ? '#C0564A' : '#5B8DB8', fontWeight: 700 }}>{day.water} / {waterGoal} ml</div>
       </div>
-      <div style={{ background: '#FFFFFF', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 8, border: '1.5px solid #E4DFD2' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 13, color: '#6B7565' }}>喝水</div>
-          <div style={{ fontSize: 12, color: waterOver ? '#C0564A' : '#5B8DB8', fontWeight: 700 }}>{day.water} / {waterGoal} ml</div>
-        </div>
-        <div style={{ height: 10, borderRadius: 99, background: '#E9EFF4', overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: 99, background: '#5B8DB8', width: waterPct, transition: 'width .3s' }} />
-        </div>
-        <div style={{ fontSize: 12, color: '#8A9284' }}>目標 {waterGoal} ml</div>
+      <div style={{ height: 10, borderRadius: 99, background: '#E9EFF4', overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 99, background: '#5B8DB8', width: waterPct, transition: 'width .3s' }} />
       </div>
+      <div style={{ fontSize: 12, color: '#8A9284' }}>目標 {waterGoal} ml</div>
     </div>
   );
 }
@@ -202,7 +209,7 @@ export function FoodGroupsCard() {
         return (
           <div key={cfg.gkey} style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 0 2px', borderTop: '1px solid #F0EDE3' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, flex: 'none', borderRadius: 10, background: cfg.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: cfg.color, fontWeight: 900 }}>{cfg.glyph}</div>
+              <div style={{ width: 32, height: 32, flex: 'none', borderRadius: 10, background: 'transparent', border: `1.8px solid ${cfg.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: cfg.color, fontWeight: 900 }}>{cfg.glyph}</div>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 700 }}>{cfg.name}</span>
                 <span style={{ fontSize: 12, color: '#8A9284' }}>{kcal} kcal</span>

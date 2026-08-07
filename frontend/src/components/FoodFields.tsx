@@ -59,7 +59,7 @@ export function FoodFields({ foodStr, onChange, onBlur }: FoodFieldsProps) {
             title={`${g.note}・點我看「一份是多少？」`}
             style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}
           >
-            <div style={{ width: 46, height: 46, borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
+            <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'transparent', border: `2px solid ${g.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: '#2D3B2D' }}>{g.name}</span>
           </button>
           {g.fields.map((f) => (
@@ -101,7 +101,7 @@ export function FoodSummaryGrid({ food }: { food: Food }) {
           title={`${g.name}：${filled.map((f) => `${shortLabel(f.label)} ${food[f.key]} 份`).join('、')}`}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}
         >
-          <div style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: g.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13.5, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
+          <div style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: 'transparent', border: `1.8px solid ${g.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13.5, color: g.color, fontWeight: 900 }}>{g.glyph}</div>
           <span style={{ fontFamily: 'Outfit', fontSize: 15, fontWeight: 800, color: '#2D3B2D' }}>{total}</span>
         </div>
       ))}
@@ -251,8 +251,10 @@ export function CustomItemsEditor({
   );
 }
 
-// 唯讀版三大營養素列：動態牆貼文與營養師檢視共用（醣類／蛋白質／脂質公克數，依份數與自定義換算）
+// 唯讀版三大營養素列：動態牆貼文與營養師檢視共用（醣類／蛋白質／脂質公克數，依份數與自定義換算）。
+// 預設收起，點「三大營養素」隨時展開／收起（逐貼文各自記憶展開狀態）。
 export function MacroSummaryRow({ macros }: { macros: Macros }) {
+  const [open, setOpen] = useState(false);
   if (!macros.carb && !macros.protein && !macros.fat) return null;
   const parts: { name: string; grams: number; color: string }[] = [
     { name: '醣類', grams: macros.carb, color: '#C0564A' },
@@ -260,15 +262,29 @@ export function MacroSummaryRow({ macros }: { macros: Macros }) {
     { name: '脂質', grams: macros.fat, color: '#C77B4A' },
   ];
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 14px', fontSize: 12, color: '#6B7565' }}>
-      {parts.map((p) => (
-        <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flex: 'none' }} />
-          {p.name} <span style={{ fontFamily: 'Outfit', fontWeight: 800, color: '#4A5A4A' }}>{p.grams}</span> g
-        </span>
-      ))}
-      {macros.sugar > 0 && (
-        <span style={{ color: '#A8433A' }}>（含精緻糖 <span style={{ fontFamily: 'Outfit', fontWeight: 800 }}>{macros.sugar}</span> g）</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title={open ? '收起三大營養素' : '展開三大營養素'}
+        style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', padding: 0, fontSize: 12, fontWeight: 700, color: '#8A9284', cursor: 'pointer' }}
+      >
+        三大營養素
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 14px', fontSize: 12, color: '#6B7565' }}>
+          {parts.map((p) => (
+            <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flex: 'none' }} />
+              {p.name} <span style={{ fontFamily: 'Outfit', fontWeight: 800, color: '#4A5A4A' }}>{p.grams}</span> g
+            </span>
+          ))}
+          {macros.sugar > 0 && (
+            <span style={{ color: '#A8433A' }}>（含精緻糖 <span style={{ fontFamily: 'Outfit', fontWeight: 800 }}>{macros.sugar}</span> g）</span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -276,17 +292,21 @@ export function MacroSummaryRow({ macros }: { macros: Macros }) {
 
 // 營養師調整前的會員原始紀錄（動態牆貼文、營養師檢視與編輯視窗共用）：
 // 調整後的數值為主要顯示，這裡逐頁（每張照片／每個無照片項目）列出原始內容；
-// 帶入 current（目前的 entry）時，被調整過的頁面會顯示「調整前 → 調整後」對照，
-// 沒動過的頁面維持一行灰字，這樣看得出「是哪個食物」被改了什麼
+// 帶入 current（目前的 entry）時只列「有被調整」的頁面（調整前 → 調整後對照），
+// 沒動過的頁面不顯示；若所有頁面都沒差異（例如營養師編輯器剛開啟時）退回列出全部當參考。
+// collapsible＝預設收起、點標題展開／收起（動態牆貼文用，與三大營養素一致）。
 export function OrigSummary({
   orig,
   current,
   label = '調整前的原始紀錄',
+  collapsible = false,
 }: {
   orig: EntryOrig;
   current?: Pick<Entry, 'photos' | 'photoFoods' | 'photoCustoms' | 'items'>;
   label?: string;
+  collapsible?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const t = origTotals(orig);
   const pageText = (food: Food | undefined, customs: CustomItem[]): string => {
     const parts = [
@@ -344,16 +364,19 @@ export function OrigSummary({
     rows.push({ id: 'legacy', before: pageText(orig.food, []), after: null });
   }
 
-  return (
+  // 只顯示有被調整的頁面（after !== null）；全部無差異時退回列出全部（編輯器剛開啟時的參考用途）
+  const shown = current && rows.some((r) => r.after !== null) ? rows.filter((r) => r.after !== null) : rows;
+
+  const box = (
     <div style={{ background: '#FBFAF6', border: '1px dashed #DDD8CA', borderRadius: 11, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 7 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: '#8A9284' }}>
-        {label}
+        {collapsible ? '調整前合計' : label}
         <span style={{ fontFamily: 'Outfit', fontWeight: 700, color: '#A39C8C', marginLeft: 6 }}>{t.kcal} kcal</span>
       </div>
-      {rows.length === 0 && (
+      {shown.length === 0 && (
         <div style={{ fontSize: 12, color: '#6B7565', lineHeight: 1.6 }}>（原本未記份數）</div>
       )}
-      {rows.map((r) => (
+      {shown.map((r) => (
         <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           {r.thumb ? (
             <div
@@ -382,6 +405,23 @@ export function OrigSummary({
           </div>
         </div>
       ))}
+    </div>
+  );
+
+  if (!collapsible) return box;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title={open ? `收起${label}` : `展開${label}`}
+        style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', padding: 0, fontSize: 12, fontWeight: 700, color: '#8A9284', cursor: 'pointer' }}
+      >
+        {label}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && box}
     </div>
   );
 }

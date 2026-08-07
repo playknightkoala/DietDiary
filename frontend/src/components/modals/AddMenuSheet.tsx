@@ -4,10 +4,11 @@ import { MEALS, nowHM } from '../../lib/domain';
 import { useStore } from '../../store';
 import { CloseButton } from './ModalShell';
 
-// 身體數據改由「身體數據」卡片右上角直接記錄
 const EXTRA_OPTIONS = [
   { name: '喝水', glyph: '水', tint: '#E5EBF1', color: '#5B8DB8', modal: 'logWater' as const },
   { name: '運動', glyph: '動', tint: '#F3E7D8', color: '#C77B4A', modal: 'logEx' as const },
+  // 身體數據也可從「身體數據」卡片右上角記錄，這裡是快速入口
+  { name: '身體數據', glyph: '身', tint: '#E3EBD9', color: '#4A7C59', modal: 'logBody' as const },
 ];
 
 export function AddMenuSheet() {

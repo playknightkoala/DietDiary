@@ -6,7 +6,28 @@ import type { BodyTrendRow, DayData, Goal, NotificationItem, Profile, Role } fro
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
-  | 'calendar' | 'goals' | 'account' | 'notify' | null;
+  | 'calendar' | 'goals' | 'account' | 'notify' | 'layout' | 'bodyView' | null;
+
+// ---- 主頁總覽卡片自定義（順序＋顯示與否；存在此裝置的 localStorage）----
+// 身體數據已移到獨立視窗（漢堡選單 → 身體數據），不在主頁卡片清單內
+export type CardKey = 'kcal' | 'water' | 'macro' | 'groups';
+export interface LayoutConfig { order: CardKey[]; hidden: CardKey[] }
+export const DEFAULT_CARD_ORDER: CardKey[] = ['kcal', 'water', 'macro', 'groups'];
+const LAYOUT_KEY = 'dd_layout';
+
+// 讀取並清洗：只留合法卡片鍵、缺漏的補到最後（升級後新增卡片自動出現）
+function loadLayout(): LayoutConfig {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') as { order?: unknown; hidden?: unknown };
+    const valid = (v: unknown): v is CardKey => typeof v === 'string' && (DEFAULT_CARD_ORDER as string[]).includes(v);
+    const order = (Array.isArray(raw.order) ? raw.order.filter(valid) : []);
+    for (const k of DEFAULT_CARD_ORDER) if (!order.includes(k)) order.push(k);
+    const hidden = Array.isArray(raw.hidden) ? raw.hidden.filter(valid) : [];
+    return { order, hidden };
+  } catch {
+    return { order: [...DEFAULT_CARD_ORDER], hidden: [] };
+  }
+}
 
 // diary＝個人日記；admin＝管理者後台；pro＝營養師頁面
 export type ViewKey = 'diary' | 'admin' | 'pro';
@@ -75,6 +96,14 @@ interface AppState {
   loadMe: () => Promise<void>;
   loadAll: () => Promise<void>;
 
+  // 主頁卡片自定義（順序＋顯示與否）
+  layout: LayoutConfig;
+  setLayout: (layout: LayoutConfig) => void;
+
+  // 從身體數據總覽開啟記錄視窗＝true：記錄視窗「上一步／完成／✕」後回到總覽，而不是直接關閉
+  logBodyReturn: boolean;
+  openLogBody: (fromBodyView?: boolean) => void;
+
   setModal: (modal: ModalKey) => void;
   openLogFood: (entryId: number) => Promise<void>;
   openCalendar: () => void;
@@ -138,7 +167,7 @@ export const useStore = create<AppState>((set, get) => ({
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
     });
   },
-  setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false }),
+  setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false, logBodyReturn: false }),
 
   selectDate: (date, setAnchor = false) => {
     set(setAnchor ? { selected: date, weekAnchor: date } : { selected: date });
@@ -249,6 +278,15 @@ export const useStore = create<AppState>((set, get) => ({
     await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
+  layout: loadLayout(),
+  setLayout: (layout) => {
+    set({ layout });
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* 私密模式等寫入失敗：僅本次生效 */ }
+  },
+
+  logBodyReturn: false,
+  openLogBody: (fromBodyView = false) => set({ modal: 'logBody', logBodyReturn: fromBodyView }),
+
   setModal: (modal) => set({ modal }),
   // 開啟記餐編輯視窗前，先向伺服器抓最新當日資料再打開：
   // 編輯視窗會把 store 裡的紀錄快照成本地狀態、按「完成」時整筆寫回，
@@ -269,7 +307,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ modal: 'calendar', calMonth: { y, m: m - 1 } });
     void get().loadMonthMarks(y, m - 1);
   },
-  closeModal: () => set({ modal: null, editingId: null, calMonth: null }),
+  closeModal: () => set({ modal: null, editingId: null, calMonth: null, logBodyReturn: false }),
   openGuide: (tab = 0) => set({ guideOpen: true, guideTab: tab }),
   closeGuide: () => set({ guideOpen: false }),
   // 營養師點通知：切到營養師頁並聚焦該會員的該則貼文
