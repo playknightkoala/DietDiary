@@ -64,6 +64,7 @@ docker compose up -d --build
 - **開通**：由管理者在「管理者後台」按「開通」（不再寄開通連結信）；開通時若有設定 SMTP 會寄通知信給使用者。後台也可調整角色、停用或刪除會員（連同其所有紀錄與照片）。
 - **初始管理員**：`ADMIN_EMAIL` 環境變數對應的帳號會在啟動／註冊／登入時自動升為管理者並開通。
 - **會員中心**：右上角人像圖示可查看帳號並變更密碼。
+- **忘記密碼**：登入頁「忘記密碼？」→ 圖形驗證碼 → Email 認證碼 → 設定新密碼（`/api/auth/forgot/*`；帳號不存在或未開通時靜默回成功、不寄信，避免帳號探測）。會員收不到信時，管理者可在後台「重置密碼」直接設定新密碼。
 - **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。也可替會員的每張餐點照片評分（綠燈＝均衡良好、黃燈＝尚可、紅燈＝需改善），燈號會顯示在會員端的照片角落。
 
 防濫用：nginx 對 `/api/auth/` 做 per-IP 限流（5 req/s、burst 10，超過回 429），設定在 `frontend/nginx.conf`。
@@ -107,7 +108,7 @@ docker compose up -d --build
 | GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
 | PUT / DELETE | `/api/goals/:id` | 編輯／刪除單組目標（營養師設定的目標會員不可改）|
 | GET | `/api/body-trend?field=all&limit=30` | 身體組成歷程紀錄：所有指標以量測日對齊的資料列（舊→新）；`field=<指標>` 為舊版單指標格式（相容保留）|
-| GET / PUT | `/api/profile` | TDEE 基本資料：`{height, birthYear, gender, activity, goal, goalKcal}`（出生年而非年齡，年齡逐年自增；goal：normal/cut/gain，cut/gain 時 TDEE 減/加 goalKcal；GET 另回傳最近一次體重）；BMR/TDEE 公式與活動量係數在前端 `domain.ts` |
+| GET / PUT | `/api/profile` | TDEE 基本資料：`{height, birthYear, gender, activity, goal, goalKcal}`（出生年而非年齡，年齡逐年自增；goal：normal/cut/gain，cut/gain 時 TDEE 減/加 goalKcal；GET 另回傳最近一次體重）；BMR/TDEE 公式與活動量係數在前端 `domain.ts`（`bmrTdeeOf`，身體數據卡與「今日攝取熱量」卡的 TDEE 目標共用）|
 | GET | `/api/admin/users` | （admin）會員清單 |
 | POST | `/api/admin/users/:id/approve` | （admin）開通帳號 |
 | PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |

@@ -96,6 +96,12 @@ export function BodyModal() {
     }
   };
 
+  // 體脂重自動換算：體重×體脂率（%），四捨五入到小數第 1 位。
+  // 只有體脂率沒有體脂重的使用者可點一下帶入；已填的值不主動覆蓋，由使用者自行選擇。
+  const w = parseFloat(body.weight);
+  const f = parseFloat(body.fat);
+  const calcFatKg = isFinite(w) && w > 0 && isFinite(f) && f > 0 ? Math.round((w * f) / 10) / 10 : null;
+
   // 本次輸入 vs 前次量測的變化（掃描後顯示在欄位下方）
   const deltaOf = (k: BodyKey): { text: string; color: string } | null => {
     const prevStr = result?.prev?.body[k] ?? '';
@@ -223,6 +229,14 @@ export function BodyModal() {
                   前次 {result.prev!.date.slice(5).replace('-', '/')}：{prevStr}
                   {d && <b style={{ color: d.color }}>　{d.text}</b>}
                 </span>
+              )}
+              {b.k === 'fatkg' && calcFatKg !== null && parseFloat(body.fatkg) !== calcFatKg && (
+                <button
+                  onClick={() => setBody((s) => ({ ...s, fatkg: String(calcFatKg) }))}
+                  style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', fontSize: 11, color: '#4A7C59', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  自動換算
+                </button>
               )}
             </div>
           );
