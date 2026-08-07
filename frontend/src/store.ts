@@ -130,6 +130,7 @@ export const useStore = create<AppState>((set, get) => ({
     void get().loadAll();
   },
   logout: () => {
+    void api.serverLogout().catch(() => {}); // 清照片 cookie（失敗不擋登出）
     clearAuth();
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
@@ -244,7 +245,8 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
+    // photo cookie 先補（照片 <img> 需要它；升級前已登入的 session 沒有），其餘並行載入
+    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
   setModal: (modal) => set({ modal }),
@@ -252,9 +254,11 @@ export const useStore = create<AppState>((set, get) => ({
   // 編輯視窗會把 store 裡的紀錄快照成本地狀態、按「完成」時整筆寫回，
   // 若這台裝置的資料已過時（例如另一台裝置剛改過份數或敘述），舊快照會把對方的修改整筆蓋掉。
   openLogFood: async (entryId) => {
+    const sel = get().selected; // await 前先固定日期：請求期間若切換日期，避免把舊日資料寫進新日
     try {
-      const day = await api.getDay(get().selected);
-      get().replaceDay(get().selected, day);
+      const day = await api.getDay(sel);
+      if (get().selected !== sel) return; // 已切到別天，放棄開啟
+      get().replaceDay(sel, day);
       if (!day.entries.some((e) => e.id === entryId)) return; // 這筆已在別台裝置刪除
     } catch { /* 離線或暫時失敗：仍以現有資料開啟，不擋記錄 */ }
     set({ modal: 'logFood', editingId: entryId });

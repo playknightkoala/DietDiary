@@ -7,7 +7,8 @@ import type { ActivityKey, BodyKey, GoalMode, InbodyResult } from '../../types';
 import { TimeSelect } from '../TimeSelect';
 import { CloseButton, ModalShell } from './ModalShell';
 
-// 數值變好的方向：肌肉重越多越好，其餘（體重／體脂率／腰圍／體脂重）越少越好
+// 數值變好的方向：肌肉重越多越好，其餘（體重／體脂率／腰圍／體脂重）越少越好。
+// 體重依使用者的體重目標而定：增重目標時上升才是好（其餘欄位方向不變）
 const GOOD_UP: Record<BodyKey, boolean> = { weight: false, fat: false, waist: false, muscle: true, fatkg: false };
 
 export function BodyModal() {
@@ -109,7 +110,8 @@ export function BodyModal() {
     const d = Math.round((parseFloat(body[k]) - parseFloat(prevStr)) * 10) / 10;
     if (isNaN(d)) return null;
     if (d === 0) return { text: '—', color: '#8A9284' };
-    const good = d > 0 === GOOD_UP[k];
+    const goodUp = k === 'weight' && pGoal === 'gain' ? true : GOOD_UP[k];
+    const good = d > 0 === goodUp;
     return { text: `${d > 0 ? '▲' : '▼'} ${Math.abs(d)}`, color: good ? '#4A7C59' : '#C0564A' };
   };
 

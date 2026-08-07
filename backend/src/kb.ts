@@ -162,10 +162,32 @@ export async function kbUpsert(caption: string, food: Food, photoUrl: string | n
   }
 }
 
-// 使用者對某道菜的份數估計投票（讚 +1 / 倒讚 -1），累積成全體信任訊號
-export function kbVote(dishId: number, delta: 1 | -1) {
-  const col = delta === 1 ? 'up' : 'down';
-  db.prepare(`UPDATE dish_kb SET ${col} = ${col} + 1, updated_at = ? WHERE id = ?`).run(Date.now(), dishId);
+// 使用者對某道菜的份數估計投票（讚 +1 / 倒讚 -1 / 取消 0），累積成全體信任訊號。
+// 以 kb_votes 記「每人對每道菜目前的一票」，up/down 只按新舊票的差額調整：
+// 重送同一票不動、改票兩邊各動一、取消回退原票——重複請求無法灌票。
+export function kbVote(userId: number, dishId: number, vote: 1 | -1 | 0) {
+  const dish = db.prepare('SELECT id FROM dish_kb WHERE id = ?').get(dishId) as { id: number } | undefined;
+  if (!dish) return; // 偽造／已被合併刪除的 dishId：不計
+  const tx = db.transaction(() => {
+    const prev = (db.prepare('SELECT vote FROM kb_votes WHERE user_id = ? AND dish_id = ?').get(userId, dishId) as
+      | { vote: number }
+      | undefined)?.vote ?? 0;
+    if (prev === vote) return;
+    const now = Date.now();
+    if (vote === 0) {
+      db.prepare('DELETE FROM kb_votes WHERE user_id = ? AND dish_id = ?').run(userId, dishId);
+    } else {
+      db.prepare(
+        `INSERT INTO kb_votes (user_id, dish_id, vote, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, dish_id) DO UPDATE SET vote = excluded.vote, updated_at = excluded.updated_at`
+      ).run(userId, dishId, vote, now);
+    }
+    const dUp = (vote === 1 ? 1 : 0) - (prev === 1 ? 1 : 0);
+    const dDown = (vote === -1 ? 1 : 0) - (prev === -1 ? 1 : 0);
+    db.prepare('UPDATE dish_kb SET up = MAX(0, up + ?), down = MAX(0, down + ?), updated_at = ? WHERE id = ?')
+      .run(dUp, dDown, now, dishId);
+  });
+  tx();
 }
 
 // 給 OCR 提示用：把知識庫命中的共識份數組成參考句（含信任提醒）

@@ -35,6 +35,8 @@ docker compose up -d --build
 
 - `frontend`：nginx 靜態服務 + 反向代理 `/api`、`/uploads` 至 backend
 - `backend`：資料持久化於 `./docker-data/db`（SQLite）與 `./docker-data/uploads`（照片）
+
+> 照片存取控制：`/uploads` **需登入才能看**。`<img>` 標籤無法帶 JWT header，改用 httpOnly cookie（`dd_photo`，內容即同一顆 JWT）——登入回應核發、前端啟動時呼叫 `POST /api/auth/photo-cookie` 補發（涵蓋升級前已登入的 session）、登出時清除。cookie 為 `SameSite=Lax; Path=/uploads`，跨站子資源不會帶出（順帶阻擋盜連）。檔名可解析出 entryId（`e{entryId}-{ts}-{i}.jpg`）時再驗擁有者：本人或營養師／管理者才可存取；照片上傳時已剝除 EXIF（無 GPS 等中繼資料）。
 - 停止：`docker compose down`（資料保留在 docker-data/）
 
 ## 版號與強制更新
@@ -63,6 +65,7 @@ docker compose up -d --build
 - **註冊**：填 Email（即帳號）＋密碼＋確認密碼（未填齊前圖形驗證碼鎖定）→ 輸入圖形驗證碼並按「確認」（svg-captcha 產生、不分大小寫、5 分鐘有效、答錯作廢換新圖）→ 驗證成功才出現「Email 認證碼」欄位 → 按「寄送認證碼」收 6 位數認證碼（10 分鐘有效、60 秒可重寄、錯 5 次作廢）→ 送出註冊 → 帳號建立為 `pending`。既有帳號在升級時自動視為已開通。
 - **開通**：由管理者在「管理者後台」按「開通」（不再寄開通連結信）；開通時若有設定 SMTP 會寄通知信給使用者。後台也可調整角色、停用或刪除會員（連同其所有紀錄與照片）。
 - **初始管理員**：`ADMIN_EMAIL` 環境變數對應的帳號會在啟動／註冊／登入時自動升為管理者並開通。
+- **首次登入須設定暱稱**：暱稱為空的帳號登入後會先跳出暱稱設定視窗（不可跳過），設定完成才能開始使用；暱稱顯示於動態牆與營養師端。
 - **會員中心**：右上角人像圖示可查看帳號並變更密碼。
 - **忘記密碼**：登入頁「忘記密碼？」→ 圖形驗證碼 → Email 認證碼 → 設定新密碼（`/api/auth/forgot/*`；帳號不存在或未開通時靜默回成功、不寄信，避免帳號探測）。會員收不到信時，管理者可在後台「重置密碼」直接設定新密碼。
 - **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。也可替會員的每張餐點照片評分（綠燈＝均衡良好、黃燈＝尚可、紅燈＝需改善），燈號會顯示在會員端的照片角落。
@@ -94,6 +97,8 @@ docker compose up -d --build
 | POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
 | GET | `/api/auth/me` | 目前登入者 `{username, role, createdAt}` |
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
+| POST | `/api/auth/photo-cookie` | 補發照片存取 cookie（`/uploads` 需驗證；前端啟動時呼叫）|
+| POST | `/api/auth/logout` | 清除照片存取 cookie（token 由前端自行丟棄）|
 | POST | `/api/auth/forgot/send-code` | `{email, captchaId(已驗證)}` → 寄送密碼重設認證碼；帳號不存在／未開通時**靜默回成功**（不寄信、不寫碼，避免帳號探測）|
 | POST | `/api/auth/forgot/reset` | `{email, code, newPassword, confirmPassword}` → 驗證認證碼並重設密碼（成功即消耗認證碼）|
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
@@ -125,5 +130,6 @@ docker compose up -d --build
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
 | POST | `/api/ai/research` | （dietitian/admin）`{question}` → 網路搜尋＋AI 整理成含來源的摘要（需 `LLM_TOKEN` 與 `TAVILY_API_KEY`）|
 | POST | `/api/ai/inbody` | （需 `ai_enabled`）`{image: dataURI}` InBody 報告照片 → 檢測日期／時間＋體重／骨骼肌重／體脂肪重／體脂肪率／腹圍＋身高／年齡／性別（自動補齊未設定的 TDEE 基本資料）＋前次量測對照（記錄身體數據視窗的「掃描自動填入」）；照片僅在記憶體辨識、不落地儲存 |
+| POST | `/api/ai/kb/seed` | （admin）把既有紀錄灌進共用菜色知識庫冷啟動：`{limit}`（預設 500、上限 3000）。**掃描範圍是全體會員**（含未開 AI 者）的「有敘述＋照片」紀錄，只取第一張照片自身的份數；需知識庫已啟用 |
 
 熱量計算與超標（>目標×1.2 轉紅）規則依 README domain rules，由前端 `src/lib/domain.ts` 以常數表計算；後端僅存份數。

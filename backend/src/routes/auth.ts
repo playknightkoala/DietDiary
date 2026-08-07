@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
 import { db, promoteAdminIfConfigured } from '../db.js';
-import { JWT_SECRET, requireAuth, type Role } from '../middleware/auth.js';
+import { JWT_SECRET, PHOTO_COOKIE, PHOTO_COOKIE_OPTS, requireAuth, type Role } from '../middleware/auth.js';
 import { authSchema, changePasswordSchema, forgotResetSchema, nicknameSchema, registerSchema, sendCodeSchema, verifyCaptchaSchema, verifyCodeSchema } from '../validation.js';
 import { mailerConfigured, sendResetCode, sendVerifyCode } from '../mailer.js';
 
@@ -305,7 +305,24 @@ authRouter.post('/login', async (req, res) => {
   if (user.status !== 'active') {
     return res.status(403).json({ error: '帳號尚未開通，請等待管理員審核' });
   }
-  return res.json({ token: sign(user.id, remember ? '30d' : '1d'), username: user.username, role: user.role });
+  const token = sign(user.id, remember ? '30d' : '1d');
+  // 照片存取 cookie（/uploads 需驗證，<img> 無法帶 header）：內容即同一顆 JWT，實際效期由 JWT 本身決定
+  res.cookie(PHOTO_COOKIE, token, { ...PHOTO_COOKIE_OPTS, maxAge: (remember ? 30 : 1) * 24 * 60 * 60 * 1000 });
+  return res.json({ token, username: user.username, role: user.role });
+});
+
+// 補發照片存取 cookie：升級前已登入的 session 沒有 cookie（照片會 401），前端啟動時呼叫一次補上。
+// 直接沿用 header 帶來的 token 當 cookie 值，不另簽新 token（不延長既有登入的效期）
+authRouter.post('/photo-cookie', requireAuth, (req, res) => {
+  const token = (req.headers.authorization || '').slice(7);
+  res.cookie(PHOTO_COOKIE, token, { ...PHOTO_COOKIE_OPTS, maxAge: 30 * 24 * 60 * 60 * 1000 });
+  return res.status(204).end();
+});
+
+// 登出：清掉照片存取 cookie（token 本身無狀態、由前端丟棄）
+authRouter.post('/logout', (_req, res) => {
+  res.clearCookie(PHOTO_COOKIE, PHOTO_COOKIE_OPTS);
+  return res.status(204).end();
 });
 
 // 會員中心：目前登入者資訊

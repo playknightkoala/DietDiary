@@ -94,7 +94,9 @@ export function bmrTdeeOf(profile: Profile | null): { bmr: number | null; tdee: 
     profile.goal !== 'normal' && profile.goalKcal !== '' && isFinite(Number(profile.goalKcal))
       ? (profile.goal === 'cut' ? -1 : 1) * Number(profile.goalKcal)
       : 0;
-  return { bmr, tdee: Math.round(bmr * act.factor) + goalAdj };
+  const tdee = Math.round(bmr * act.factor) + goalAdj;
+  // 減重目標設得比 TDEE 還大時會算出 0 或負值：不是有意義的目標，各卡片一律顯示未設定
+  return { bmr, tdee: tdee > 0 ? tdee : null };
 }
 
 export const FOOD_KEYS = Object.keys(KCAL) as FoodKey[];

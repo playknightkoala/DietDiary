@@ -129,6 +129,11 @@ export const api = {
       body: JSON.stringify({ username, password, remember }),
     }),
   me: () => request<{ username: string; role: Role; nickname: string; aiEnabled: boolean; createdAt: string }>('/api/auth/me'),
+  // 照片存取 cookie：/uploads 需驗證（<img> 無法帶 header）。登入回應會設，
+  // 啟動時再補呼叫一次，讓「升級前已登入」的 session 也拿得到
+  refreshPhotoCookie: () => request<void>('/api/auth/photo-cookie', { method: 'POST' }),
+  // 登出時清照片 cookie（token 由前端自行丟棄）
+  serverLogout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   setNickname: (nickname: string) =>
     request<{ ok: true; nickname: string }>('/api/auth/nickname', { method: 'POST', body: JSON.stringify({ nickname }) }),
   changePassword: (oldPassword: string, newPassword: string, confirmPassword: string) =>

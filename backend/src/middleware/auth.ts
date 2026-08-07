@@ -81,3 +81,39 @@ export function requireRole(...roles: Role[]) {
     next();
   };
 }
+
+// ---- 照片存取驗證（/uploads）----
+// <img> 標籤無法帶 Authorization header，改用 httpOnly cookie（登入與 /api/auth/photo-cookie 時核發，
+// 內容就是同一顆 JWT）。SameSite=Lax + Path=/uploads：只送往照片路徑，跨站子資源不會帶（順帶擋盜連）。
+export const PHOTO_COOKIE = 'dd_photo';
+export const PHOTO_COOKIE_OPTS = { httpOnly: true, sameSite: 'lax' as const, path: '/uploads' };
+
+// 檔名帶 entryId（e{id}-{ts}-{i}.jpg）時驗擁有者：本人或營養師／管理者才可看；
+// 解析不出 entryId 的舊格式檔名、或紀錄已刪除（檔案照理也已刪）則放行到「已登入」層級。
+export function photoAuth(req: Request, res: Response, next: NextFunction) {
+  const m = /(?:^|;\s*)dd_photo=([^;]+)/.exec(req.headers.cookie || '');
+  if (!m) return res.status(401).end();
+  let uid: number;
+  try {
+    const payload = jwt.verify(decodeURIComponent(m[1]), JWT_SECRET) as { uid: number };
+    if (!isActiveUser(payload.uid)) return res.status(401).end();
+    uid = payload.uid;
+  } catch {
+    return res.status(401).end();
+  }
+  const em = /^e(\d+)-/.exec(req.path.split('/').pop() || '');
+  if (em) {
+    const row = db.prepare('SELECT user_id FROM entries WHERE id = ?').get(Number(em[1])) as
+      | { user_id: number }
+      | undefined;
+    if (row && row.user_id !== uid) {
+      const u = db.prepare('SELECT role, status FROM users WHERE id = ?').get(uid) as
+        | { role: Role; status: string }
+        | undefined;
+      if (!u || u.status !== 'active' || (u.role !== 'dietitian' && u.role !== 'admin')) {
+        return res.status(403).end();
+      }
+    }
+  }
+  next();
+}

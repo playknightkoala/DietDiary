@@ -331,9 +331,8 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
         // items 非空時 food 含 items 的份數，不可再掛到照片上（會複製到重複的份數）
         if (!anyPerPhoto && !rowItems.length && url === photos[0] && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) {
           food = entryFood;
-        } else if (!customItems.length) {
-          continue; // 沒份數也沒自定義項目的照片不列入
         } else {
+          // 沒份數也沒自定義的照片也要列入（「加入整餐」承諾帶入所有照片），份數記 0
           food = emptyFood();
         }
       }
@@ -347,7 +346,10 @@ export function getEntryHistory(userId: number, limit: number, excludeId?: numbe
     if (!photos.length && !cardItems.length && FOOD_KEYS.some((k) => (entryFood[k] || 0) > 0)) {
       cardItems.push({ food: entryFood, customItems: [] });
     }
-    if (!cardPhotos.length && !cardItems.length) continue;
+    // 整餐至少要有一點內容（任一照片有份數/自定義，或有項目頁）才成卡；純照片無任何份數的紀錄不列入
+    const hasAnyData =
+      cardPhotos.some((p) => FOOD_KEYS.some((k) => (p.food[k] || 0) > 0) || p.customItems.length) || cardItems.length > 0;
+    if (!hasAnyData) continue;
 
     // 餐級指紋：各照片（內容指紋＋份數＋自定義）＋各項目頁（份數＋自定義）排序串接，與順序無關
     const photoSigs = cardPhotos.map(
@@ -788,10 +790,12 @@ export function getMarkedDates(userId: number, from: string, to: string): string
   return [...dates].sort();
 }
 
-// 刪除會員時清掉其所有資料與照片檔
+// 刪除會員時清掉其所有資料與照片檔。
+// 照片檔必須等 DB 交易成功後才刪（同 entries PATCH 的原則）：
+// 若交易因任何原因失敗（例如漏刪某張 REFERENCES users 的表觸發 FK constraint），
+// 先刪檔會造成「會員還在、照片已毀」的不可回復狀態。
 export function deleteUserData(userId: number) {
   const photoRows = db.prepare('SELECT photos FROM entries WHERE user_id = ?').all(userId) as { photos: string }[];
-  for (const r of photoRows) parsePhotos(r.photos).forEach(unlinkPhoto);
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM photo_ratings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(userId);
     db.prepare('DELETE FROM notifications WHERE user_id = ?').run(userId);
@@ -803,7 +807,11 @@ export function deleteUserData(userId: number) {
     db.prepare('DELETE FROM ex_logs WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM daily_summaries WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM ai_feedback WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM kb_votes WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   });
   tx();
+  for (const r of photoRows) parsePhotos(r.photos).forEach(unlinkPhoto);
 }

@@ -1,3 +1,6 @@
+// 必須是第一個 import：db.ts / auth.ts 在模組載入時就讀環境變數（DB_PATH、JWT_SECRET…），
+// 本機開發（tsx 不會自動載 .env）靠這行讀 backend/.env；Docker 由 compose 注入、檔案不存在時靜默略過
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth.js';
@@ -11,6 +14,7 @@ import { commentsRouter } from './routes/comments.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { aiRouter } from './routes/ai.js';
 import { profileRouter } from './routes/profile.js';
+import { photoAuth } from './middleware/auth.js';
 import { APP_VERSION } from './version.js';
 
 const app = express();
@@ -38,7 +42,17 @@ app.use('/api/comments', commentsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/profile', profileRouter);
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
+// 照片需登入才能看（cookie 驗證＋擁有者檢查，見 middleware/auth.photoAuth）；
+// Cache-Control 改 private：允許瀏覽器快取、禁止中間代理快取已驗證的內容
+app.use(
+  '/uploads',
+  photoAuth,
+  express.static(UPLOAD_DIR, {
+    maxAge: '30d',
+    immutable: true,
+    setHeaders: (res) => res.setHeader('Cache-Control', 'private, max-age=2592000, immutable'),
+  })
+);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

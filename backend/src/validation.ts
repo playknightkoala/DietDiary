@@ -68,9 +68,19 @@ export const adminResetPasswordSchema = z.object({
   password: z.string().min(6).max(200),
 });
 
-export const dateSchema = z.string().regex(DATE_RE);
+// 日期需為真實存在的日曆日（2026-99-99 這種只符合字形的值擋下）
+export const dateSchema = z.string().regex(DATE_RE).refine((s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+});
 
-const numText = z.string().max(20); // body/ex values stored as strings, '' = not set
+// body/ex 數值以字串儲存（'' = 未填）：需為非負數字，上限 99999（體重/體脂/腰圍/分鐘都遠低於此）
+const numText = z.string().max(20).refine((s) => {
+  if (s === '') return true;
+  const n = Number(s);
+  return isFinite(n) && n >= 0 && n <= 99999;
+});
 
 const hmOrEmpty = z.string().regex(TIME_RE).or(z.literal(''));
 
@@ -256,7 +266,7 @@ export const goalsSchema = z.object({
     milk: z.number().min(0).max(99),
   }),
   water: z.number().int().min(0).max(999999),
-});
+}).refine((d) => d.start <= d.end, { message: '起日不可晚於迄日' });
 
 export const BODY_FIELDS = ['weight', 'fat', 'waist', 'muscle', 'fatkg'] as const;
 

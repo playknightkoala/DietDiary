@@ -178,6 +178,18 @@ CREATE TABLE IF NOT EXISTS dish_kb (
 );
 `);
 
+// KB 投票紀錄：每人對每道菜最多一票（防重送灌票），dish_kb.up/down 由此表的變化差額維護。
+// dish_id 不設 FK：dish_kb 列會被合併刪除，殘票只是無效參照、不該擋刪除。
+db.exec(`
+CREATE TABLE IF NOT EXISTS kb_votes (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  dish_id INTEGER NOT NULL,
+  vote INTEGER NOT NULL CHECK (vote IN (1, -1)),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, dish_id)
+);
+`);
+
 // Tavily 網路搜尋（search.ts）：按月額度計數＋查詢結果快取。
 // used 以「原子先扣後打」維護（檢查＋累加同一條 UPDATE），reconciled_at 為最近一次與官方 /usage 對帳的時間。
 db.exec(`

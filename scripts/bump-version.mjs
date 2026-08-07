@@ -16,6 +16,14 @@ for (const f of ['frontend/package.json', 'backend/package.json']) {
   console.log(`${f} -> ${v}`);
 }
 
+// README 的「目前版本」也一併更新，避免文件版號漂移
+const readme = readFileSync('README.md', 'utf8');
+const bumped = readme.replace(/目前版本 \*\*\d+\.\d+\.\d+\*\*/, `目前版本 **${v}**`);
+if (bumped !== readme) {
+  writeFileSync('README.md', bumped);
+  console.log(`README.md -> ${v}`);
+}
+
 console.log(`\n版號已更新。別忘了在 frontend/public/changelog.json 最前面新增一筆 ${v} 的更新內容`);
 console.log('（強制更新視窗與底部「版本紀錄」會顯示它）。');
 console.log('\n然後重新建置並部署，兩邊才會同步生效：');
