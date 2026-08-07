@@ -1,4 +1,4 @@
-import type { ActivityKey, BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, EntryOrig, Food, FoodKey, Goal, GoalKey, MealKey } from '../types';
+import type { ActivityKey, BodyKey, CustomItem, CustomItemType, DayData, Entry, EntryFoodItem, EntryOrig, Food, FoodKey, Goal, GoalKey, MealKey, Profile } from '../types';
 
 // 每份熱量（kcal/份）— 與原型 Component.KCAL 一致
 export const KCAL: Record<FoodKey, number> = {
@@ -79,6 +79,22 @@ export const ACTIVITY_DEFS: { k: ActivityKey; name: string; desc: string; factor
 // BMR（Mifflin-St Jeor）：9.99×體重＋6.25×身高－4.92×年齡＋（166×性別－161），性別男＝1、女＝0
 export function bmrOf(gender: 'male' | 'female', weightKg: number, heightCm: number, age: number): number {
   return 9.99 * weightKg + 6.25 * heightCm - 4.92 * age + (166 * (gender === 'male' ? 1 : 0) - 161);
+}
+
+// BMR／TDEE：以 TDEE 基本資料＋最近一次體重計算，資料不齊回傳 null；
+// TDEE 含體重目標調整（減重－goalKcal、增重＋goalKcal、一般不調整）。
+// 身體數據卡與今日攝取熱量卡共用。
+export function bmrTdeeOf(profile: Profile | null): { bmr: number | null; tdee: number | null } {
+  const act = profile ? ACTIVITY_DEFS.find((a) => a.k === profile.activity) : undefined;
+  const age = profile && profile.birthYear !== '' ? new Date().getFullYear() - Number(profile.birthYear) : null;
+  if (!profile || profile.height === '' || age === null || profile.gender === '' || !act || !profile.weight)
+    return { bmr: null, tdee: null };
+  const bmr = Math.round(bmrOf(profile.gender, profile.weight.value, Number(profile.height), age));
+  const goalAdj =
+    profile.goal !== 'normal' && profile.goalKcal !== '' && isFinite(Number(profile.goalKcal))
+      ? (profile.goal === 'cut' ? -1 : 1) * Number(profile.goalKcal)
+      : 0;
+  return { bmr, tdee: Math.round(bmr * act.factor) + goalAdj };
 }
 
 export const FOOD_KEYS = Object.keys(KCAL) as FoodKey[];

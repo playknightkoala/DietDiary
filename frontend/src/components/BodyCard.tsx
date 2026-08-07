@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { ACTIVITY_DEFS, BODY_DEFS, bmrOf } from '../lib/domain';
+import { BODY_DEFS, bmrTdeeOf } from '../lib/domain';
 import { TrendChart } from './TrendChart';
 
 export function BodyCard() {
@@ -10,20 +10,8 @@ export function BodyCard() {
   const setModal = useStore((s) => s.setModal);
   const profile = useStore((s) => s.profile);
 
-  // BMR／TDEE：以基本資料＋最近一次體重計算（公式見 domain.bmrOf / ACTIVITY_DEFS；資料不齊顯示 —）
-  const act = profile ? ACTIVITY_DEFS.find((a) => a.k === profile.activity) : undefined;
-  const age = profile && profile.birthYear !== '' ? new Date().getFullYear() - Number(profile.birthYear) : null;
-  const complete =
-    !!profile && profile.height !== '' && age !== null && profile.gender !== '' && !!act && !!profile.weight;
-  const bmr = complete
-    ? Math.round(bmrOf(profile.gender as 'male' | 'female', profile.weight!.value, Number(profile.height), age!))
-    : null;
-  // 體重目標調整：減重－goalKcal、增重＋goalKcal、一般不調整
-  const goalAdj =
-    profile && profile.goal !== 'normal' && profile.goalKcal !== '' && isFinite(Number(profile.goalKcal))
-      ? (profile.goal === 'cut' ? -1 : 1) * Number(profile.goalKcal)
-      : 0;
-  const tdee = bmr !== null ? Math.round(bmr * act!.factor) + goalAdj : null;
+  // BMR／TDEE：以基本資料＋最近一次體重計算（公式見 domain.bmrTdeeOf；資料不齊顯示 —）
+  const { bmr, tdee } = bmrTdeeOf(profile);
 
   return (
     <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>

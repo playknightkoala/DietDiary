@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { KCAL, dayCustomKcal, dayFoodTotals, dayMacros, goalsFor, kcalOfFood, round1 } from '../lib/domain';
+import { KCAL, bmrTdeeOf, dayCustomKcal, dayFoodTotals, dayMacros, goalsFor, kcalOfFood, round1 } from '../lib/domain';
 import type { Entry, FoodKey } from '../types';
 
 // 熱量卡＋喝水卡（左欄上方 2 欄 grid）
@@ -7,9 +7,14 @@ export function KcalWaterRow() {
   const day = useStore((s) => s.day);
   const selected = useStore((s) => s.selected);
   const goals = useStore((s) => s.goals);
+  const profile = useStore((s) => s.profile);
 
   // 六大類份數熱量＋自定義熱量項目（含糖飲料、酒精等）
   const totalKcal = kcalOfFood(dayFoodTotals(day.entries)) + dayCustomKcal(day.entries);
+  // TDEE 當作當日熱量目標（含體重目標調整）；基本資料不齊為 null，維持原本樣式
+  const { tdee } = bmrTdeeOf(profile);
+  const kcalOver = tdee !== null && totalKcal > tdee;
+  const kcalPct = tdee !== null ? Math.min(100, (totalKcal / tdee) * 100) + '%' : '0%';
   const { water: waterGoal } = goalsFor(selected, goals);
   const waterOver = day.water > waterGoal * 1.2;
   const waterPct = Math.min(100, (day.water / waterGoal) * 100) + '%';
@@ -20,9 +25,20 @@ export function KcalWaterRow() {
         <div style={{ fontSize: 13, opacity: 0.85 }}>今日攝取熱量</div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
           <span style={{ fontFamily: 'Outfit', fontSize: 34, fontWeight: 800 }}>{totalKcal}</span>
-          <span style={{ fontSize: 14, opacity: 0.8 }}>kcal</span>
+          <span style={{ fontSize: 14, opacity: 0.8 }}>{tdee !== null ? `/ ${tdee} kcal` : 'kcal'}</span>
         </div>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>依各餐份數自動累計</div>
+        {tdee !== null ? (
+          <>
+            <div style={{ height: 7, borderRadius: 99, background: 'rgba(244,241,234,.25)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 99, background: kcalOver ? '#F0B4A6' : '#F4F1EA', width: kcalPct, transition: 'width .3s' }} />
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: kcalOver ? 800 : 400, color: kcalOver ? '#F0B4A6' : undefined }}>
+              {kcalOver ? `超過目標 ${totalKcal - tdee} kcal` : `距離目標還可吃 ${tdee - totalKcal} kcal`}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12, opacity: 0.75 }}>依各餐份數自動累計</div>
+        )}
       </div>
       <div style={{ background: '#FFFFFF', borderRadius: 20, padding: 18, display: 'flex', flexDirection: 'column', gap: 8, border: '1.5px solid #E4DFD2' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
