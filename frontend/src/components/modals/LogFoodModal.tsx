@@ -604,6 +604,7 @@ export function LogFoodModal() {
       excludeId={entry.id}
       remaining={MAX_PHOTOS - photos.length}
       remainingItems={MAX_ITEM_PAGES - itemState.order.length}
+      defaultMeal={entry.meal}
       onPick={(meal, picks) => addFromHistory(meal, picks)}
       onClose={() => setShowHistory(false)}
     />

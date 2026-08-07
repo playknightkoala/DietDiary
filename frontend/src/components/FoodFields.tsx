@@ -1,6 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { GUIDE_DATA } from '../lib/guideData';
-import { CUSTOM_ITEM_DEFS, FOOD_KEYS, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, foodSummary, origTotals, type CustomDraft, type Macros } from '../lib/domain';
+import { CUSTOM_ITEM_DEFS, FOOD_KEYS, FOOD_KEY_NAMES, MAX_CUSTOM_ITEMS, clampAmount, clampKcal, customDraftKcal, customItemLabel, foodSummary, origTotals, type CustomDraft, type Macros } from '../lib/domain';
 import { useStore } from '../store';
 import type { CustomItem, CustomItemType, Entry, EntryOrig, Food, FoodKey } from '../types';
 
@@ -320,8 +320,24 @@ export function OrigSummary({
   const sameCustoms = (a: CustomItem[], b: CustomItem[]) =>
     a.length === b.length && a.every((c, i) => cKey(c) === cKey(b[i]));
 
-  // after === null＝這一頁沒被調整（單行灰字）；removed＝照片已被移除
-  type Row = { id: string; thumb?: string; itemNo?: number; before: string; after: string | null; removed?: boolean };
+  // 逐值 diff：只列出真正被改的類別（例如「蔬菜 2 → 3 份」），沒動的類別不出現
+  const foodDiff = (a?: Food, b?: Food): string[] =>
+    FOOD_KEYS.filter((k) => (a?.[k] || 0) !== (b?.[k] || 0)).map(
+      (k) => `${FOOD_KEY_NAMES[k]} ${a?.[k] || 0} → ${b?.[k] || 0} 份`
+    );
+  // 自定義項目 diff：內容有變視為「移除舊的＋新增新的」
+  const customsDiff = (a: CustomItem[], b: CustomItem[]): string[] => {
+    const as = a.map(cKey);
+    const bs = b.map(cKey);
+    return [
+      ...a.filter((c) => !bs.includes(cKey(c))).map((c) => `移除「${customItemLabel(c)} ${c.kcal} kcal」`),
+      ...b.filter((c) => !as.includes(cKey(c))).map((c) => `新增「${customItemLabel(c)} ${c.kcal} kcal」`),
+    ];
+  };
+
+  // after === null＝這一頁沒被調整（單行灰字）；removed＝照片已被移除；
+  // diffs＝有被調整的頁面逐值差異（只列被改的類別與自定義項目增刪）
+  type Row = { id: string; thumb?: string; itemNo?: number; before: string; after: string | null; removed?: boolean; diffs?: string[] };
   const rows: Row[] = [];
 
   // 照片頁：以目前照片順序為主，只存在快照的照片（已被移除）附在後面
@@ -340,7 +356,10 @@ export function OrigSummary({
     const after = exists ? pageText(current.photoFoods[url], current.photoCustoms[url] ?? []) : '';
     const changed = !exists || !sameFood(oF, current.photoFoods[url]) || !sameCustoms(oC, current.photoCustoms[url] ?? []);
     if (!before && !after && !changed) continue; // 前後都空白的照片不列
-    rows.push({ id: `p${url}`, thumb: url, before, after: changed ? after : null, removed: !exists });
+    const diffs = changed && exists
+      ? [...foodDiff(oF, current.photoFoods[url]), ...customsDiff(oC, current.photoCustoms[url] ?? [])]
+      : undefined;
+    rows.push({ id: `p${url}`, thumb: url, before, after: changed ? after : null, removed: !exists, diffs });
   }
 
   // 無照片項目頁：依序對照（營養師編輯器保留項目順序）
@@ -356,7 +375,10 @@ export function OrigSummary({
     const changed = !sameFood(o?.food, c?.food) || !sameCustoms(o?.customItems ?? [], c?.customItems ?? []);
     const after = c ? pageText(c.food, c.customItems) : '';
     if (!before && !after && !changed) continue;
-    rows.push({ id: `i${i}`, itemNo: i + 1, before, after: changed ? after : null });
+    const diffs = changed
+      ? [...foodDiff(o?.food, c?.food), ...customsDiff(o?.customItems ?? [], c?.customItems ?? [])]
+      : undefined;
+    rows.push({ id: `i${i}`, itemNo: i + 1, before, after: changed ? after : null, diffs });
   }
 
   // legacy 紀錄（份數只存在整筆 food、無逐頁資料）：退回整餐摘要
@@ -394,6 +416,8 @@ export function OrigSummary({
           <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.55, wordBreak: 'break-word' }}>
             {r.after === null ? (
               <span style={{ color: '#6B7565' }}>{r.before || '（未記份數）'}</span>
+            ) : r.diffs && r.diffs.length ? (
+              <div style={{ color: '#5B8DB8', fontWeight: 700 }}>{r.diffs.join('、')}</div>
             ) : (
               <>
                 <div style={{ color: '#6B7565' }}>調整前：{r.before || '未記'}</div>

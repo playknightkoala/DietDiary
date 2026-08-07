@@ -23,12 +23,14 @@ export function HistoryPickerSheet({
   excludeId,
   remaining,
   remainingItems,
+  defaultMeal,
   onPick,
   onClose,
 }: {
   excludeId: number;
   remaining: number; // 目前還能再加幾張照片
   remainingItems: number; // 目前還能再加幾個無照片項目頁
+  defaultMeal?: MealKey; // 正在記錄的餐別：預設選到同餐別的分頁（該餐別沒紀錄則退回第一個）
   onPick: (meal: HistoryMeal, picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -78,9 +80,14 @@ export function HistoryPickerSheet({
   const groups = MEALS.map((m) => ({ meal: m, list: (meals ?? []).filter((i) => i.meal === m.k) })).filter(
     (g) => g.list.length
   );
-  // tab：預設第一個有資料的餐別；使用者選過就用選的（若該餐別已無資料則回退到第一個）
+  // tab：預設選「正在記錄的餐別」（該餐別沒紀錄則退回第一個有資料的）；使用者選過就用選的
   const tabMeals = groups.map((g) => g.meal.k);
-  const active = activeTab && tabMeals.includes(activeTab) ? activeTab : tabMeals[0];
+  const active =
+    activeTab && tabMeals.includes(activeTab)
+      ? activeTab
+      : defaultMeal && tabMeals.includes(defaultMeal)
+        ? defaultMeal
+        : tabMeals[0];
   const activeList = groups.find((g) => g.meal.k === active)?.list ?? [];
 
   const badge = (state: 'added' | 'busy' | 'idle') => (
