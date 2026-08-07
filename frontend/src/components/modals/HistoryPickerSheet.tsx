@@ -31,14 +31,14 @@ export function HistoryPickerSheet({
   remaining: number; // 目前還能再加幾張照片
   remainingItems: number; // 目前還能再加幾個無照片項目頁
   defaultMeal?: MealKey; // 正在記錄的餐別：預設選到同餐別的分頁（該餐別沒紀錄則退回第一個）
-  onPick: (meal: HistoryMeal, picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }) => Promise<boolean>;
+  // 回傳「實際成功加入」的結果：照片為成功張數（依傳入順序的前 N 張）、項目為是否已加入。
+  // 部分失敗時只標記成功的那幾張，失敗的照片保持可再點補加，不會重複複製
+  onPick: (meal: HistoryMeal, picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }) => Promise<{ photosAdded: number; itemsAdded: boolean }>;
   onClose: () => void;
 }) {
   const [meals, setMeals] = useState<HistoryMeal[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // `${entryId}` 整餐或 `${entryId}:...` 單頁
   const [added, setAdded] = useState<string[]>([]); // 已加入的頁（照片 url／項目鍵）
-  const [addedPhotoCount, setAddedPhotoCount] = useState(0);
-  const [addedItemCount, setAddedItemCount] = useState(0);
   const [activeTab, setActiveTab] = useState<MealKey | null>(null);
 
   useEffect(() => {
@@ -52,8 +52,10 @@ export function HistoryPickerSheet({
     };
   }, [excludeId]);
 
-  const photoRoom = remaining - addedPhotoCount;
-  const itemRoom = remainingItems - addedItemCount;
+  // 容量以父層即時 props 為唯一來源：加入成功會立即反映在父層 state（照片與項目皆然），
+  // 父層重繪時 remaining 已扣過——Sheet 內不可再自己計數扣一次，否則重複扣除、提前顯示已達上限
+  const photoRoom = remaining;
+  const itemRoom = remainingItems;
   const full = photoRoom <= 0 && itemRoom <= 0;
 
   const pick = async (
@@ -67,12 +69,13 @@ export function HistoryPickerSheet({
     const freshItems = items.filter(({ key }) => !added.includes(key)).slice(0, Math.max(0, itemRoom));
     if (!freshPhotos.length && !freshItems.length) return;
     setBusy(busyKey);
-    const ok = await onPick(meal, { photos: freshPhotos.map(({ p }) => p), items: freshItems.map(({ it }) => it) });
+    const result = await onPick(meal, { photos: freshPhotos.map(({ p }) => p), items: freshItems.map(({ it }) => it) });
     setBusy(null);
-    if (ok) {
-      setAdded((a) => [...a, ...freshPhotos.map(({ p }) => p.photo), ...freshItems.map(({ key }) => key)]);
-      setAddedPhotoCount((n) => n + freshPhotos.length);
-      setAddedItemCount((n) => n + freshItems.length);
+    // 只標記實際成功的部分：照片依順序取前 photosAdded 張；失敗的保持可再點補加
+    const okPhotoUrls = freshPhotos.slice(0, result.photosAdded).map(({ p }) => p.photo);
+    const okItemKeys = result.itemsAdded ? freshItems.map(({ key }) => key) : [];
+    if (okPhotoUrls.length || okItemKeys.length) {
+      setAdded((a) => [...a, ...okPhotoUrls, ...okItemKeys]);
     }
   };
 

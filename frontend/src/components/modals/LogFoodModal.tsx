@@ -66,6 +66,10 @@ export function LogFoodModal() {
   const entry = useMemo(() => day.entries.find((e) => e.id === editingId) ?? null, [day.entries, editingId]);
 
   const [desc, setDesc] = useState(entry?.desc ?? '');
+  // desc 的同步鏡像：async 流程（刪照片、歷史複製）await 回來後，render closure 的 desc 已過時，
+  // 歷史敘述的預檢／附加判斷一律讀 descRef.current，避免用舊值誤判（例如誤刪來源標記）
+  const descRef = useRef(desc);
+  descRef.current = desc;
   const [photos, setPhotos] = useState<string[]>(entry?.photos ?? []);
   const [uploading, setUploading] = useState(false);
   // AI 判斷這張照片的營養素份數
@@ -222,6 +226,24 @@ export function LogFoodModal() {
   const MAX_PHOTOS = 10;
   const MAX_ITEM_PAGES = 20;
 
+  // 從 desc 收回歷史帶入的整段文字。歷史文字永遠是「附加在尾端」，因此只有 desc 目前
+  // 仍以該完整區塊結尾（整行比對、忽略尾端空行）才移除；位置對不上——使用者已在後面
+  // 補寫內容、或手打過一模一樣的文字——就整段保留：寧可殘留一段讓使用者自己刪，
+  // 也不冒險刪到使用者的內容（從頭找第一個匹配會誤刪使用者先前手打的相同段落）
+  const removeDescBlock = (d: string, block: string): string => {
+    const lines = d.split('\n');
+    let end = lines.length;
+    while (end > 0 && lines[end - 1].trim() === '') end--;
+    const blockLines = block.split('\n').map((s) => s.trim());
+    const start = end - blockLines.length;
+    if (start < 0 || !blockLines.every((bl, j) => lines[start + j].trim() === bl)) return d;
+    return lines
+      .slice(0, start)
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '');
+  };
+
   // 移除某頁後檢查：該頁若來自歷史，且同來源（照片＋項目）已無其他頁，收回帶入的敘述
   const reclaimHistorySource = (removed: { photoUrl?: string; itemKey?: string }) => {
     const src = removed.photoUrl !== undefined ? photoSources[removed.photoUrl] : itemSources[removed.itemKey ?? ''];
@@ -244,12 +266,18 @@ export function LogFoodModal() {
       Object.entries(itemSources).some(([k, v]) => k !== removed.itemKey && v === src);
     const line = historyDescs[src];
     if (!stillHas && line) {
-      setDesc((d) => (d.includes(line) ? d.replace(line, '').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '') : d));
-      setHistoryDescs((s) => {
-        const next = { ...s };
-        delete next[src];
-        return next;
-      });
+      // 只有「確實會移除文字」才連同來源標記一起清除；因不在尾端而保守保留時，
+      // 標記也要留著——之後其他區塊先被收回、這段回到尾端時，仍有機會自動清除。
+      // 預檢讀 descRef（同步鏡像）：await 期間使用者若在後方補寫文字，render closure 的
+      // desc 會過時而誤判可移除，導致 updater no-op 但標記被刪；ref 永遠是最新值
+      if (removeDescBlock(descRef.current, line) !== descRef.current) {
+        setDesc((d) => removeDescBlock(d, line));
+        setHistoryDescs((s) => {
+          const next = { ...s };
+          delete next[src];
+          return next;
+        });
+      }
     }
   };
 
@@ -494,57 +522,61 @@ export function LogFoodModal() {
   // 從歷史加入：複製一餐（或其中幾頁）到這筆紀錄——照片頁走 copy API，
   // 無照片項目頁直接建立草稿（完成才存檔），各自帶入份數與自定義項目。
   // 敘述以「來源紀錄」為單位只帶一次——同一餐再加第二頁不會重複貼；
-  // 該來源的頁面（照片＋項目）全部移除時，帶入的敘述會自動收回（使用者手打的其他文字不動）
+  // 該來源的頁面（照片＋項目）全部移除時，帶入的敘述會自動收回（使用者手打的其他文字不動）。
+  // 照片逐張複製、每張成功「立即」寫進畫面狀態：中途失敗時已提交的照片仍看得到、可移除，
+  // 回傳實際成功張數讓歷史視窗精準標記——失敗的那幾張可以再點補加，不會重複複製成功的
   const addFromHistory = async (
     meal: HistoryMeal,
     picks: { photos: HistoryPhoto[]; items: EntryFoodItem[] }
-  ): Promise<boolean> => {
+  ): Promise<{ photosAdded: number; itemsAdded: boolean }> => {
     const photoList = picks.photos.slice(0, MAX_PHOTOS - photos.length);
     const itemList = picks.items.slice(0, MAX_ITEM_PAGES - itemState.order.length);
-    if (!photoList.length && !itemList.length) return false;
-    try {
-      let urls = photos;
-      const added: { url: string; item: HistoryPhoto }[] = [];
-      for (const item of photoList) {
+    if (!photoList.length && !itemList.length) return { photosAdded: 0, itemsAdded: false };
+
+    let urls = photos;
+    let photosAdded = 0;
+    let photoFailed = false;
+    for (const item of photoList) {
+      try {
         const { photos: next, photo: newUrl, revision } = await api.copyPhoto(entry.id, item.photo, revRef.current);
         revRef.current = revision;
         urls = next;
-        added.push({ url: newUrl, item });
+        photosAdded++;
+        setPhotoFoodsStr((s) => ({ ...s, [newUrl]: foodToStr(item.food) }));
+        if (item.customItems.length) {
+          setPhotoCustomDrafts((s) => ({ ...s, [newUrl]: customItemsToDrafts(item.customItems) }));
+        }
+        setPhotoSources((s) => ({ ...s, [newUrl]: meal.entryId }));
+        setPhotos(next);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          await onConflict(e);
+          return { photosAdded, itemsAdded: false };
+        }
+        photoFailed = true;
+        break;
       }
-      if (added.length) {
-        setPhotoFoodsStr((s) => {
-          const next = { ...s };
-          added.forEach(({ url, item }) => (next[url] = foodToStr(item.food)));
-          return next;
+    }
+    // 無照片項目頁：純前端草稿（不會失敗）。
+    // key 必須在 setter「外面」先產好：state updater 不保證同步執行、Concurrent Mode 還可能重跑，
+    // 在 updater 裡塞陣列會讓來源對照拿到空清單或多餘 key，之後移除項目就收不回敘述
+    if (itemList.length) {
+      const newItems = itemList.map((it) => ({ key: `i${itemSeq.current++}`, it }));
+      setItemState((s) => {
+        const drafts = { ...s.drafts };
+        newItems.forEach(({ key, it }) => {
+          drafts[key] = { foodStr: foodToStr(it.food), customs: customItemsToDrafts(it.customItems) };
         });
-        setPhotoCustomDrafts((s) => {
-          const next = { ...s };
-          added.forEach(({ url, item }) => {
-            if (item.customItems.length) next[url] = customItemsToDrafts(item.customItems);
-          });
-          return next;
-        });
-        setPhotoSources((s) => ({ ...s, ...Object.fromEntries(added.map(({ url }) => [url, meal.entryId])) }));
-        setPhotos(urls);
-      }
-      // 無照片項目頁：純前端草稿
-      const newItemKeys: string[] = [];
-      if (itemList.length) {
-        setItemState((s) => {
-          const order = [...s.order];
-          const drafts = { ...s.drafts };
-          itemList.forEach((it) => {
-            const key = `i${itemSeq.current++}`;
-            newItemKeys.push(key);
-            order.push(key);
-            drafts[key] = { foodStr: foodToStr(it.food), customs: customItemsToDrafts(it.customItems) };
-          });
-          return { order, drafts };
-        });
-        setItemSources((s) => ({ ...s, ...Object.fromEntries(newItemKeys.map((k) => [k, meal.entryId])) }));
-      }
+        return { order: [...s.order, ...newItems.map(({ key }) => key)], drafts };
+      });
+      setItemSources((s) => ({ ...s, ...Object.fromEntries(newItems.map(({ key }) => [key, meal.entryId])) }));
+    }
+    // 有任何頁面實際加入才帶敘述、跳頁。
+    // 只有「這次真的有附加文字」才記錄可回收標記：desc 已含相同文字（使用者手打）時
+    // 不附加也不記錄，之後移除頁面才不會把使用者自己的文字誤認成歷史帶入而刪掉
+    if (photosAdded > 0 || itemList.length) {
       const line = meal.desc.trim();
-      if (line && historyDescs[meal.entryId] === undefined) {
+      if (line && historyDescs[meal.entryId] === undefined && !descRef.current.includes(line)) {
         setDesc((d) => (d.includes(line) ? d : d.trim() ? `${d.replace(/\s+$/, '')}\n${line}` : line));
         setHistoryDescs((s) => ({ ...s, [meal.entryId]: line }));
       }
@@ -552,11 +584,11 @@ export function LogFoodModal() {
       const itemCount = itemState.order.length + itemList.length;
       setPageIdx(itemList.length ? urls.length + itemCount - 1 : urls.length - 1);
       if (step === 'photos') setStep('detail');
-      return true;
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) await onConflict(e);
-      return false;
     }
+    if (photoFailed) {
+      window.alert(`有 ${photoList.length - photosAdded} 張照片複製失敗（已加入 ${photosAdded} 張）；失敗的可以稍後再從歷史補加。`);
+    }
+    return { photosAdded, itemsAdded: itemList.length > 0 };
   };
 
   const removePhoto = async (url: string) => {
