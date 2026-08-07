@@ -15,18 +15,29 @@ export interface LayoutConfig { order: CardKey[]; hidden: CardKey[] }
 export const DEFAULT_CARD_ORDER: CardKey[] = ['kcal', 'water', 'macro', 'groups'];
 const LAYOUT_KEY = 'dd_layout';
 
-// 讀取並清洗：只留合法卡片鍵、缺漏的補到最後（升級後新增卡片自動出現）
+// 清洗任意來源（localStorage／伺服器）的設定：只留合法卡片鍵、缺漏的補到最後（升級後新增卡片自動出現）
+function sanitizeLayout(raw: unknown): LayoutConfig {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as { order?: unknown; hidden?: unknown };
+  const valid = (v: unknown): v is CardKey => typeof v === 'string' && (DEFAULT_CARD_ORDER as string[]).includes(v);
+  const order = Array.isArray(r.order) ? r.order.filter(valid) : [];
+  for (const k of DEFAULT_CARD_ORDER) if (!order.includes(k)) order.push(k);
+  const hidden = Array.isArray(r.hidden) ? r.hidden.filter(valid) : [];
+  return { order, hidden };
+}
+
+// 開機先用本地快取（登入後 loadMe 會以伺服器儲存的為準）
 function loadLayout(): LayoutConfig {
   try {
-    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') as { order?: unknown; hidden?: unknown };
-    const valid = (v: unknown): v is CardKey => typeof v === 'string' && (DEFAULT_CARD_ORDER as string[]).includes(v);
-    const order = (Array.isArray(raw.order) ? raw.order.filter(valid) : []);
-    for (const k of DEFAULT_CARD_ORDER) if (!order.includes(k)) order.push(k);
-    const hidden = Array.isArray(raw.hidden) ? raw.hidden.filter(valid) : [];
-    return { order, hidden };
+    return sanitizeLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}'));
   } catch {
-    return { order: [...DEFAULT_CARD_ORDER], hidden: [] };
+    return sanitizeLayout({});
   }
+}
+
+const isDefaultLayout = (l: LayoutConfig) => !l.hidden.length && l.order.join() === DEFAULT_CARD_ORDER.join();
+
+function cacheLayout(layout: LayoutConfig) {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* 私密模式等寫入失敗：僅本次生效 */ }
 }
 
 // diary＝個人日記；admin＝管理者後台；pro＝營養師頁面
@@ -161,10 +172,13 @@ export const useStore = create<AppState>((set, get) => ({
   logout: () => {
     void api.serverLogout().catch(() => {}); // 清照片 cookie（失敗不擋登出）
     clearAuth();
+    // 介面自定義跟帳號走：登出清掉本地快取，避免下一個登入的帳號繼承到別人的排列
+    try { localStorage.removeItem(LAYOUT_KEY); } catch { /* ignore */ }
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
       day: emptyDay(), marks: {}, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
+      layout: { order: [...DEFAULT_CARD_ORDER], hidden: [] },
     });
   },
   setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false, logBodyReturn: false }),
@@ -271,6 +285,17 @@ export const useStore = create<AppState>((set, get) => ({
       const me = await api.me();
       saveRole(me.role);
       set({ role: me.role, username: me.username, nickname: me.nickname, aiEnabled: me.aiEnabled });
+      // 介面自定義跟帳號走：伺服器有存就以伺服器為準（並更新本地快取）；
+      // 伺服器沒存但這台裝置有自訂（升級前的舊設定），補上傳同步
+      if (me.uiLayout) {
+        try {
+          const layout = sanitizeLayout(JSON.parse(me.uiLayout));
+          set({ layout });
+          cacheLayout(layout);
+        } catch { /* 壞資料忽略，維持本地設定 */ }
+      } else if (!isDefaultLayout(get().layout)) {
+        void api.putLayout(get().layout).catch(() => {});
+      }
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {
@@ -281,7 +306,9 @@ export const useStore = create<AppState>((set, get) => ({
   layout: loadLayout(),
   setLayout: (layout) => {
     set({ layout });
-    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* 私密模式等寫入失敗：僅本次生效 */ }
+    cacheLayout(layout);
+    // 同步存到帳號（伺服器），換裝置登入自動帶入；失敗不擋操作（本地仍生效，下次修改再同步）
+    void api.putLayout(layout).catch(() => {});
   },
 
   logBodyReturn: false,

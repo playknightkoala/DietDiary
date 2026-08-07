@@ -289,3 +289,10 @@ export const profileSchema = z.object({
   goal: z.enum(['normal', 'cut', 'gain']),
   goalKcal: numField(0, 5000, true),
 });
+
+// 介面自定義：主頁卡片順序與隱藏清單。卡片鍵值由前端定義（讀取時會再清洗），
+// 後端只限制型別與長度，之後前端新增卡片不需要動後端
+export const uiLayoutSchema = z.object({
+  order: z.array(z.string().min(1).max(20)).max(12),
+  hidden: z.array(z.string().min(1).max(20)).max(12),
+});

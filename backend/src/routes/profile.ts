@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { profileSchema } from '../validation.js';
+import { profileSchema, uiLayoutSchema } from '../validation.js';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth);
@@ -47,4 +47,12 @@ profileRouter.put('/', (req, res) => {
     'UPDATE users SET profile_height = ?, profile_birth_year = ?, profile_gender = ?, profile_activity = ?, profile_goal = ?, profile_goal_kcal = ? WHERE id = ?'
   ).run(height, birthYear, gender, activity, goal, goalKcal, req.userId);
   return res.json(profileJson(req.userId));
+});
+
+// 介面自定義（主頁卡片順序與顯示）：跟帳號儲存，換裝置登入自動帶入；讀取走 /api/auth/me
+profileRouter.put('/layout', (req, res) => {
+  const parsed = uiLayoutSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  db.prepare('UPDATE users SET ui_layout = ? WHERE id = ?').run(JSON.stringify(parsed.data), req.userId);
+  return res.json(parsed.data);
 });

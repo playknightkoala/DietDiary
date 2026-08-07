@@ -271,6 +271,10 @@ if (!userCols2.includes('profile_goal')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_goal TEXT NOT NULL DEFAULT 'normal' CHECK (profile_goal IN ('normal', 'cut', 'gain'))`);
   db.exec(`ALTER TABLE users ADD COLUMN profile_goal_kcal TEXT NOT NULL DEFAULT ''`);
 }
+// 介面自定義（主頁卡片順序與顯示；JSON 字串，''＝未設定）：跟帳號儲存，換裝置登入自動帶入
+if (!userCols2.includes('ui_layout')) {
+  db.exec(`ALTER TABLE users ADD COLUMN ui_layout TEXT NOT NULL DEFAULT ''`);
+}
 
 // entry_comments 增加 is_ai 標記（1＝AI 產生的評語）：顯示 AI 標籤、不可被當成本人留言編輯
 const commentCols = (db.pragma('table_info(entry_comments)') as { name: string }[]).map((c) => c.name);

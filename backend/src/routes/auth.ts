@@ -328,9 +328,9 @@ authRouter.post('/logout', (_req, res) => {
 // 會員中心：目前登入者資訊
 authRouter.get('/me', requireAuth, (req, res) => {
   const user = db
-    .prepare('SELECT username, role, status, nickname, ai_enabled, created_at FROM users WHERE id = ?')
+    .prepare('SELECT username, role, status, nickname, ai_enabled, ui_layout, created_at FROM users WHERE id = ?')
     .get(req.userId) as
-    | { username: string; role: Role; status: string; nickname: string; ai_enabled: number; created_at: string }
+    | { username: string; role: Role; status: string; nickname: string; ai_enabled: number; ui_layout: string; created_at: string }
     | undefined;
   if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
   return res.json({
@@ -338,6 +338,8 @@ authRouter.get('/me', requireAuth, (req, res) => {
     role: user.role,
     nickname: user.nickname,
     aiEnabled: !!user.ai_enabled,
+    // 介面自定義（JSON 字串，''＝未設定）：前端解析並清洗
+    uiLayout: user.ui_layout,
     createdAt: user.created_at,
   });
 });

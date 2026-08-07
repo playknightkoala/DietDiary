@@ -128,7 +128,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password, remember }),
     }),
-  me: () => request<{ username: string; role: Role; nickname: string; aiEnabled: boolean; createdAt: string }>('/api/auth/me'),
+  me: () => request<{ username: string; role: Role; nickname: string; aiEnabled: boolean; uiLayout: string; createdAt: string }>('/api/auth/me'),
   // 照片存取 cookie：/uploads 需驗證（<img> 無法帶 header）。登入回應會設，
   // 啟動時再補呼叫一次，讓「升級前已登入」的 session 也拿得到
   refreshPhotoCookie: () => request<void>('/api/auth/photo-cookie', { method: 'POST' }),
@@ -208,6 +208,10 @@ export const api = {
   getProfile: () => request<Profile>('/api/profile'),
   putProfile: (p: Omit<Profile, 'weight'>) =>
     request<Profile>('/api/profile', { method: 'PUT', body: JSON.stringify(p) }),
+
+  // 介面自定義（主頁卡片順序與顯示）：跟帳號儲存，換裝置登入自動帶入（讀取走 /api/auth/me）
+  putLayout: (layout: { order: string[]; hidden: string[] }) =>
+    request<{ order: string[]; hidden: string[] }>('/api/profile/layout', { method: 'PUT', body: JSON.stringify(layout) }),
 
   // 身體數據歷程紀錄：所有指標一次取回、以量測日對齊（舊→新）
   getBodyTrend: (limit = 30) =>
