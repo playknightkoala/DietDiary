@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS entries (
   items TEXT NOT NULL DEFAULT '[]',
   orig_data TEXT NOT NULL DEFAULT '',
   food_edited_at INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_entries_user_date ON entries(user_id, date);
@@ -259,16 +260,25 @@ if (!userCols2.includes('ai_enabled')) {
 }
 
 // TDEE 基本資料：身高（cm）／出生年／生理性別／活動量，計算 BMR 與 TDEE 用。
-// 存「出生年」而非年齡，年齡隨年份自動增加；''＝未設定（與 body 欄位同樣以 TEXT 空字串表示）
+// 存「出生年」而非年齡，年齡隨年份自動增加；''＝未設定（與 body 欄位同樣以 TEXT 空字串表示）。
+// 逐欄檢查（不可整組共用第一欄當開關）：新增途中若中斷，重啟才補得齊剩餘欄位
 if (!userCols2.includes('profile_height')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_height TEXT NOT NULL DEFAULT ''`);
+}
+if (!userCols2.includes('profile_birth_year')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_birth_year TEXT NOT NULL DEFAULT ''`);
+}
+if (!userCols2.includes('profile_gender')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_gender TEXT NOT NULL DEFAULT '' CHECK (profile_gender IN ('', 'male', 'female'))`);
+}
+if (!userCols2.includes('profile_activity')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_activity TEXT NOT NULL DEFAULT ''`);
 }
 // 體重目標：normal＝一般（TDEE 不調整）、cut＝減重（TDEE－goal_kcal）、gain＝增重（TDEE＋goal_kcal）
 if (!userCols2.includes('profile_goal')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_goal TEXT NOT NULL DEFAULT 'normal' CHECK (profile_goal IN ('normal', 'cut', 'gain'))`);
+}
+if (!userCols2.includes('profile_goal_kcal')) {
   db.exec(`ALTER TABLE users ADD COLUMN profile_goal_kcal TEXT NOT NULL DEFAULT ''`);
 }
 // 介面自定義（主頁卡片順序與顯示；JSON 字串，''＝未設定）：跟帳號儲存，換裝置登入自動帶入
@@ -323,6 +333,11 @@ if (!entryCols.includes('items')) {
   // 無照片的食物項目頁（[{food, customItems}]，可與照片頁並存）；
   // 不變量：food 欄位 = photo_foods 各值加總 + items 各項 food 加總
   db.exec(`ALTER TABLE entries ADD COLUMN items TEXT NOT NULL DEFAULT '[]'`);
+}
+if (!entryCols.includes('revision')) {
+  // 樂觀鎖版本號：每次內容更新 +1；PATCH 帶 expectedRevision 不符即回 409，
+  // 防止兩台裝置同時開著編輯視窗時互相覆蓋（後存的整筆蓋掉先存的）
+  db.exec(`ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`);
 }
 if (!entryCols.includes('orig_data')) {
   // 營養師調整前的會員原始資料快照（{photoFoods, photoCustoms, items, food} JSON；''＝未被調整）。

@@ -75,6 +75,9 @@ export const dateSchema = z.string().regex(DATE_RE).refine((s) => {
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 });
 
+// 路由參數（:date、from/to）用：所有日期入口都要擋非真實日期，不能只靠 DATE_RE 字形檢查
+export const isRealDate = (s: unknown): s is string => dateSchema.safeParse(s).success;
+
 // body/ex 數值以字串儲存（'' = 未填）：需為非負數字，上限 99999（體重/體脂/腰圍/分鐘都遠低於此）
 const numText = z.string().max(20).refine((s) => {
   if (s === '') return true;
@@ -164,13 +167,19 @@ export const entryPatchSchema = z.object({
   items: itemsSchema.optional(),
   // PATCH 只能「保留既有照片的子集合」（刪除用）；新增照片走 /photos 上傳
   photos: z.array(z.string().max(300)).max(MAX_PHOTOS).optional(),
-  // 用餐日期／時間：改日期會把這筆紀錄移到該天
-  date: z.string().regex(DATE_RE).optional(),
+  // 用餐日期／時間：改日期會把這筆紀錄移到該天（需為真實日曆日）
+  date: dateSchema.optional(),
   eatTime: eatTimeSchema.optional(),
+  // 樂觀鎖：帶上開啟編輯當下的 revision，不符（已在其他裝置修改）回 409 不覆蓋
+  expectedRevision: z.number().int().min(0).optional(),
 });
 
+// 樂觀鎖 expectedRevision：未提供＝相容舊 client（不檢查）；有提供就必須是非負整數，
+// 格式錯誤回 400——不能靜默當成未提供，否則鎖形同虛設
+export const expectedRevisionSchema = z.number().int().min(0).optional();
+
 // 從歷史加入：複製自己既有的照片到目前這筆紀錄
-export const copyPhotoSchema = z.object({ photo: z.string().max(300) });
+export const copyPhotoSchema = z.object({ photo: z.string().max(300), expectedRevision: expectedRevisionSchema });
 
 // 留言對象：某筆飲食（entry:<id>）、某筆喝水（water:<id>）或某筆運動（ex:<id>）
 export const COMMENT_TARGET_RE = /^(entry:\d{1,10}|water:\d{1,10}|ex:\d{1,10})$/;
@@ -234,7 +243,7 @@ export const aiCommentSchema = z.object({
 
 // AI 今日總評：針對某一天產生整天的綜合評語
 export const aiDailySchema = z.object({
-  date: z.string().regex(DATE_RE),
+  date: dateSchema,
 });
 
 // 營養師查詢輔助：網路搜尋＋LLM 摘要的問題

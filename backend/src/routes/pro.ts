@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, DATE_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
+import { COMMENT_TARGET_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, isRealDate, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
 import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 import { profileJson } from './profile.js';
@@ -75,7 +75,7 @@ proRouter.get('/members/:id/days/:date', (req, res) => {
   const member = getMember(req.params.id);
   if (!member) return res.status(404).json({ error: 'not found' });
   const date = req.params.date;
-  if (!DATE_RE.test(date)) return res.status(400).json({ error: 'invalid date' });
+  if (!isRealDate(date)) return res.status(400).json({ error: 'invalid date' });
   return res.json(getDayJson(member.id, date));
 });
 
@@ -83,7 +83,7 @@ proRouter.get('/members/:id/marks', (req, res) => {
   const member = getMember(req.params.id);
   if (!member) return res.status(404).json({ error: 'not found' });
   const { from, to } = req.query as { from?: string; to?: string };
-  if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+  if (!from || !to || !isRealDate(from) || !isRealDate(to)) {
     return res.status(400).json({ error: 'invalid range' });
   }
   const dayMs = new Date(to).getTime() - new Date(from).getTime();
@@ -134,6 +134,16 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
   const hasFood = req.body?.food !== undefined;
   if (!hasPhotoFoods && !hasPhotoCustoms && !hasItems && !hasFood) {
     return res.status(400).json({ error: 'invalid payload' });
+  }
+  // 樂觀鎖（選帶）：編輯器開啟時的 revision；不符＝會員（或另一位營養師）剛改過，回 409 不覆蓋。
+  // 有提供但格式錯誤要回 400——靜默當成未提供會讓鎖形同虛設
+  const rawRev = req.body?.expectedRevision;
+  let expectedRevision: number | undefined;
+  if (rawRev !== undefined) {
+    if (typeof rawRev !== 'number' || !Number.isInteger(rawRev) || rawRev < 0) {
+      return res.status(400).json({ error: 'invalid payload' });
+    }
+    expectedRevision = rawRev;
   }
 
   const existing = parsePhotos(entry.photos);
@@ -193,15 +203,25 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
     : [];
   const setEdited = foodsChanged ? ', food_edited_at = ?' : '';
   const editedArgs = foodsChanged ? [Date.now()] : [];
-  db.prepare(`UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?${setOrig}${setEdited} WHERE id = ?`).run(
-    JSON.stringify(nextPf),
-    JSON.stringify(nextPc),
-    JSON.stringify(nextItems),
-    JSON.stringify(computeEntryFood(nextPf, nextItems)),
-    ...origArgs,
-    ...editedArgs,
-    entry.id
-  );
+  const revCond = expectedRevision !== undefined ? ' AND revision = ?' : '';
+  const revArgs = expectedRevision !== undefined ? [expectedRevision] : [];
+  const info = db
+    .prepare(
+      `UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?, revision = revision + 1${setOrig}${setEdited} WHERE id = ?${revCond}`
+    )
+    .run(
+      JSON.stringify(nextPf),
+      JSON.stringify(nextPc),
+      JSON.stringify(nextItems),
+      JSON.stringify(computeEntryFood(nextPf, nextItems)),
+      ...origArgs,
+      ...editedArgs,
+      entry.id,
+      ...revArgs
+    );
+  if (expectedRevision !== undefined && info.changes === 0) {
+    return res.status(409).json({ error: '這筆紀錄剛被會員（或其他營養師）修改，為避免互相覆蓋，這次的調整沒有儲存；請重新開啟編輯。' });
+  }
   pushNotification(member.id, 'food', `entry:${entry.id}`);
   const row = db.prepare(`SELECT ${ENTRY_COLS} FROM entries WHERE id = ?`).get(entry.id) as EntryRow;
   return res.json(entryToJsonWithRatings(row, member.id));

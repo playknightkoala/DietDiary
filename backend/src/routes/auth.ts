@@ -186,8 +186,8 @@ authRouter.post('/forgot/reset', async (req, res) => {
   const { email, code, newPassword } = parsed.data;
 
   const row = db
-    .prepare('SELECT code, expires_at, attempts FROM email_codes WHERE email = ?')
-    .get(email) as { code: string; expires_at: number; attempts: number } | undefined;
+    .prepare('SELECT code, expires_at, sent_at, attempts FROM email_codes WHERE email = ?')
+    .get(email) as { code: string; expires_at: number; sent_at: number; attempts: number } | undefined;
   if (!row || Date.now() > row.expires_at) {
     return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
   }
@@ -208,9 +208,29 @@ authRouter.post('/forgot/reset', async (req, res) => {
     return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
   }
 
-  const hash = await bcrypt.hash(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
-  db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
+  // 原子消耗認證碼（在 await bcrypt 讓出事件圈「之前」）：並發的兩個請求只有一個刪得到，
+  // 避免同一組碼被同時使用、由較晚完成的請求決定密碼
+  const consumed = db
+    .prepare('DELETE FROM email_codes WHERE email = ? AND code = ? AND expires_at >= ?')
+    .run(email, code, Date.now());
+  if (consumed.changes !== 1) {
+    return res.status(400).json({ error: '認證碼已失效，請重新取得認證碼' });
+  }
+
+  // bcrypt 與 DB 寫入放同一個 try：hash 本身失敗（資源不足等）也要補償，認證碼才不會白白消耗
+  try {
+    const hash = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  } catch (e) {
+    // 基礎設施錯誤（唯讀／磁碟滿等）：把剛消耗的認證碼補償寫回，使用者可直接重試不用重寄。
+    // OR IGNORE：這段期間使用者若已重新取得新碼，絕不能用舊碼覆蓋（一碼只能用一次）
+    try {
+      db.prepare('INSERT OR IGNORE INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, ?)')
+        .run(email, row.code, row.expires_at, row.sent_at, row.attempts);
+    } catch { /* 補償也失敗就只能重寄 */ }
+    console.error('forgot/reset password update failed:', e);
+    return res.status(500).json({ error: '系統暫時無法處理，請稍後再試' });
+  }
   return res.json({ ok: true });
 });
 
@@ -247,12 +267,13 @@ authRouter.post('/register', async (req, res) => {
   }
   const { username, password, code } = parsed.data;
 
-  const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  // NOCASE：登入是不分大小寫比對，重複檢查也要一致，避免與大小寫不同的舊帳號並存
+  const exists = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
   if (exists) return res.status(409).json({ error: '此 Email 已註冊過' });
 
   const row = db
-    .prepare('SELECT code, expires_at, attempts FROM email_codes WHERE email = ?')
-    .get(username) as { code: string; expires_at: number; attempts: number } | undefined;
+    .prepare('SELECT code, expires_at, sent_at, attempts FROM email_codes WHERE email = ?')
+    .get(username) as { code: string; expires_at: number; sent_at: number; attempts: number } | undefined;
   if (!row || Date.now() > row.expires_at) {
     return res.status(400).json({ error: '認證碼已過期或尚未寄送，請重新取得認證碼' });
   }
@@ -265,10 +286,33 @@ authRouter.post('/register', async (req, res) => {
     return res.status(400).json({ error: '認證碼錯誤' });
   }
 
-  const hash = await bcrypt.hash(password, 10);
+  // 原子消耗認證碼（在 await bcrypt 讓出事件圈「之前」）：並發的兩個註冊只有一個能消耗成功
+  const consumed = db
+    .prepare('DELETE FROM email_codes WHERE email = ? AND code = ? AND expires_at >= ?')
+    .run(username, code, Date.now());
+  if (consumed.changes !== 1) {
+    return res.status(400).json({ error: '認證碼已失效，請重新取得認證碼' });
+  }
+
+  // bcrypt 與 DB 寫入放同一個 try：hash 本身失敗（資源不足等）也要補償，認證碼才不會白白消耗。
   // 開通改由管理者後台操作，不再寄送開通連結信
-  db.prepare(`INSERT INTO users (username, password_hash, status) VALUES (?, ?, 'pending')`).run(username, hash);
-  db.prepare('DELETE FROM email_codes WHERE email = ?').run(username);
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    db.prepare(`INSERT INTO users (username, password_hash, status) VALUES (?, ?, 'pending')`).run(username, hash);
+  } catch (e) {
+    // 只把「唯一鍵衝突」當成重複註冊（並發搶同一 Email）；其他錯誤（唯讀／磁碟滿／hash 失敗等）
+    // 補償寫回剛消耗的認證碼並回 500，不能偽裝成「已註冊過」誤導使用者
+    if ((e as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: '此 Email 已註冊過' });
+    }
+    // OR IGNORE：這段期間使用者若已重新取得新碼，絕不能用舊碼覆蓋（一碼只能用一次）
+    try {
+      db.prepare('INSERT OR IGNORE INTO email_codes (email, code, expires_at, sent_at, attempts) VALUES (?, ?, ?, ?, ?)')
+        .run(username, row.code, row.expires_at, row.sent_at, row.attempts);
+    } catch { /* 補償也失敗就只能重寄 */ }
+    console.error('register insert failed:', e);
+    return res.status(500).json({ error: '系統暫時無法處理，請稍後再試' });
+  }
   promoteAdminIfConfigured(username);
 
   return res.status(201).json({

@@ -89,10 +89,28 @@ entriesRouter.post('/:id/photos/copy', (req, res) => {
   fs.copyFileSync(srcPath, path.join(UPLOAD_DIR, filename));
   const newUrl = `/uploads/${filename}`;
   const photos = [...current, newUrl];
-  db.prepare('UPDATE entries SET photos = ? WHERE id = ?').run(JSON.stringify(photos), entry.id);
+  // 樂觀鎖：revision 不符（其他裝置改過）不落任何變更，剛複製的檔案也收回；
+  // DB 寫入本身炸掉（磁碟滿／唯讀等）同樣要收回檔案，否則留下永久孤兒檔
+  const expectedRevision = parsed.data.expectedRevision;
+  const revCond = expectedRevision !== undefined ? ' AND revision = ?' : '';
+  const revArgs = expectedRevision !== undefined ? [expectedRevision] : [];
+  let info;
+  try {
+    info = db
+      .prepare(`UPDATE entries SET photos = ?, revision = revision + 1 WHERE id = ?${revCond}`)
+      .run(JSON.stringify(photos), entry.id, ...revArgs);
+  } catch (e) {
+    unlinkPhoto(newUrl);
+    throw e; // 同步 handler：交給共用 error middleware 回 500
+  }
+  if (expectedRevision !== undefined && info.changes === 0) {
+    unlinkPhoto(newUrl);
+    return res.status(409).json({ error: '這筆紀錄剛在其他裝置被修改，為避免互相覆蓋，這次的變更沒有儲存；請重新開啟編輯。' });
+  }
   // 空白紀錄因加入照片而有內容＝發布新貼文
   if (!entryHasData(entryToJson(entry))) notifyFollowers(req.userId, `entry:${entry.id}`);
-  return res.json({ photos, photo: newUrl });
+  // 回傳最新 revision：讓開著的編輯視窗更新樂觀鎖基準（基準相符才會走到這裡）
+  return res.json({ photos, photo: newUrl, revision: entry.revision + 1 });
 });
 
 entriesRouter.patch('/:id', (req, res) => {
@@ -100,7 +118,7 @@ entriesRouter.patch('/:id', (req, res) => {
   if (!entry) return res.status(404).json({ error: 'not found' });
   const parsed = entryPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
-  const { desc, food, photoFoods, photoCustoms, items, photos, date, eatTime } = parsed.data;
+  const { desc, food, photoFoods, photoCustoms, items, photos, date, eatTime, expectedRevision } = parsed.data;
 
   const sets: string[] = [];
   const args: string[] = [];
@@ -196,11 +214,30 @@ entriesRouter.patch('/:id', (req, res) => {
   }
 
   if (sets.length) {
-    db.prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?`).run(...args, entry.id);
+    // 樂觀鎖：帶 expectedRevision 時以條件更新，revision 不符＝內容已在其他裝置更新，
+    // 回 409 且什麼都不改（含照片檔案），避免整筆覆蓋對方的修改。
+    // entry 更新與被刪照片的評分清理放同一交易：任一失敗整筆回滾，
+    // 不會出現「照片已移除、revision 已加，但評分殘留還回 500」的半套提交
+    sets.push('revision = revision + 1');
+    const revCond = expectedRevision !== undefined ? ' AND revision = ?' : '';
+    const revArgs = expectedRevision !== undefined ? [expectedRevision] : [];
+    let conflicted = false;
+    db.transaction(() => {
+      const info = db
+        .prepare(`UPDATE entries SET ${sets.join(', ')} WHERE id = ?${revCond}`)
+        .run(...args, entry.id, ...revArgs);
+      if (expectedRevision !== undefined && info.changes === 0) {
+        conflicted = true;
+        return;
+      }
+      if (removedPhotos.length) deletePhotoRatings(entry.id, removedPhotos);
+    })();
+    if (conflicted) {
+      return res.status(409).json({ error: '這筆紀錄剛在其他裝置被修改，為避免互相覆蓋，這次的變更沒有儲存；請重新開啟編輯。' });
+    }
   }
-  // DB 更新成功後才刪實體檔案與評分：避免更新失敗卻已把檔案刪掉、留下指向不存在照片的紀錄
+  // 交易成功後才刪實體檔案：unlink 失敗只是留下孤兒檔，不會有指向不存在照片的紀錄
   if (removedPhotos.length) {
-    deletePhotoRatings(entry.id, removedPhotos);
     removedPhotos.forEach(unlinkPhoto);
   }
   const updated = getOwnedEntry(req.userId, req.params.id)!;
@@ -223,13 +260,36 @@ entriesRouter.patch('/:id', (req, res) => {
 entriesRouter.delete('/:id', (req, res) => {
   const entry = getOwnedEntry(req.userId, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
+  // 樂觀鎖（選帶）：有提供就必須是非負整數；不符（其他裝置剛改過內容）回 409 不刪，
+  // 避免過時裝置以「本地看起來已清空」為由，把別台裝置剛補上的內容整筆刪掉
+  const rawRev = (req.body as Record<string, unknown> | undefined)?.expectedRevision;
+  let expectedRevision: number | undefined;
+  if (rawRev !== undefined) {
+    if (typeof rawRev !== 'number' || !Number.isInteger(rawRev) || rawRev < 0) {
+      return res.status(400).json({ error: 'invalid payload' });
+    }
+    expectedRevision = rawRev;
+  }
   const photos = parsePhotos(entry.photos);
-  // 一次交易刪除評分／留言／紀錄：避免中途失敗留下孤兒 metadata
+  // 一次交易刪除評分／留言／紀錄：避免中途失敗留下孤兒 metadata。
+  // 交易內先重讀 revision 驗證（better-sqlite3 交易同步互斥，讀完不會被插隊），
+  // 再刪評分與留言、最後刪本體——photo_ratings.entry_id 有 FK 指向 entries，先刪本體會爆 FK constraint
+  let conflicted = false;
   db.transaction(() => {
+    if (expectedRevision !== undefined) {
+      const cur = db.prepare('SELECT revision FROM entries WHERE id = ?').get(entry.id) as { revision: number } | undefined;
+      if (!cur || cur.revision !== expectedRevision) {
+        conflicted = true;
+        return;
+      }
+    }
     deletePhotoRatings(entry.id);
     db.prepare('DELETE FROM entry_comments WHERE user_id = ? AND target = ?').run(req.userId, `entry:${entry.id}`);
     db.prepare('DELETE FROM entries WHERE id = ?').run(entry.id);
   })();
+  if (conflicted) {
+    return res.status(409).json({ error: '這筆紀錄剛在其他裝置被修改，為避免誤刪，這次沒有刪除；請重新開啟確認。' });
+  }
   // DB 已刪除後才刪實體檔案：即使 unlink 失敗也只是留下孤兒檔，不會有指向已刪紀錄的照片
   photos.forEach(unlinkPhoto);
   return res.status(204).end();
@@ -241,23 +301,57 @@ entriesRouter.post('/:id/photos', upload.array('photos', MAX_PHOTOS), (req, res)
   if (!entry) return res.status(404).json({ error: 'not found' });
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (!files.length) return res.status(400).json({ error: 'photo files required (jpeg)' });
+  // 樂觀鎖（multipart 文字欄位，字串型）：有提供就必須是非負整數，格式錯誤回 400
+  const rawRev = (req.body as Record<string, unknown> | undefined)?.expectedRevision;
+  let expectedRevision: number | undefined;
+  if (rawRev !== undefined) {
+    if (typeof rawRev !== 'string' || !/^\d{1,9}$/.test(rawRev)) {
+      return res.status(400).json({ error: 'invalid payload' });
+    }
+    expectedRevision = Number(rawRev);
+  }
 
   const current = parsePhotos(entry.photos);
   if (current.length + files.length > MAX_PHOTOS) {
     return res.status(400).json({ error: `每筆紀錄最多 ${MAX_PHOTOS} 張照片` });
   }
-  const urls = files.map((file, i) => {
-    // 加隨機後綴：避免同一毫秒的並行上傳產生相同檔名而互相覆蓋
-    const filename = `e${entry.id}-${Date.now()}-${i}-${crypto.randomBytes(3).toString('hex')}.jpg`;
-    // 存檔前去除 EXIF（部分手機瀏覽器壓縮後仍保留；會讓 LLM gateway 解析 500，也可能夾帶 GPS 隱私）
-    fs.writeFileSync(path.join(UPLOAD_DIR, filename), stripJpegExif(file.buffer));
-    return `/uploads/${filename}`;
-  });
+  // 逐張累積寫檔：第 N 張寫失敗（磁碟滿等）時，前面已寫成功的也要收回，不留孤兒檔
+  const urls: string[] = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      // 加隨機後綴：避免同一毫秒的並行上傳產生相同檔名而互相覆蓋
+      const filename = `e${entry.id}-${Date.now()}-${i}-${crypto.randomBytes(3).toString('hex')}.jpg`;
+      // 存檔前去除 EXIF（部分手機瀏覽器壓縮後仍保留；會讓 LLM gateway 解析 500，也可能夾帶 GPS 隱私）
+      fs.writeFileSync(path.join(UPLOAD_DIR, filename), stripJpegExif(files[i].buffer));
+      urls.push(`/uploads/${filename}`);
+    }
+  } catch (e) {
+    urls.forEach(unlinkPhoto);
+    throw e; // 同步 handler：交給共用 error middleware 回 500
+  }
   const photos = [...current, ...urls];
-  db.prepare('UPDATE entries SET photos = ? WHERE id = ?').run(JSON.stringify(photos), entry.id);
+  // 樂觀鎖：revision 不符（其他裝置改過）不落任何變更，剛寫入的檔案也收回。
+  // 若不擋，過時的編輯視窗會經由上傳「洗到」最新 revision，接著整筆覆蓋別台裝置的修改。
+  // DB 寫入本身炸掉（磁碟滿／唯讀等）同樣要收回檔案，否則留下永久孤兒檔
+  const revCond = expectedRevision !== undefined ? ' AND revision = ?' : '';
+  const revArgs = expectedRevision !== undefined ? [expectedRevision] : [];
+  let info;
+  try {
+    info = db
+      .prepare(`UPDATE entries SET photos = ?, revision = revision + 1 WHERE id = ?${revCond}`)
+      .run(JSON.stringify(photos), entry.id, ...revArgs);
+  } catch (e) {
+    urls.forEach(unlinkPhoto);
+    throw e; // 同步 handler：交給共用 error middleware 回 500
+  }
+  if (expectedRevision !== undefined && info.changes === 0) {
+    urls.forEach(unlinkPhoto);
+    return res.status(409).json({ error: '這筆紀錄剛在其他裝置被修改，為避免互相覆蓋，這次的變更沒有儲存；請重新開啟編輯。' });
+  }
   // 空白紀錄因上傳照片而有內容＝發布新貼文
   if (!entryHasData(entryToJson(entry))) {
     notifyFollowers(req.userId, `entry:${entry.id}`);
   }
-  return res.json({ photos });
+  // 回傳最新 revision：讓開著的編輯視窗更新樂觀鎖基準（基準相符才會走到這裡）
+  return res.json({ photos, revision: entry.revision + 1 });
 });

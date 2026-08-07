@@ -39,6 +39,8 @@ export interface Entry {
   photoCustoms: Partial<Record<string, CustomItem[]>>;
   // 無照片的食物項目頁（每項＝六大類份數＋自定義；可與照片頁並存）
   items: EntryFoodItem[];
+  // 樂觀鎖版本號：編輯視窗開啟時記下，儲存帶 expectedRevision，不符（其他裝置改過）回 409
+  revision: number;
   // 營養師調整前的會員原始資料（null＝未被調整過；會員自行再改份數後清除）
   orig: EntryOrig | null;
   // 營養師調整份數的時間戳（Unix ms，0＝未被調整）

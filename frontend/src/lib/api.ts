@@ -163,13 +163,20 @@ export const api = {
 
   createEntry: (date: string, meal: MealKey, eatTime?: string) =>
     request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal, eatTime }) }),
-  patchEntry: (id: number, patch: { desc?: string; food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[]; photos?: string[]; date?: string; eatTime?: string }) =>
+  patchEntry: (id: number, patch: { desc?: string; food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[]; photos?: string[]; date?: string; eatTime?: string; expectedRevision?: number }) =>
     request<Entry>(`/api/entries/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, { method: 'DELETE' }),
-  uploadPhotos: (id: number, blobs: Blob[]) => {
+  // expectedRevision（樂觀鎖）：避免過時裝置以「本地已清空」為由刪掉別台裝置剛補上的內容
+  deleteEntry: (id: number, expectedRevision?: number) =>
+    request<void>(`/api/entries/${id}`, {
+      method: 'DELETE',
+      ...(expectedRevision !== undefined ? { body: JSON.stringify({ expectedRevision }) } : {}),
+    }),
+  uploadPhotos: (id: number, blobs: Blob[], expectedRevision?: number) => {
     const form = new FormData();
     blobs.forEach((b, i) => form.append('photos', b, `photo-${i}.jpg`));
-    return request<{ photos: string[] }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
+    // 樂觀鎖：不帶的話，過時的編輯視窗會經由上傳取得最新 revision，接著整筆覆蓋別台裝置的修改
+    if (expectedRevision !== undefined) form.append('expectedRevision', String(expectedRevision));
+    return request<{ photos: string[]; revision: number }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
   // 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組）；limit 為每餐別的餐卡上限
   entryHistory: (excludeId?: number, limit = 30) =>
@@ -177,10 +184,10 @@ export const api = {
   // 最近記過的「自訂名稱＋大卡」自定義項目（快速再次加入）
   customItemHistory: () => request<{ name: string; kcal: number }[]>('/api/entries/custom-history'),
   // 把一張歷史照片複製到目前這筆紀錄，回傳更新後的照片清單與新照片 URL
-  copyPhoto: (id: number, photo: string) =>
-    request<{ photos: string[]; photo: string }>(`/api/entries/${id}/photos/copy`, {
+  copyPhoto: (id: number, photo: string, expectedRevision?: number) =>
+    request<{ photos: string[]; photo: string; revision: number }>(`/api/entries/${id}/photos/copy`, {
       method: 'POST',
-      body: JSON.stringify({ photo }),
+      body: JSON.stringify({ photo, expectedRevision }),
     }),
 
   // 留言（會員對自己的紀錄）
@@ -279,7 +286,7 @@ export const api = {
   proProfile: (memberId: number) => request<Profile>(`/api/pro/members/${memberId}/profile`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
-  proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[] }) =>
+  proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[]; expectedRevision?: number }) =>
     request<Entry>(`/api/pro/members/${memberId}/entries/${entryId}/food`, {
       method: 'PUT',
       body: JSON.stringify(payload),

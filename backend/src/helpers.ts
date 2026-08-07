@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
+import { invalidateLegacyPhotoOwner } from './middleware/auth.js';
 import { CUSTOM_ITEM_TYPES, CUSTOM_KCAL_FACTOR, FOOD_KEYS, MAX_CUSTOM_ITEMS, MAX_ITEMS } from './validation.js';
 
 export type Food = Record<(typeof FOOD_KEYS)[number], number>;
@@ -29,11 +30,12 @@ export interface EntryRow {
   items: string;
   orig_data: string;
   food_edited_at: number;
+  revision: number;
 }
 
 // entries 的標準欄位清單：所有讀 entry 的 SELECT 一律用這個常數，
 // 避免新增欄位時漏改某處（漏了不會爆錯、只會讓 marker/通知悄悄判斷錯誤）
-export const ENTRY_COLS = 'id, meal, desc, photos, eat_time, food, photo_foods, photo_customs, items, orig_data, food_edited_at';
+export const ENTRY_COLS = 'id, meal, desc, photos, eat_time, food, photo_foods, photo_customs, items, orig_data, food_edited_at, revision';
 
 // 無照片的食物項目頁（可與照片頁並存）
 export interface EntryItem {
@@ -243,6 +245,9 @@ export function stripJpegExif(buf: Buffer): Buffer {
 
 export function unlinkPhoto(photoUrl: string) {
   if (!photoUrl.startsWith('/uploads/')) return;
+  // 呼叫此函式時 DB 都已不再擁有這張照片：立即讓 legacy 擁有者對照表失效，
+  // 就算實體 unlink 失敗（檔案殘留），photoAuth 也不會再放行（fail-closed）
+  invalidateLegacyPhotoOwner(photoUrl);
   const file = path.join(UPLOAD_DIR, path.basename(photoUrl));
   fs.unlink(file, () => {});
 }
@@ -260,6 +265,7 @@ export function entryToJson(e: EntryRow) {
     items: parseItems(e.items ?? '[]'),
     orig: parseOrigData(e.orig_data ?? ''), // 營養師調整前的會員原始資料（null＝未被調整）
     foodEditedAt: e.food_edited_at ?? 0, // >0＝營養師調整過份數
+    revision: e.revision ?? 0, // 樂觀鎖版本號：編輯視窗開啟時記下，儲存帶 expectedRevision 防跨裝置覆蓋
   };
 }
 
@@ -520,43 +526,58 @@ export function notificationDate(target: string): string {
 
 // 同一貼文的同類型未讀通知只保留一則（例如一筆紀錄多張照片評分只算一則），重複事件僅更新時間
 // memberId：接收者為營養師時，標記通知來自哪位會員的貼文（0＝自己的紀錄）
+// 通知一律 best-effort：呼叫端都是在主要寫入「已提交之後」才通知，
+// 通知資料表寫入失敗只記 log、絕不 throw——否則主要操作明明成功卻回 500，
+// 前端不更新 revision 基準，使用者重試還會撞 409
 export function pushNotification(userId: number, type: NotificationType, target: string, memberId = 0) {
-  const date = notificationDate(target);
-  if (!date) return;
-  const existing = db
-    .prepare('SELECT id FROM notifications WHERE user_id = ? AND type = ? AND target = ? AND member_id = ? AND read = 0')
-    .get(userId, type, target, memberId) as { id: number } | undefined;
-  if (existing) {
-    db.prepare('UPDATE notifications SET created_at = ?, date = ? WHERE id = ?').run(Date.now(), date, existing.id);
-  } else {
-    db.prepare('INSERT INTO notifications (user_id, type, target, date, member_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      userId,
-      type,
-      target,
-      date,
-      memberId,
-      Date.now()
-    );
+  try {
+    const date = notificationDate(target);
+    if (!date) return;
+    const existing = db
+      .prepare('SELECT id FROM notifications WHERE user_id = ? AND type = ? AND target = ? AND member_id = ? AND read = 0')
+      .get(userId, type, target, memberId) as { id: number } | undefined;
+    if (existing) {
+      db.prepare('UPDATE notifications SET created_at = ?, date = ? WHERE id = ?').run(Date.now(), date, existing.id);
+    } else {
+      db.prepare('INSERT INTO notifications (user_id, type, target, date, member_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        userId,
+        type,
+        target,
+        date,
+        memberId,
+        Date.now()
+      );
+    }
+  } catch (e) {
+    console.error('pushNotification failed (ignored):', e);
   }
 }
 
-// 追蹤的會員發布新貼文（飲食／喝水／運動）時，通知所有追蹤者（營養師）
+// 追蹤的會員發布新貼文（飲食／喝水／運動）時，通知所有追蹤者（營養師）。best-effort（見 pushNotification）
 export function notifyFollowers(memberId: number, target: string) {
-  const followers = db
-    .prepare('SELECT dietitian_id AS id FROM follows WHERE member_id = ?')
-    .all(memberId) as { id: number }[];
-  for (const f of followers) pushNotification(f.id, 'post', target, memberId);
+  try {
+    const followers = db
+      .prepare('SELECT dietitian_id AS id FROM follows WHERE member_id = ?')
+      .all(memberId) as { id: number }[];
+    for (const f of followers) pushNotification(f.id, 'post', target, memberId);
+  } catch (e) {
+    console.error('notifyFollowers failed (ignored):', e);
+  }
 }
 
-// 會員在自己的貼文留言時，通知所有曾在該貼文留言的營養師／管理者（排除留言者本人）
+// 會員在自己的貼文留言時，通知所有曾在該貼文留言的營養師／管理者（排除留言者本人）。best-effort
 export function notifyCommentWatchers(ownerId: number, target: string, authorId: number) {
-  const watchers = db
-    .prepare(
-      `SELECT DISTINCT c.author_id AS id FROM entry_comments c JOIN users u ON u.id = c.author_id
-       WHERE c.user_id = ? AND c.target = ? AND c.author_id != ? AND u.role IN ('dietitian','admin')`
-    )
-    .all(ownerId, target, authorId) as { id: number }[];
-  for (const w of watchers) pushNotification(w.id, 'comment', target, ownerId);
+  try {
+    const watchers = db
+      .prepare(
+        `SELECT DISTINCT c.author_id AS id FROM entry_comments c JOIN users u ON u.id = c.author_id
+         WHERE c.user_id = ? AND c.target = ? AND c.author_id != ? AND u.role IN ('dietitian','admin')`
+      )
+      .all(ownerId, target, authorId) as { id: number }[];
+    for (const w of watchers) pushNotification(w.id, 'comment', target, ownerId);
+  } catch (e) {
+    console.error('notifyCommentWatchers failed (ignored):', e);
+  }
 }
 
 // 確認留言對象屬於該會員（三種 target 皆查各自資料表的擁有者）

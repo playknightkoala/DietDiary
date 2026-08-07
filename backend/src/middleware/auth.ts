@@ -88,8 +88,44 @@ export function requireRole(...roles: Role[]) {
 export const PHOTO_COOKIE = 'dd_photo';
 export const PHOTO_COOKIE_OPTS = { httpOnly: true, sameSite: 'lax' as const, path: '/uploads' };
 
-// 檔名帶 entryId（e{id}-{ts}-{i}.jpg）時驗擁有者：本人或營養師／管理者才可看；
-// 解析不出 entryId 的舊格式檔名、或紀錄已刪除（檔案照理也已刪）則放行到「已登入」層級。
+// legacy 檔名 → 擁有者對照表：App 產生的檔名一律是 e{id}-…，legacy 命名的照片只會越來越少、
+// 不會新增，所以開機（或每 10 分鐘）整表重建一次，請求期間純 Map 查找——
+// 逐請求查詢的做法（即使有 LRU 快取）仍會被「持續換隨機檔名」刷出無上限的全表掃描
+const MODERN_PHOTO_RE = /^\/uploads\/e\d+-/;
+let legacyOwnerMap: Map<string, number> | null = null;
+let legacyOwnerMapAt = 0;
+const LEGACY_MAP_TTL_MS = 10 * 60 * 1000;
+// 照片自 DB 移除時同步失效（helpers.unlinkPhoto 呼叫，涵蓋刪照片／刪紀錄／刪會員全部路徑）：
+// 即使實體 unlink 失敗，DB 已不擁有的照片也不能再憑對照表放行（fail-closed 契約）
+export function invalidateLegacyPhotoOwner(url: string) {
+  legacyOwnerMap?.delete(url);
+}
+
+function legacyPhotoOwner(url: string): number | undefined {
+  const now = Date.now();
+  if (!legacyOwnerMap || now - legacyOwnerMapAt >= LEGACY_MAP_TTL_MS) {
+    const map = new Map<string, number>();
+    const rows = db
+      .prepare(`SELECT user_id, photo, photos FROM entries WHERE photo != '' OR photos != '[]'`)
+      .all() as { user_id: number; photo: string; photos: string }[];
+    for (const r of rows) {
+      if (r.photo && !MODERN_PHOTO_RE.test(r.photo)) map.set(r.photo, r.user_id);
+      try {
+        for (const p of JSON.parse(r.photos) as unknown[]) {
+          if (typeof p === 'string' && p && !MODERN_PHOTO_RE.test(p)) map.set(p, r.user_id);
+        }
+      } catch { /* 壞資料跳過 */ }
+    }
+    legacyOwnerMap = map;
+    legacyOwnerMapAt = now;
+  }
+  return legacyOwnerMap.get(url);
+}
+
+// 每張照片都必須驗出擁有者（fail-closed）：本人或營養師／管理者才可看。
+// 檔名帶 entryId（e{id}-{ts}-{i}.jpg）直接查該筆；解析不出（legacy 檔名、紀錄已刪）
+// 改以 URL 反查 entries 的 photos／legacy photo 欄位；DB 完全查不到（孤兒檔）一律 404，
+// 不再以「已登入」代替授權。
 export function photoAuth(req: Request, res: Response, next: NextFunction) {
   const m = /(?:^|;\s*)dd_photo=([^;]+)/.exec(req.headers.cookie || '');
   if (!m) return res.status(401).end();
@@ -101,18 +137,35 @@ export function photoAuth(req: Request, res: Response, next: NextFunction) {
   } catch {
     return res.status(401).end();
   }
-  const em = /^e(\d+)-/.exec(req.path.split('/').pop() || '');
+  // req.path 未解碼（express.static 會自行解碼實際路徑）：不先解碼的話，
+  // 把檔名 percent-encode 就能讓 entryId 解析失敗、繞過擁有者檢查
+  let file = req.path.split('/').pop() || '';
+  try {
+    file = decodeURIComponent(file);
+  } catch {
+    return res.status(404).end();
+  }
+  // 找出擁有者：檔名的 entryId 優先（一次索引查詢）。本 App 產生的檔名一律是 e{id}-…，
+  // 解析得出 entryId 但紀錄不存在＝已刪除，直接 404，不落入 legacy 反查（避免被拿來刷全表掃描）
+  let ownerId: number | undefined;
+  const em = /^e(\d+)-/.exec(file);
   if (em) {
     const row = db.prepare('SELECT user_id FROM entries WHERE id = ?').get(Number(em[1])) as
       | { user_id: number }
       | undefined;
-    if (row && row.user_id !== uid) {
-      const u = db.prepare('SELECT role, status FROM users WHERE id = ?').get(uid) as
-        | { role: Role; status: string }
-        | undefined;
-      if (!u || u.status !== 'active' || (u.role !== 'dietitian' && u.role !== 'admin')) {
-        return res.status(403).end();
-      }
+    ownerId = row?.user_id;
+  } else {
+    // 真正的 legacy 檔名才以 URL 反查（photos JSON／legacy photo 欄位）。
+    // 這是全表掃描：結果（含查無）進 TTL 快取，擋住以隨機檔名重複觸發掃描的濫用
+    ownerId = legacyPhotoOwner(`/uploads/${file}`);
+  }
+  if (ownerId === undefined) return res.status(404).end(); // 孤兒檔／紀錄已刪：任何人都不給看
+  if (ownerId !== uid) {
+    const u = db.prepare('SELECT role, status FROM users WHERE id = ?').get(uid) as
+      | { role: Role; status: string }
+      | undefined;
+    if (!u || u.status !== 'active' || (u.role !== 'dietitian' && u.role !== 'admin')) {
+      return res.status(403).end();
     }
   }
   next();

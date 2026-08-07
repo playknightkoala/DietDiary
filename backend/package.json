@@ -1,13 +1,13 @@
 {
   "name": "dietdiary-backend",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "tsx scripts/day-sql-count.ts && tsx scripts/marker-contract.ts && tsx scripts/delete-user.ts && tsx scripts/kb-vote.ts && tsx scripts/photo-auth.ts"
+    "test": "tsx scripts/day-sql-count.ts && tsx scripts/marker-contract.ts && tsx scripts/delete-user.ts && tsx scripts/kb-vote.ts && tsx scripts/photo-auth.ts && tsx scripts/entry-conflict.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

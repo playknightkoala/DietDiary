@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { useStore } from '../store';
 import { BODY_DEFS, FOOD_KEYS, MEALS, WD_NAMES, addDays, bmrTdeeOf, clampPortion, customDraftsKcal, customDraftsToItems, customItemLabel, customItemsKcal, customItemsToDrafts, dayCustomKcal, dayFoodTotals, dstr, emptyFood, entryAllCustoms, entryHasData, entryKcal, entryMacros, fmtCommentTime, foodSummary, goalsFor, kcalOfFood, photoFoodOf, round1, sortEntriesNewestFirst, sumFoods, type CustomDraft } from '../lib/domain';
 import { DietitianBadge, GoalManager } from '../components/GoalManager';
@@ -246,11 +246,17 @@ export function DietitianScreen() {
       const items = itemState.order
         .map((key) => ({ food: strToFood(itemState.drafts[key]?.foodStr), customItems: customDraftsToItems(itemState.drafts[key]?.customs ?? []) }))
         .filter((it) => FOOD_KEYS.some((k) => it.food[k] > 0) || it.customItems.length);
-      const updated = await api.proEditFood(memberId, foodEditing.id, { photoFoods, photoCustoms, items });
+      // expectedRevision＝開啟編輯器當下的版本：會員（或其他營養師）剛改過會被 409 擋下，不會互相覆蓋
+      const updated = await api.proEditFood(memberId, foodEditing.id, { photoFoods, photoCustoms, items, expectedRevision: foodEditing.revision });
       setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === updated.id ? updated : en)) } : d));
       setFoodEditing(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : '儲存份數失敗，請再試一次');
+      // 409 衝突：重新載入當日紀錄讓畫面回到最新內容，並關閉編輯器（重開即拿到新版本）
+      if (e instanceof ApiError && e.status === 409) {
+        setFoodEditing(null);
+        api.proDay(memberId, date).then(setDay).catch(() => {});
+      }
     } finally {
       setSavingFood(false);
     }

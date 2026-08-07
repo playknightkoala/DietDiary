@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { api } from '../../lib/api';
+import { ApiError, api } from '../../lib/api';
 import { compressImage } from '../../lib/photo';
 import { FOOD_KEYS, MEALS, clampPortion, customDraftsKcal, customDraftsToItems, customItemsToDrafts, emptyFood, entryHasData, fmtCommentTime, foodSummary, kcalOfFood, sumFoods, type CustomDraft } from '../../lib/domain';
 import { useStore } from '../../store';
@@ -152,6 +152,9 @@ export function LogFoodModal() {
   const closing = useRef(false);
   // 開啟視窗當下就有的照片；用來區分「這次視窗內新增的照片」（取消時要還原）
   const initialPhotos = useRef<string[]>(entry?.photos ?? []);
+  // 樂觀鎖基準：開窗當下的 revision；視窗內的照片上傳／複製／刪除會更新它
+  // （自己剛做的修改不算衝突），完成時帶 expectedRevision，其他裝置改過會被 409 擋下
+  const revRef = useRef(entry?.revision ?? 0);
   // 時間選單「重置」要恢復的原始時間：編輯既有紀錄＝開窗當下的用餐時間；新增＝不指定（當下時間）
   const resetTime = useRef(isNew ? undefined : entry?.eatTime || undefined);
 
@@ -330,7 +333,15 @@ export function LogFoodModal() {
     return { photoFoods, photoCustoms, items };
   };
 
-  // 關閉（完成或 ✕）：有資料 → 儲存；空白 entry → 自動刪除
+  // 409 衝突（這筆已在其他裝置被修改）：提示、載入最新內容、關閉視窗
+  const onConflict = async (e: ApiError) => {
+    window.alert(e.message);
+    await refresh().catch(() => {});
+    closeModal();
+  };
+
+  // 關閉（完成或 ✕）：有資料 → 儲存；空白 entry → 自動刪除。
+  // 一般錯誤（斷線／伺服器錯誤）保留視窗與草稿讓使用者重試，只有成功或 409 已處理才關閉
   const finish = async () => {
     if (closing.current) return;
     closing.current = true;
@@ -338,14 +349,23 @@ export function LogFoodModal() {
     const food = sumFoods([...Object.values(photoFoods), ...items.map((it) => it.food)]);
     try {
       if (entryHasData({ desc, photos, food, photoCustoms, items })) {
-        // 三份資料一律帶上：清空也要存回（不帶＝後端保留原值）
-        await api.patchEntry(entry.id, { desc, eatTime, date: eatDate || selected, photoFoods, photoCustoms, items });
+        // 三份資料一律帶上：清空也要存回（不帶＝後端保留原值）。
+        // expectedRevision＝樂觀鎖：這筆若已在其他裝置被修改，後端回 409、不覆蓋
+        const updated = await api.patchEntry(entry.id, { desc, eatTime, date: eatDate || selected, photoFoods, photoCustoms, items, expectedRevision: revRef.current });
+        revRef.current = updated.revision;
       } else {
-        await api.deleteEntry(entry.id);
+        // 清空自動刪除也帶鎖：別台裝置剛補上內容時不可誤刪
+        await api.deleteEntry(entry.id, revRef.current);
       }
-      await refresh();
-    } finally {
+      await refresh().catch(() => {});
       closeModal();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        await onConflict(e);
+      } else {
+        closing.current = false;
+        window.alert(e instanceof ApiError ? `儲存失敗：${e.message}` : '儲存失敗，請檢查網路後再試一次');
+      }
     }
   };
 
@@ -361,13 +381,23 @@ export function LogFoodModal() {
     try {
       const added = photos.filter((p) => !initialPhotos.current.includes(p));
       if (!isExisting) {
-        await api.deleteEntry(entry.id);
+        // 取消新建的空白紀錄也帶鎖：別台裝置若剛在同一筆補上內容，不可整筆刪掉
+        await api.deleteEntry(entry.id, revRef.current);
       } else if (added.length) {
-        await api.patchEntry(entry.id, { photos: photos.filter((p) => initialPhotos.current.includes(p)) });
+        await api.patchEntry(entry.id, { photos: photos.filter((p) => initialPhotos.current.includes(p)), expectedRevision: revRef.current });
       }
-      await refresh();
-    } finally {
+      await refresh().catch(() => {});
       closeModal();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // 取消本來就是捨棄變更：409 只需要把畫面帶回最新內容
+        await refresh().catch(() => {});
+        closeModal();
+      } else {
+        // 斷線／伺服器錯誤：保留視窗讓使用者重試，否則這次上傳的照片會殘留在紀錄裡
+        closing.current = false;
+        window.alert(e instanceof ApiError ? `取消失敗：${e.message}` : '取消失敗，請檢查網路後再試一次');
+      }
     }
   };
 
@@ -376,10 +406,16 @@ export function LogFoodModal() {
     if (!window.confirm('確定要刪除這筆紀錄？留言與照片會一併刪除。')) return;
     closing.current = true;
     try {
-      await api.deleteEntry(entry.id);
-      await refresh();
-    } finally {
+      await api.deleteEntry(entry.id, revRef.current);
+      await refresh().catch(() => {});
       closeModal();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        await onConflict(e);
+      } else {
+        closing.current = false;
+        window.alert(e instanceof ApiError ? `刪除失敗：${e.message}` : '刪除失敗，請檢查網路後再試一次');
+      }
     }
   };
 
@@ -391,7 +427,8 @@ export function LogFoodModal() {
     setUploading(true);
     try {
       const blobs = await Promise.all(picked.map(compressImage));
-      const { photos: urls } = await api.uploadPhotos(entry.id, blobs);
+      const { photos: urls, revision } = await api.uploadPhotos(entry.id, blobs, revRef.current);
+      revRef.current = revision;
       setPhotoFoodsStr((s) => {
         const next = { ...s };
         urls.forEach((u) => {
@@ -405,8 +442,9 @@ export function LogFoodModal() {
         setPageIdx(urls.length + itemIdx);
       }
       setPhotos(urls);
-    } catch {
-      /* 壓縮或上傳失敗時維持原狀 */
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) await onConflict(e);
+      /* 其他錯誤（壓縮或上傳失敗）維持原狀 */
     } finally {
       setUploading(false);
     }
@@ -422,7 +460,8 @@ export function LogFoodModal() {
     setUploading(true);
     try {
       const blobs = await Promise.all(picked.map(compressImage));
-      const { photos: urls } = await api.uploadPhotos(entry.id, blobs);
+      const { photos: urls, revision } = await api.uploadPhotos(entry.id, blobs, revRef.current);
+      revRef.current = revision;
       const newUrls = urls.filter((u) => !photos.includes(u));
       const draft = itemState.drafts[key];
       setPhotoFoodsStr((s) => {
@@ -444,8 +483,9 @@ export function LogFoodModal() {
       }
       setPhotos(urls);
       setPageIdx(urls.length - 1); // 跳到剛補上的照片頁（照片頁在項目頁之前）
-    } catch {
-      /* 壓縮或上傳失敗時維持原狀 */
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) await onConflict(e);
+      /* 其他錯誤（壓縮或上傳失敗）維持原狀 */
     } finally {
       setUploading(false);
     }
@@ -466,7 +506,8 @@ export function LogFoodModal() {
       let urls = photos;
       const added: { url: string; item: HistoryPhoto }[] = [];
       for (const item of photoList) {
-        const { photos: next, photo: newUrl } = await api.copyPhoto(entry.id, item.photo);
+        const { photos: next, photo: newUrl, revision } = await api.copyPhoto(entry.id, item.photo, revRef.current);
+        revRef.current = revision;
         urls = next;
         added.push({ url: newUrl, item });
       }
@@ -512,14 +553,17 @@ export function LogFoodModal() {
       setPageIdx(itemList.length ? urls.length + itemCount - 1 : urls.length - 1);
       if (step === 'photos') setStep('detail');
       return true;
-    } catch {
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) await onConflict(e);
       return false;
     }
   };
 
   const removePhoto = async (url: string) => {
     try {
-      const { photos: urls } = await api.patchEntry(entry.id, { photos: photos.filter((p) => p !== url) });
+      const updated = await api.patchEntry(entry.id, { photos: photos.filter((p) => p !== url), expectedRevision: revRef.current });
+      revRef.current = updated.revision;
+      const urls = updated.photos;
       setPhotos(urls);
       setPhotoFoodsStr((s) => {
         const next = { ...s };
@@ -555,8 +599,9 @@ export function LogFoodModal() {
       // 從歷史帶入的照片：該來源的頁面全移除時，收回帶入的敘述
       reclaimHistorySource({ photoUrl: url });
       setPageIdx((p) => Math.max(0, Math.min(p, pages.length - 2)));
-    } catch {
-      /* ignore */
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) await onConflict(e);
+      /* 其他錯誤維持原狀 */
     }
   };
 
