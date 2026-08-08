@@ -10,14 +10,25 @@ import jwt from 'jsonwebtoken';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dietdiary-rc-'));
 process.env.DB_PATH = path.join(tmp, 'rc.db');
 process.env.UPLOAD_DIR = path.join(tmp, 'uploads');
-process.env.PORT = '34561';
+// 隨機 port：避免固定 port 在 CI／並行執行時被占用
+process.env.PORT = String(30000 + Math.floor(Math.random() * 20000));
 
 const { db } = await import('../src/db.js');
 const { JWT_SECRET } = await import('../src/middleware/auth.js');
 await import('../src/index.js');
-await new Promise((r) => setTimeout(r, 400)); // 等 listen 起來
 
 const BASE = `http://127.0.0.1:${process.env.PORT}`;
+// 等待伺服器就緒：輪詢健康端點（固定 sleep 在慢機上會 flaky）
+for (let i = 0; ; i++) {
+  try {
+    if ((await fetch(`${BASE}/api/health`)).ok) break;
+  } catch { /* 尚未就緒 */ }
+  if (i >= 100) {
+    console.error('伺服器啟動逾時');
+    process.exit(1);
+  }
+  await new Promise((r) => setTimeout(r, 50));
+}
 let failed = 0;
 function check(name: string, ok: boolean) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`);
