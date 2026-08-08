@@ -5,10 +5,10 @@ description: 發布均衡日記的新版本 — 更新版號、更新版本紀�
 
 # release（指標檔）
 
-本 skill 的**唯一正本**在：
+本 skill 的**唯一正本**在（相對本檔的路徑；即 repository root 下的 `.claude/skills/release/SKILL.md`）：
 
 ```
-.claude/skills/release/SKILL.md
+../../../.claude/skills/release/SKILL.md
 ```
 
 請讀取並遵循該檔的完整步驟。**請勿在此檔新增內容**——所有修改一律改正本；此檔只負責讓 Codex 及其他 agent 發現這個 skill。

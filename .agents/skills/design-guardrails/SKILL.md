@@ -5,10 +5,10 @@ description: 設計新功能、實作後端寫入路徑或前端編輯流程前�
 
 # design-guardrails（指標檔）
 
-本 skill 的**唯一正本**在：
+本 skill 的**唯一正本**在（相對本檔的路徑；即 repository root 下的 `.claude/skills/design-guardrails/SKILL.md`）：
 
 ```
-.claude/skills/design-guardrails/SKILL.md
+../../../.claude/skills/design-guardrails/SKILL.md
 ```
 
 請讀取並遵循該檔的完整內容（第零步適用性判斷＋後端 1–8＋前端 9–13＋通用 14–15）。

@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Server } from 'node:http';
 import jwt from 'jsonwebtoken';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dietdiary-rc-'));
@@ -15,26 +16,31 @@ process.env.UPLOAD_DIR = path.join(tmp, 'uploads');
 // 甚至把恰好有 /api/health 的別家服務誤認成自己的 backend
 process.env.PORT = '0';
 
-const { db } = await import('../src/db.js');
-const { JWT_SECRET } = await import('../src/middleware/auth.js');
-const { server } = await import('../src/index.js');
-
-// 等 listening 事件（不用 sleep），再從 server.address() 取實際 port
-await new Promise<void>((resolve, reject) => {
-  if (server.listening) return resolve();
-  server.once('listening', resolve);
-  server.once('error', reject);
-});
-const addr = server.address();
-const BASE = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
-
 let failed = 0;
 function check(name: string, ok: boolean) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`);
   if (!ok) failed++;
 }
 
+// 啟動階段也在 try 之內：import／listen 失敗時 finally 仍會依「已建立與否」清理資源
+let dbRef: { close: () => void } | undefined;
+let server: Server | undefined;
 try {
+  const { db } = await import('../src/db.js');
+  dbRef = db;
+  const { JWT_SECRET } = await import('../src/middleware/auth.js');
+  ({ server } = await import('../src/index.js'));
+
+  // 等 listening 事件（不用 sleep），再從 server.address() 取實際 port
+  const srv = server;
+  await new Promise<void>((resolve, reject) => {
+    if (srv.listening) return resolve();
+    srv.once('listening', resolve);
+    srv.once('error', reject);
+  });
+  const addr = srv.address();
+  const BASE = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+
   const uid = Number(
     db.prepare(`INSERT INTO users (username, password_hash, status, role) VALUES ('rc@x.com', 'x', 'active', 'member')`).run().lastInsertRowid
   );
@@ -134,9 +140,13 @@ try {
   const bad3 = await fetch(`${BASE}/api/days/marks?from=2026-00-00&to=2026-99-99`, { headers: H });
   check('marks 非真實日期範圍 → 400', bad3.status === 400);
 } finally {
-  // 不論成敗都收拾乾淨：關 server、關 DB、刪 tmp（不靠 process.exit 硬切）
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  db.close();
+  // 不論成敗都收拾乾淨：關 server、關 DB、刪 tmp（不靠 process.exit 硬切）；
+  // 啟動中途失敗時只清理已建立的資源
+  if (server) {
+    const srv = server;
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+  }
+  try { dbRef?.close(); } catch { /* 已關或未開啟 */ }
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* tmp 清不掉不影響結果 */ }
 }
 
