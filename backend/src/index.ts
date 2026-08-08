@@ -60,4 +60,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 });
 
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => console.log(`dietdiary backend listening on :${PORT}`));
+// 匯出 server handle：回歸測試（entry-conflict.ts）用 PORT=0 讓 OS 配 port、
+// 從 server.address() 取實際 port，結束時 close——正式啟動行為不變
+export const server = app.listen(PORT, () => console.log(`dietdiary backend listening on :${PORT}`));

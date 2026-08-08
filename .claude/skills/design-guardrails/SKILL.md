@@ -28,7 +28,7 @@ description: 設計新功能、實作後端寫入路徑或前端編輯流程前�
 - 授權用的快取／對照表必須有**明確 invalidation**（資源刪除時同步清除），不能只靠 TTL 過期。
 - 反例：photoAuth 對解析不出 entryId 的檔名放行給所有登入會員；raw path 未解碼使 percent-encoding 繞過擁有者檢查；legacy 對照表在照片刪除後殘留舊權限 10 分鐘。
 
-### 2. check-then-act：跨 await 必是競態，同步也不代表安全
+### 2. check-then-act：跨 await 必須視為可能競態，同步也不代表安全
 - 「同一 process、同一 connection、中間沒有 await 的同步 JS 區段」不會被**其他 handler** 插隊——但這**不代表資料庫沒有競態**：其他 process／container、另一條 SQLite connection、未包 transaction 的多條 SQL、未來的水平擴充都可能插隊。需要一致性的 check-then-act 一律用**條件式 mutation 或 transaction**，不要依賴 runtime 的同步特性。
 - 一次性資源（認證碼、token）用**條件式 UPDATE/DELETE 原子消耗**（`WHERE email=? AND code=? AND expires_at>=?`，`changes!==1` 即拒絕），且放在**第一個 await 之前**。
 - 消耗後的失敗補償：涵蓋整段後續（含 hash 本身），寫回用 `INSERT OR IGNORE`——期間使用者可能已取得新資料，絕不能覆蓋。

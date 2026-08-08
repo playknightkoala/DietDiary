@@ -1,70 +1,18 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex (and other agents) when working with code in this repository.
 
-均衡日記（DietDiary）is a mobile-first diet-diary web app: a React 19 SPA (`frontend/`) talking to a Node/Express + SQLite API (`backend/`), with an optional Python embedding microservice (`embedding-service/`) and AI features via an external OpenAI-compatible LLM gateway. See `README.md` for the product overview and `DEVELOPMENT.md` for the full API table and account flows.
+## Single source of truth
 
-## Commands
+**The canonical project guide is [`CLAUDE.md`](CLAUDE.md) — read it in full and follow it.**
 
-```bash
-# Local dev (two terminals)
-cd backend  && npm install && npm run dev   # tsx watch, port 3001
-cd frontend && npm install && npm run dev   # vite, port 5173 (proxies /api + /uploads → 3001)
-# → browse http://localhost:5173
+Do not duplicate project documentation here: this file was previously a hand-maintained mirror of `CLAUDE.md` and drifted out of date (missing the optimistic-locking contract, the fail-closed photo-auth behavior, and newer regression scripts), which is exactly the kind of stale-architecture risk the guardrails try to prevent. Any project knowledge worth writing down goes into `CLAUDE.md`; this file only carries agent-discovery pointers.
 
-# Build
-cd backend  && npm run build   # tsc → dist/
-cd frontend && npm run build   # tsc -b && vite build → dist/
+## Skills
 
-# Lint (frontend only; oxlint). Backend has no linter.
-cd frontend && npm run lint
+Canonical skills live under `.claude/skills/` (single source of truth):
 
-# Docker (production topology; port 8080)
-cp .env.example .env           # set JWT_SECRET, SMTP, LLM_TOKEN…
-docker compose up -d --build
-docker compose --profile embed up -d --build   # also start the embedding service (KB)
+- `.claude/skills/release/SKILL.md` — release flow (bump → changelog → build → commit → push → GitHub Release).
+- `.claude/skills/design-guardrails/SKILL.md` — **load before designing/implementing any new feature, backend write path, or frontend editing flow**, and use as the rubric when self-reviewing changes.
 
-# Version bump (updates BOTH package.json files at once)
-node scripts/bump-version.mjs X.Y.Z
-```
-
-- **No test framework**, but the backend has `npm test`: plain tsx scripts under `backend/scripts/` — `day-sql-count.ts` (getDayJson SQL-count + response-shape regression; expects 7 queries for a representative day), `marker-contract.ts` (calendar-marker rule equivalence between backend `getMarkedDates` and frontend `dayHasData`), `delete-user.ts` (member deletion must clear every users-referencing table — FKs are ON — and unlink photo files only after the transaction succeeds), and `kb-vote.ts` (one KB vote per user per dish; resend/change/cancel adjust by delta, no stuffing). Run it after touching `getDayJson`, comment counts, the marker rule, `deleteUserData`, or `kbVote`. The frontend has no tests.
-- Node is not always on `PATH` in this environment; if `node`/`npm` aren't found, they live in `/usr/local/bin`.
-- Releasing is scripted by the `release` skill (bump → changelog → build → commit → push → GitHub Release). New version **must be strictly greater** than the deployed one or the force-update won't fire.
-- **Before designing/implementing any new feature, backend write path, or frontend editing flow, load the `design-guardrails` skill** — a checklist distilled from the v1.4.5–v1.4.6 review rounds (fail-closed authz, await races, optimistic-locking coverage, transaction/file cleanup, React updater purity, editor error policy, idempotency, etc.). Also use it as the rubric when self-reviewing changes. **Single source of truth: `.claude/skills/design-guardrails/SKILL.md`** (the copy under `.agents/skills/` is a pointer; edit the canonical file only).
-
-## Serving topology (dev ≠ prod, but API paths are identical)
-
-The **frontend nginx container is the only public entry point** (host `8080` → nginx `80`). It serves the static SPA and reverse-proxies `/api` and `/uploads` to `backend:3001`; the backend has no published port. In dev, Vite's proxy plays nginx's role. Because of this, **the API client uses relative paths only** (`/api/...`, `frontend/src/lib/api.ts`) — there is no configurable base URL. `frontend/nginx.conf` also rate-limits `/api/auth/`, gives `/api/ai/` a 150s timeout (LLM can stall ~45s then fall back), gzips text/JSON responses (including proxied `/api`), and serves `/assets/*` with a 1-year immutable cache — hashed filenames make that safe, but `index.html` and `changelog.json` must stay non-immutable or force-update breaks.
-
-## Architecture
-
-**Frontend** — React 19 + Vite 8 + Zustand, no router, no CSS framework (inline styles + `index.css`).
-- `frontend/src/App.tsx` picks the screen from Zustand state (`view` + `role` + `modal`), not URLs. Single store in `store.ts` holds all auth/day/goals/notifications state and owns every API call.
-- `frontend/src/lib/domain.ts` is the **single source of truth for nutrition math** (the `KCAL` table, `DEFAULT_GOALS`, the over-goal red-line rule, plus `bmrOf` — Mifflin-St Jeor — and `ACTIVITY_DEFS` for TDEE). The backend **only stores portions and does not compute kcal for display** — but see the duplication gotcha below. BMR/TDEE are likewise computed frontend-only from `/api/profile` data (height/birth-year/gender/activity/goal on `users.profile_*` columns) + latest recorded weight; the weight-goal (`goal`/`goalKcal`) adds/subtracts kcal from TDEE (cut/gain). The shared helper is `bmrTdeeOf(profile)` — both the BodyCard BMR/TDEE tiles and the 今日攝取熱量 card (which uses TDEE as the daily kcal goal, showing remaining/over) must go through it, never re-derive inline.
-- **Six categories vs eleven fields**: entries store 11 `FoodKey` portion fields that collapse into 6 `GoalKey` categories (`meat` = 4 fat levels, `milk` = 3). This 11→6 mapping recurs across frontend and backend.
-
-**Backend** — Node/Express + better-sqlite3 (synchronous, single file, WAL).
-- `backend/src/db.ts` holds the schema **and** all idempotent migrations (inline `ALTER TABLE` / table rebuilds run on boot). When changing schema, add a migration here rather than editing a `CREATE TABLE` in place.
-- Auth is **stateless JWT** (`middleware/auth.ts`): `requireAuth` sets `req.userId`; `requireRole(...)` re-reads role/status **from the DB on every call** so admin role changes take effect live. AI endpoints add `requireAI` (per-user `ai_enabled` flag). Roles: `member` / `citizen` (== member) / `dietitian` / `admin`.
-- `routes/pro.ts` mirrors the member routes but scoped to `/members/:id/...` for dietitians; dietitian-set goals carry `set_by='dietitian'` and members cannot edit them.
-- `days` table's `water`/`ex_*` columns are **caches recomputed from `water_logs`/`ex_logs`** (water & exercise became per-record logs) — write through the log tables, not the cache.
-- Body trend: `GET /api/body-trend?field=all` returns all-metric rows aligned by measurement date (the InBody-style history chart in `TrendChart.tsx`); the legacy single-`field` shape is kept for stale clients. `routes/profile.ts` serves the TDEE profile (GET also returns the latest recorded weight).
-
-**Entry data model (pages)** — an entry is a list of "pages": photo pages + photoless item pages, freely mixed. `entries.orig_data` snapshots the member's pre-adjustment data (`{photoFoods, photoCustoms, items, food}`; `food` included because legacy rows keep portions only there): written once on the **first** dietitian edit that actually changes portions or customs (later edits never overwrite it), cleared when the member changes portions themselves (same condition that clears `food_edited_at`); surfaced as `orig` in entry JSON and rendered by `OrigSummary` (member feed, member edit modal, dietitian card + editor). Per-photo portions live in `photo_foods`, per-photo custom-calorie items in `photo_customs` (both keyed by photo URL, pruned together when photos are deleted); photoless pages live in `items` (`[{food, customItems}]`). **Invariant: the `food` column = sum(photo_foods values) + sum(items[].food)** — every write path (member PATCH, legacy `{food}` PATCH from old clients, photo-deletion, pro route) must preserve it. Custom items (`{type: custom|sugar|alcohol|protein, name, amount, kcal}`) get their kcal **re-derived server-side** from amount × `CUSTOM_KCAL_FACTOR` for preset types (never trust client kcal). Legacy fallback ("whole-entry `food` counts as the first photo / a single item") applies **only when `items` is empty** — it appears in four places (LogFoodModal init, DietitianScreen editor init, `helpers.getEntryHistory`, `domain.photoFoodOf`). `getEntryHistory` returns **meal-grouped cards** (one per source entry, deduped by meal-level fingerprint, per-meal-type quota).
-
-**Photos** — uploaded via multer memory storage, **EXIF-stripped** (`helpers.stripJpegExif`; the gateway 500s on EXIF JPEGs + privacy), written to `UPLOAD_DIR` as `e{entryId}-{ts}-{i}.jpg`. DB stores only URL paths in `entries.photos`. Frontend pre-compresses to 640px / q0.7 (`lib/photo.ts`). **Serving `/uploads` requires auth**: `<img>` can't send JWT headers, so a `dd_photo` httpOnly cookie (same JWT; `SameSite=Lax; Path=/uploads`) is set at login / `POST /api/auth/photo-cookie` (called on frontend boot) and checked by `middleware/auth.photoAuth`, which also enforces ownership (owner or dietitian/admin) when the filename's entryId parses — guarded by `backend/scripts/photo-auth.ts`.
-
-**AI subsystem** (`backend/src/llm.ts`, `kb.ts`, `routes/ai.ts` + `routes/ai/*`) — entirely gated by `LLM_TOKEN` (unset ⇒ all AI disabled) and per-user `ai_enabled`. `routes/ai.ts` is only the assembler (mount order = auth tiers); endpoints live in `routes/ai/` — `feedback.ts` (votes + KB seed, no `requireAI`), `research.ts` (role-gated), `inbody.ts`, `ocr.ts`, `comment.ts` (/comment + /daily), with prompt-data math in `nutrition.ts` and `requireAI` in `common.ts`.
-- `llm.ts`: gateway client (OpenAI-compatible), model chain (`gemma-4-31b` vision, `gemma-4-12b` text, `gemma-4-e4b` fallback), and image down-compression to fit the gateway's ~68 KB image budget (`documentDataUri` is the document-photo variant: grayscale + resolution-first ladder, used for InBody reports).
-- `kb.ts`: the optional **shared dish knowledge base** (community-consensus portions via text+image embeddings from `embedding-service`). Every KB call **no-ops/swallows errors when inactive or the embedder is down**, so it never breaks OCR. Requires `AI_KB_ENABLED=true` + `AI_EMBED_URL`.
-- `search.ts`: optional **Tavily web search** gated by `TAVILY_API_KEY` (unset ⇒ all search features silently off; every failure returns `null`, never breaks the caller). Guards the free tier with a local monthly credit gate (`search_usage` table, default budget 950 via `TAVILY_MONTHLY_BUDGET`): check-and-increment is a **single atomic UPDATE** (charge-before-call) so concurrent requests can't slip past, a Tavily 432 marks the month exhausted, and a daily `GET /usage` reconcile takes `MAX(local, remote)`. Results cached 90 days in `search_cache` (cache hits cost nothing). Uses: OCR sees a branded item + KB miss → search nutrition facts → text model converts to six-cat portions (falls back to the visual estimate on any failure); `/comment`+`/daily` support a one-round "`SEARCH: <query>`" reply protocol (poor-man's tool use — hint only injected when search is active); `/api/ai/research` (dietitian/admin, no `ai_enabled` needed) answers a question from search results with cited sources.
-- Endpoints: `/api/ai/ocr` (photo → portions + caption), `/inbody` (InBody report photo → test date/time + body values + height/age/gender + previous-measurement comparison; image processed in memory only, never stored), `/comment` (per-meal note), `/daily` (whole-day summary), `/feedback` (👍/👎 that steers future generations), `/research` (dietitian web-search assistant).
-
-## Gotchas
-
-- **The calendar-marker rule is a frontend/backend contract.** Backend `getMarkedDates` (`helpers.ts`) and frontend `dayHasData` (`lib/domain.ts`) must judge "day has data" identically — water > 0, exercise minutes or desc, any body field, or a non-blank entry (desc, photos, portions, **or any custom item in `photo_customs`/`items`**); blank entries (created empty before PATCH) and AI summaries don't count. The predicate lives in **five synchronized places**: `helpers.entryHasData`, `domain.entryHasData`, an inline copy in `routes/ai/comment.ts` `/daily`, and the column lists of `getMarkedDates`' SELECT — guarded by `backend/scripts/marker-contract.ts` (part of `npm test`). Water/exercise/body mutations write the returned `DayData` straight into the store via `replaceDay`/`markDate(dayHasData(...))` instead of refetching, so a drifted rule shows up as wrong calendar dots.
-- **Nutrition constants are duplicated.** `frontend/src/lib/domain.ts` has `KCAL`, `MACROS` (per-serving 醣/蛋白/脂 grams), `CUSTOM_KCAL_FACTOR` (sugar 4 / alcohol 7 / protein 4 kcal per g|ml), the goal defaults, and the BMR formula + activity factors (`bmrOf`/`ACTIVITY_DEFS`); the backend **re-declares them** — `KCAL`/`MACROS`/default-goals and BMR/`ACTIVITY_FACTORS` (in `tdeeInfoFor`, feeds the `/daily` prompt's kcal-vs-TDEE comparison) in `backend/src/routes/ai/nutrition.ts`, `CUSTOM_KCAL_FACTOR` in `backend/src/validation.ts` (kcal re-derivation on write). Change serving rules or the BMR/TDEE formula in **both** or AI comments will disagree with the UI.
-- **Version must be in sync** across `frontend/package.json` and `backend/package.json` (that's why `scripts/bump-version.mjs` writes both). Mismatch causes a force-update loop.
-- **Changelog single source** is `frontend/public/changelog.json` (newest-first). The footer bundles it; the force-update modal live-fetches `/changelog.json` so stale bundles still show new notes. Add a new entry there on every release.
-- **Prototype files** `均衡日記-standalone.html`, `飲食紀錄.dc.html`, `support.js` are the original design prototypes — reference only, not part of the build.
+The copies under `.agents/skills/` are tracked pointer files so Codex can discover them — never edit those; edit the canonical files only.
