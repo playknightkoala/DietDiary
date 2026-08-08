@@ -9,6 +9,10 @@ description: 發布均衡日記的新版本 — 更新版號、更新版本紀�
 
 版號可由使用者以參數帶入（例如 `/release 1.0.2`）。若未帶入，先問使用者要發哪個版號，並提議「目前版號 +0.0.1」為預設。
 
+> **開始前一律先 `git fetch` 比對 `HEAD..origin/main`**：本專案在多台機器開發，其他環境可能已發過更新的版本。
+>
+> **本機沒有 node／npm 時**（例如 Windows 工作機）：步驟 1 直接讀 `frontend/package.json`；步驟 3 手動同步修改兩個 `package.json` 的 `version`（效果同 bump-version.mjs）；步驟 5 的 build 驗證改用 `docker compose build`（Dockerfile 內含 tsc 與 vite build）。
+
 ## 重要觀念
 
 - **版號放在兩個 `package.json`**（`frontend/`、`backend/`），必須一致 → 一律用 `scripts/bump-version.mjs` 一次改兩邊，避免不一致造成強制更新迴圈。
@@ -64,7 +68,7 @@ description: 發布均衡日記的新版本 — 更新版號、更新版本紀�
    - <更新條目1>
    - <更新條目2>
 
-   Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+   Co-Authored-By: <依執行當下的模型署名，例如 Claude Fable 5> <noreply@anthropic.com>"
    ```
 
 8. **Tag 並 push（含 tag）**

@@ -36,7 +36,7 @@ docker compose up -d --build
 - `frontend`：nginx 靜態服務 + 反向代理 `/api`、`/uploads` 至 backend
 - `backend`：資料持久化於 `./docker-data/db`（SQLite）與 `./docker-data/uploads`（照片）
 
-> 照片存取控制：`/uploads` **需登入才能看**。`<img>` 標籤無法帶 JWT header，改用 httpOnly cookie（`dd_photo`，內容即同一顆 JWT）——登入回應核發、前端啟動時呼叫 `POST /api/auth/photo-cookie` 補發（涵蓋升級前已登入的 session）、登出時清除。cookie 為 `SameSite=Lax; Path=/uploads`，跨站子資源不會帶出（順帶阻擋盜連）。檔名可解析出 entryId（`e{entryId}-{ts}-{i}.jpg`）時再驗擁有者：本人或營養師／管理者才可存取；照片上傳時已剝除 EXIF（無 GPS 等中繼資料）。
+> 照片存取控制：`/uploads` **需登入才能看**。`<img>` 標籤無法帶 JWT header，改用 httpOnly cookie（`dd_photo`，內容即同一顆 JWT）——登入回應核發、前端啟動時呼叫 `POST /api/auth/photo-cookie` 補發（涵蓋升級前已登入的 session）、登出時清除。cookie 為 `SameSite=Lax; Path=/uploads`，跨站子資源不會帶出（順帶阻擋盜連）。授權為 **fail-closed**：每張照片都必須解析出擁有者才放行——檔名帶 entryId（`e{entryId}-{ts}-{i}.jpg`）直接查該筆，legacy 檔名以 URL 反查 entries；查不到擁有者（孤兒檔、紀錄已刪除）一律 404，僅本人或營養師／管理者可存取。照片上傳時已剝除 EXIF（無 GPS 等中繼資料）。
 - 停止：`docker compose down`（資料保留在 docker-data/）
 
 ## 版號與強制更新
@@ -95,7 +95,7 @@ docker compose up -d --build
 | POST | `/api/auth/send-code` | `{email, captchaId(已驗證)}` → 寄送註冊認證碼 |
 | POST | `/api/auth/register` | `{username(email), password, confirmPassword, code}` → `{pending, message}`（待管理者開通）|
 | POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
-| GET | `/api/auth/me` | 目前登入者 `{username, role, createdAt}` |
+| GET | `/api/auth/me` | 目前登入者 `{username, role, nickname, aiEnabled, uiLayout, createdAt}` |
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
 | POST | `/api/auth/photo-cookie` | 補發照片存取 cookie（`/uploads` 需驗證；前端啟動時呼叫）|
 | POST | `/api/auth/logout` | 清除照片存取 cookie（token 由前端自行丟棄）|
@@ -104,30 +104,45 @@ docker compose up -d --build
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
 | GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
-| PATCH / DELETE | `/api/entries/:id` | 更新（desc / photoFoods＋photoCustoms＋items 整組份量替換 / photos 子集合＝刪除照片 / eatTime / date＝移到別天；舊 client 的 `food` 仍相容）／刪除 |
-| POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 10 張，前端已壓縮 640px JPEG）|
+| POST | `/api/days/:date/water` | 逐筆記錄喝水 `{ml, time?}`（一筆＝一則動態）|
+| DELETE | `/api/days/:date/water/:id` | 刪除單筆喝水紀錄（`DELETE /api/days/:date/water` 為整天歸零）|
+| POST | `/api/days/:date/ex` | 逐筆記錄運動 `{min?, desc?, time?}`（一筆＝一則動態）|
+| DELETE | `/api/days/:date/ex/:id` | 刪除單筆運動紀錄 |
+| PATCH / DELETE | `/api/entries/:id` | 更新（desc / photoFoods＋photoCustoms＋items 整組份量替換 / photos 子集合＝刪除照片 / eatTime / date＝移到別天；舊 client 的 `food` 仍相容）／刪除。皆可帶 `expectedRevision`（樂觀鎖）：與現值不符回 **409** 且不落任何變更，防兩台裝置互相覆蓋；無效值回 400、不帶＝舊 client 相容 |
+| POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 10 張，前端已壓縮 640px JPEG）；可帶 `expectedRevision` 文字欄位（不符 409、檔案收回），回傳含最新 `revision` |
 | GET | `/api/entries/history?limit&exclude` | 「從歷史加入」：最近記過的餐（以原始紀錄分組成卡，含各照片份數／自定義與敘述；limit 為每餐別上限）|
-| POST | `/api/entries/:id/photos/copy` | 從歷史複製自己的一張照片到這筆紀錄 `{photo}` |
-| GET / POST | `/api/comments?target=` | 留言（target：`entry:<id>`／`water:<date>`／`ex:<date>`）|
-| DELETE | `/api/comments/:cid` | 刪除自己的留言 |
+| GET | `/api/entries/custom-history` | 最近記過的「自訂名稱＋大卡」自定義項目（去重、最多 10 筆，供快速再次加入）|
+| POST | `/api/entries/:id/photos/copy` | 從歷史複製自己的一張照片到這筆紀錄 `{photo, expectedRevision?}`（不符 409、複製檔收回），回傳含最新 `revision` |
+| GET / POST | `/api/comments?target=` | 留言（target：`entry:<id>`／`water:<id>`／`ex:<id>`）|
+| PATCH / DELETE | `/api/comments/:cid` | 編輯／刪除自己的留言 |
+| GET | `/api/notifications` | 通知清單＋未讀數 |
+| POST | `/api/notifications/read` | 標記已讀（`{ids?}`，不帶＝全部已讀）|
 | GET / POST | `/api/goals` | 階段目標清單／新增（可多組，各自有日期區間）|
 | PUT / DELETE | `/api/goals/:id` | 編輯／刪除單組目標（營養師設定的目標會員不可改）|
 | GET | `/api/body-trend?field=all&limit=30` | 身體組成歷程紀錄：所有指標以量測日對齊的資料列（舊→新）；`field=<指標>` 為舊版單指標格式（相容保留）|
-| GET / PUT | `/api/profile` | TDEE 基本資料：`{height, birthYear, gender, activity, goal, goalKcal}`（出生年而非年齡，年齡逐年自增；goal：normal/cut/gain，cut/gain 時 TDEE 減/加 goalKcal；GET 另回傳最近一次體重）；BMR/TDEE 公式與活動量係數在前端 `domain.ts`（`bmrTdeeOf`，身體數據卡與「今日攝取熱量」卡的 TDEE 目標共用）|
+| GET / PUT | `/api/profile` | TDEE 基本資料：`{height, birthYear, gender, activity, goal, goalKcal}`（出生年而非年齡，年齡逐年自增；goal：normal/cut/gain，cut/gain 時 TDEE 減/加 goalKcal；GET 另回傳最近一次體重）；BMR/TDEE 公式與活動量係數在前端 `domain.ts`（`bmrTdeeOf`，身體數據視窗與「今日攝取熱量」卡的 TDEE 目標共用）|
+| PUT | `/api/profile/layout` | 介面自定義（主頁卡片順序與顯示）`{order, hidden}`：跟帳號儲存，換裝置登入自動帶入（讀取走 `/api/auth/me` 的 `uiLayout`）|
 | GET | `/api/admin/users` | （admin）會員清單 |
 | POST | `/api/admin/users/:id/approve` | （admin）開通帳號 |
 | PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |
 | POST | `/api/admin/users/:id/reset-password` | （admin）`{password}` 替會員重置密碼（會員收不到重設信時的後台救援管道）|
 | DELETE | `/api/admin/users/:id` | （admin）刪除會員與其所有資料 |
-| GET | `/api/pro/members` | （dietitian/admin）會員清單 |
+| GET | `/api/pro/members` | （dietitian/admin）會員清單（含追蹤狀態與私人暱稱，追蹤中置頂）|
+| PUT | `/api/pro/members/:id/follow` | （dietitian/admin）`{follow}` 追蹤／取消追蹤會員（追蹤中的會員發文會收到通知）|
+| PUT | `/api/pro/members/:id/alias` | （dietitian/admin）`{alias}` 替會員取私人暱稱（僅自己可見；空字串＝清除）|
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
+| GET | `/api/pro/members/:id/profile` | （dietitian/admin）會員的 TDEE 基本資料＋最近體重（營養師頁顯示 BMR/TDEE 與熱量目標比對）|
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
 | PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
-| PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{photoFoods, photoCustoms, items}` 調整該筆份數與自定義項目（份數有變才標示「營養師調整份數」；舊 client 的 `{food}` 仍相容）|
+| PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{photoFoods, photoCustoms, items, expectedRevision?}` 調整該筆份數與自定義項目（份數有變才標示「營養師調整份數」；樂觀鎖不符回 409；舊 client 的 `{food}` 仍相容）|
 | GET / POST | `/api/pro/members/:id/comments?target=` | （dietitian/admin）查看／新增對會員紀錄的留言 |
 | DELETE | `/api/pro/members/:id/comments/:cid` | （dietitian/admin）刪除自己的留言 |
 | GET / POST | `/api/pro/members/:id/goals` | （dietitian/admin）會員目標清單／替會員新增（標示營養師設定）|
 | PUT / DELETE | `/api/pro/members/:id/goals/:gid` | （dietitian/admin）編輯／刪除會員目標 |
+| POST | `/api/ai/ocr` | （需 `ai_enabled`）`{entryId, photo}` → 視覺模型估六大類份數＋寫一句敘述；知識庫命中附社群參考份數 |
+| POST | `/api/ai/comment` | （需 `ai_enabled`）`{target: "entry:<id>"}` → 對單篇餐點動態產生 AI 評語（後端先算好目標比對再交給模型）|
+| POST | `/api/ai/daily` | （需 `ai_enabled`）`{date}` → AI 今日總評（整天餐點、六大類 vs 目標、喝水、運動、身體數據、TDEE 比較）|
+| POST | `/api/ai/feedback` | `{kind, ref, vote, ...}` 對 AI 產出按讚(1)／倒讚(-1)／取消(0)，影響往後生成；份數評價回饋知識庫 |
 | POST | `/api/ai/research` | （dietitian/admin）`{question}` → 網路搜尋＋AI 整理成含來源的摘要（需 `LLM_TOKEN` 與 `TAVILY_API_KEY`）|
 | POST | `/api/ai/inbody` | （需 `ai_enabled`）`{image: dataURI}` InBody 報告照片 → 檢測日期／時間＋體重／骨骼肌重／體脂肪重／體脂肪率／腹圍＋身高／年齡／性別（自動補齊未設定的 TDEE 基本資料）＋前次量測對照（記錄身體數據視窗的「掃描自動填入」）；照片僅在記憶體辨識、不落地儲存 |
 | POST | `/api/ai/kb/seed` | （admin）把既有紀錄灌進共用菜色知識庫冷啟動：`{limit}`（預設 500、上限 3000）。**掃描範圍是全體會員**（含未開 AI 者）的「有敘述＋照片」紀錄，只取第一張照片自身的份數；需知識庫已啟用 |
