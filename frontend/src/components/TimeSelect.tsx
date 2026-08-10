@@ -7,6 +7,7 @@ import { nowHM } from '../lib/domain';
 // 顯示跟著作業系統／瀏覽器地區設定走、網頁無法強制，所以自製「時｜分」雙欄
 // 滾輪面板 —— 像 iOS 的時間滾輪：捲動時「停在中間指示帶的值」即為選中值，
 // 不需再點擊；點某個數字也會平滑捲到中間順帶選中。所有裝置一律 24 小時制。
+// 時與分皆為無限循環滾輪（23 往下接 00、00 往上接 23，分同理）。
 // 值格式與原生相同（"HH:mm"，空字串 = 未設定；打開滾輪即會帶入置中的時間）。
 // 面板用 position:fixed + portal 到 body：modal 卡片是 overflow:hidden（absolute 會被
 // 裁掉），且卡片的 popIn 動畫帶 transform、會把 fixed 的定位基準劫走，必須跳出卡片。
@@ -19,6 +20,14 @@ const VISIBLE_ROWS = 5; // 奇數，選中列在正中間
 const LIST_H = ROW_H * VISIBLE_ROWS;
 const PAD = (LIST_H - ROW_H) / 2; // 上下留白，讓第一／最後一列也能捲到中間
 const FOOTER_H = 46;
+
+// 無限循環：把 00–23／00–59 重複 REPEAT 份，開啟時停在正中那份；捲到剩最外側
+// 一份時瞬移回中段（位移量是整數個週期，畫面完全相同、使用者無感），選中值
+// 一律取「絕對列數 mod 週期」。份數依週期高度抓約 2500px 緩衝，讓一般慣性
+// 滑動不會撞到瞬移點（極長甩動撞到只會中斷慣性，位置與值仍正確）。
+const repeatOf = (count: number) => 2 * Math.ceil(2500 / (count * ROW_H)) + 1;
+const REPEAT_H = repeatOf(HOURS.length);
+const REPEAT_M = repeatOf(MINUTES.length);
 
 export function TimeSelect({ value, onChange, resetTo, style }: {
   value: string;
@@ -50,10 +59,32 @@ export function TimeSelect({ value, onChange, resetTo, style }: {
     setOpen(true);
   };
 
-  // 有上下留白（PAD）時，第 idx 列置中的捲動位置恰為 idx * ROW_H
+  // 有上下留白（PAD）時，第 idx 列（絕對列數）置中的捲動位置恰為 idx * ROW_H；
+  // 循環清單一律定位到正中那一份
   const centerOn = (hh: number, mm: number) => {
-    if (hourListRef.current) hourListRef.current.scrollTop = hh * ROW_H;
-    if (minListRef.current) minListRef.current.scrollTop = mm * ROW_H;
+    if (hourListRef.current) hourListRef.current.scrollTop = (Math.floor(REPEAT_H / 2) * HOURS.length + hh) * ROW_H;
+    if (minListRef.current) minListRef.current.scrollTop = (Math.floor(REPEAT_M / 2) * MINUTES.length + mm) * ROW_H;
+  };
+
+  // 循環維持：捲進最外側一份就立刻瞬移回中段；捲動停下後也回中段，讓下一次
+  // 手勢永遠有整段緩衝。瞬移量是整數個週期，snap 對齊與選中值都不受影響。
+  const idleTimers = useRef<{ h?: ReturnType<typeof setTimeout>; m?: ReturnType<typeof setTimeout> }>({});
+  const recenter = (list: HTMLDivElement, count: number, repeat: number) => {
+    const cycleH = count * ROW_H;
+    const st = list.scrollTop;
+    const target = Math.floor(repeat / 2) * cycleH + ((st % cycleH) + cycleH) % cycleH;
+    if (target === st) return;
+    const d = drag.current; // 拖曳中瞬移要同步平移拖曳基準，否則下一次 move 會拉回原位
+    if (d?.el === list) d.startTop += target - st;
+    list.scrollTop = target;
+  };
+  const keepCentered = (list: HTMLDivElement, count: number, repeat: number, key: 'h' | 'm') => {
+    const cycleH = count * ROW_H;
+    if (list.scrollTop < cycleH || list.scrollTop >= (repeat - 1) * cycleH) recenter(list, count, repeat);
+    clearTimeout(idleTimers.current[key]);
+    idleTimers.current[key] = setTimeout(() => {
+      if (list.isConnected) recenter(list, count, repeat);
+    }, 150);
   };
 
   // 開啟時把選中（或現在）的時／分捲到中間；捲動事件會把置中值寫回 value
@@ -74,23 +105,32 @@ export function TimeSelect({ value, onChange, resetTo, style }: {
     document.addEventListener('pointerdown', onDown);
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onScroll);
+    const timers = idleTimers.current;
     return () => {
       document.removeEventListener('pointerdown', onDown);
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onScroll);
+      clearTimeout(timers.h);
+      clearTimeout(timers.m);
     };
   }, [open]);
 
   // 滾輪語意：捲動中即時把「置中那一列」當作選中值；按「確認」（或點外面）才關閉
-  const centeredIdx = (list: HTMLDivElement, count: number) =>
-    Math.min(count - 1, Math.max(0, Math.round(list.scrollTop / ROW_H)));
+  const centeredIdx = (list: HTMLDivElement, count: number) => {
+    const i = Math.round(list.scrollTop / ROW_H);
+    return ((i % count) + count) % count;
+  };
   const onHourScroll = () => {
-    const v = HOURS[centeredIdx(hourListRef.current!, HOURS.length)];
+    const list = hourListRef.current!;
+    const v = HOURS[centeredIdx(list, HOURS.length)];
     if (v !== h) onChange(`${v}:${m || '00'}`);
+    keepCentered(list, HOURS.length, REPEAT_H, 'h');
   };
   const onMinScroll = () => {
-    const v = MINUTES[centeredIdx(minListRef.current!, MINUTES.length)];
+    const list = minListRef.current!;
+    const v = MINUTES[centeredIdx(list, MINUTES.length)];
     if (v !== m) onChange(`${h || pad2(new Date().getHours())}:${v}`);
+    keepCentered(list, MINUTES.length, REPEAT_M, 'm');
   };
   // 點某列＝直接跳到該列（不用 smooth：mandatory snap 會把平滑捲動打斷彈回原位）
   const scrollToIdx = (list: HTMLDivElement | null, idx: number) => {
@@ -190,9 +230,10 @@ export function TimeSelect({ value, onChange, resetTo, style }: {
               aria-label="時"
             >
               <div style={{ height: PAD }} />
-              {HOURS.map((v, i) => (
-                <div key={v} style={rowStyle(v === h)} onClick={() => scrollToIdx(hourListRef.current, i)}>{v}</div>
-              ))}
+              {Array.from({ length: REPEAT_H * HOURS.length }, (_, i) => {
+                const v = HOURS[i % HOURS.length];
+                return <div key={i} style={rowStyle(v === h)} onClick={() => scrollToIdx(hourListRef.current, i)}>{v}</div>;
+              })}
               <div style={{ height: PAD }} />
             </div>
             <div
@@ -207,9 +248,10 @@ export function TimeSelect({ value, onChange, resetTo, style }: {
               aria-label="分"
             >
               <div style={{ height: PAD }} />
-              {MINUTES.map((v, i) => (
-                <div key={v} style={rowStyle(v === m)} onClick={() => scrollToIdx(minListRef.current, i)}>{v}</div>
-              ))}
+              {Array.from({ length: REPEAT_M * MINUTES.length }, (_, i) => {
+                const v = MINUTES[i % MINUTES.length];
+                return <div key={i} style={rowStyle(v === m)} onClick={() => scrollToIdx(minListRef.current, i)}>{v}</div>;
+              })}
               <div style={{ height: PAD }} />
             </div>
           </div>
