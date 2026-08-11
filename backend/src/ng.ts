@@ -75,9 +75,13 @@ export function updateNgCategory(id: number, name: string, level: NgLevel, note:
   return db.prepare('SELECT id, name, level, note FROM ng_categories WHERE id = ?').get(id) as CategoryRow;
 }
 
-// 底下仍有關鍵字時 FK 會擋（SQLITE_CONSTRAINT_*），由路由層轉業務錯誤
+// 連同底下的關鍵字一併刪除（同一交易：先刪子表再刪分類，中途失敗整筆回滾）；
+// 危險操作的確認（輸入「確定刪除」）在前端把關。分類不存在回 false
 export function deleteNgCategory(id: number): boolean {
-  return db.prepare('DELETE FROM ng_categories WHERE id = ?').run(id).changes === 1;
+  return db.transaction(() => {
+    db.prepare('DELETE FROM ng_keywords WHERE category_id = ?').run(id);
+    return db.prepare('DELETE FROM ng_categories WHERE id = ?').run(id).changes === 1;
+  })();
 }
 
 // ---- 關鍵字 CRUD ----

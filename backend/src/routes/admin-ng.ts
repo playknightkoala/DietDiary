@@ -69,16 +69,12 @@ adminNgRouter.put('/categories/:id', (req, res) => {
   }
 });
 
+// 刪除分類會連同底下所有關鍵字一併刪除（同一交易）
 adminNgRouter.delete('/categories/:id', (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'invalid params' });
-  try {
-    if (!deleteNgCategory(id)) return res.status(404).json({ error: 'not found' });
-    return res.status(204).end();
-  } catch (e) {
-    if (isFkViolation(e)) return res.status(409).json({ error: '此分類下還有關鍵字，請先刪除或搬移' });
-    throw e;
-  }
+  if (!deleteNgCategory(id)) return res.status(404).json({ error: 'not found' });
+  return res.status(204).end();
 });
 
 // ---- 關鍵字 ----

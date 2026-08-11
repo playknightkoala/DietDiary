@@ -96,12 +96,11 @@ try {
 
   const cola = ng.createNgKeyword('Cola', testCat.id, false);
   check('關鍵字儲存為正規化形（Cola→cola）', cola.keyword === 'cola' && cola.categoryId === testCat.id);
-  try {
-    ng.deleteNgCategory(testCat.id);
-    check('刪除仍有關鍵字的分類 → FK 擋下', false);
-  } catch (e) {
-    check('刪除仍有關鍵字的分類 → FK 擋下', String((e as { code?: string }).code).startsWith('SQLITE_CONSTRAINT'));
-  }
+  // 刪分類＝連同底下關鍵字一併刪（同一交易）；用拋棄式分類驗證，不影響後續統計用的 cola
+  const cascadeCat = ng.createNgCategory('刪除測試', 'medium', '');
+  ng.createNgKeyword('刪除測試詞', cascadeCat.id, false);
+  check('刪除分類連同底下關鍵字（cascade）', ng.deleteNgCategory(cascadeCat.id));
+  check('cascade 後關鍵字已一併刪除', !ng.listNgKeywords().some((k) => k.keyword === '刪除測試詞'));
   const emptyCat = ng.createNgCategory('空分類', 'medium', '');
   check('刪除沒有關鍵字的分類 → 成功', ng.deleteNgCategory(emptyCat.id));
 
@@ -219,10 +218,12 @@ try {
 
   const catCountRow = () => (db.prepare('SELECT COUNT(*) AS c FROM ng_categories').get() as { c: number }).c;
   const catsBefore = catCountRow();
+  const kwInCat = (catId: number) => (db.prepare('SELECT COUNT(*) AS c FROM ng_keywords WHERE category_id = ?').get(catId) as { c: number }).c;
+  check('目標分類底下有關鍵字（前置）', kwInCat(someCatId) > 0);
   const delCat = await fetch(`${BASE}/api/admin/ng/categories/${someCatId}`, { method: 'DELETE', headers: { Authorization: AJ.Authorization } });
-  check('DELETE 有關鍵字的分類 → 409 且分類不變', delCat.status === 409 && catCountRow() === catsBefore);
+  check('DELETE 分類 → 204 且底下關鍵字一併刪除', delCat.status === 204 && catCountRow() === catsBefore - 1 && kwInCat(someCatId) === 0);
   const dupCat = await fetch(`${BASE}/api/admin/ng/categories`, { method: 'POST', headers: AJ, body: '{"name":"炸物","level":"high"}' });
-  check('POST 重複分類 → 409 且分類不變', dupCat.status === 409 && catCountRow() === catsBefore);
+  check('POST 重複分類 → 409 且分類不變', dupCat.status === 409 && catCountRow() === catsBefore - 1);
   const newCat = await fetch(`${BASE}/api/admin/ng/categories`, { method: 'POST', headers: AJ, body: '{"name":"宵夜","level":"high","note":"測試"}' });
   const newCatJson = (await newCat.json()) as { id: number };
   check('admin POST 新分類 → 201', newCat.status === 201 && newCatJson.id > 0);

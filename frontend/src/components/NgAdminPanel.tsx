@@ -184,11 +184,16 @@ export function NgAdminPanel() {
       setCatDraft(emptyCatDraft);
     });
 
-  const removeCategory = (c: NgCategoryInfo) =>
+  // 刪除分類＝連同底下所有關鍵字一併刪除（不可復原）：改用輸入「確定刪除」的確認視窗把關
+  const [deletingCat, setDeletingCat] = useState<NgCategoryInfo | null>(null);
+  const [deleteText, setDeleteText] = useState('');
+  const confirmDeleteCat = () =>
     run(async () => {
-      if (!window.confirm(`確定要刪除分類「${c.name}」？（分類下還有關鍵字時會被擋下）`)) return;
-      await api.adminDeleteNgCategory(c.id);
+      if (!deletingCat || deleteText !== '確定刪除') return;
+      await api.adminDeleteNgCategory(deletingCat.id);
       await load();
+      setDeletingCat(null);
+      setDeleteText('');
     });
 
   const startEditCat = (c: NgCategoryInfo) => {
@@ -368,7 +373,7 @@ export function NgAdminPanel() {
                       <span style={{ fontSize: 13.5, fontWeight: 800, color: '#2D3B2D', flex: 'none' }}>{cat.name}</span>
                       <span style={{ fontSize: 11.5, color: '#8A9284', flex: '1 1 120px', minWidth: 0 }}>{cat.note}</span>
                       <button onClick={() => startEditCat(cat)} disabled={busy} className="hv-cream" style={smallBtn('plain')}>編輯</button>
-                      <button onClick={() => void removeCategory(cat)} disabled={busy} className="hv-red-tint" style={smallBtn('red')}>刪除</button>
+                      <button onClick={() => { setDeletingCat(cat); setDeleteText(''); setError(''); }} disabled={busy} className="hv-red-tint" style={smallBtn('red')}>刪除</button>
                     </div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -414,6 +419,59 @@ export function NgAdminPanel() {
           </div>
         </>
       )}
+
+      {/* 刪除分類確認 modal：連同底下關鍵字一併刪除，需輸入「確定刪除」才啟用刪除鈕 */}
+      {deletingCat && (() => {
+        const kwCount = keywords.filter((k) => k.categoryId === deletingCat.id).length;
+        const confirmed = deleteText === '確定刪除';
+        return (
+          <ModalShell maxWidth={420} cardStyle={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 17, fontWeight: 900, color: '#C0564A' }}>刪除分類</div>
+              <CloseButton onClick={() => { setDeletingCat(null); setDeleteText(''); }} />
+            </div>
+            <div style={{ padding: '14px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 13.5, color: '#2D3B2D', lineHeight: 1.8 }}>
+                即將刪除分類 <b>「{deletingCat.name}」</b>
+                {kwCount > 0 ? <>，底下的 <b style={{ color: '#C0564A' }}>{kwCount} 個關鍵字</b>也會一併刪除</> : ''}，
+                此操作<b>無法復原</b>。
+              </div>
+              {error && <div style={{ fontSize: 13, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={fieldLabel}>請輸入「確定刪除」以繼續</div>
+                <input
+                  value={deleteText}
+                  onChange={(e) => setDeleteText(e.target.value)}
+                  placeholder="確定刪除"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => { setDeletingCat(null); setDeleteText(''); }}
+                  disabled={busy}
+                  className="hv-cream"
+                  style={{ flex: 1, height: 44, border: '1.5px solid #DDD8CA', borderRadius: 12, background: '#fff', color: '#4A5A4A', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => void confirmDeleteCat()}
+                  disabled={busy || !confirmed}
+                  className={confirmed ? 'hv-red-tint' : undefined}
+                  style={{
+                    flex: 1, height: 44, border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                    background: confirmed ? '#C0564A' : '#E4DFD2', color: confirmed ? '#fff' : '#A39C8C',
+                    cursor: confirmed ? 'pointer' : 'default',
+                  }}
+                >
+                  刪除分類{kwCount > 0 ? `與 ${kwCount} 個關鍵字` : ''}
+                </button>
+              </div>
+            </div>
+          </ModalShell>
+        );
+      })()}
 
       {/* 新增 modal：分頁（關鍵字／分類） */}
       {addOpen && (
