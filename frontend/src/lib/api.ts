@@ -1,4 +1,4 @@
-import type { AdminUser, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, NotificationItem, PhotoRating, Profile, Role } from '../types';
+import type { AdminUser, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, MonthStats, NgCategoryInfo, NgKeyword, NgLevel, NotificationItem, PhotoRating, Profile, Role } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -160,6 +160,8 @@ export const api = {
     request<DayData>(`/api/days/${date}/ex/${id}`, { method: 'DELETE' }),
   getMarks: (from: string, to: string) =>
     request<{ dates: string[] }>(`/api/days/marks?from=${from}&to=${to}`),
+  // 當月糖／NG 統計（主頁警示卡；month='YYYY-MM'）
+  getMonthStats: (month: string) => request<MonthStats>(`/api/days/month-stats?month=${month}`),
 
   createEntry: (date: string, meal: MealKey, eatTime?: string) =>
     request<Entry>(`/api/days/${date}/entries`, { method: 'POST', body: JSON.stringify({ meal, eatTime }) }),
@@ -229,6 +231,21 @@ export const api = {
   adminApprove: (id: number) => request<AdminUser>(`/api/admin/users/${id}/approve`, { method: 'POST' }),
   adminPatchUser: (id: number, patch: { role?: Role; status?: 'pending' | 'active'; aiEnabled?: boolean }) =>
     request<AdminUser>(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  // NG 分類／關鍵字＋每日精緻糖門檻（全域設定，僅管理者可讀寫）
+  adminNg: () => request<{ sugarLimit: number; categories: NgCategoryInfo[]; keywords: NgKeyword[] }>('/api/admin/ng'),
+  adminSetSugarLimit: (grams: number) =>
+    request<{ sugarLimit: number }>('/api/admin/ng/sugar-limit', { method: 'PUT', body: JSON.stringify({ grams }) }),
+  adminAddNgCategory: (name: string, level: NgLevel, note: string) =>
+    request<NgCategoryInfo>('/api/admin/ng/categories', { method: 'POST', body: JSON.stringify({ name, level, note }) }),
+  adminUpdateNgCategory: (id: number, name: string, level: NgLevel, note: string) =>
+    request<NgCategoryInfo>(`/api/admin/ng/categories/${id}`, { method: 'PUT', body: JSON.stringify({ name, level, note }) }),
+  adminDeleteNgCategory: (id: number) => request<void>(`/api/admin/ng/categories/${id}`, { method: 'DELETE' }),
+  adminAddNgKeyword: (keyword: string, categoryId: number | null, isExclusion: boolean) =>
+    request<NgKeyword>('/api/admin/ng/keywords', { method: 'POST', body: JSON.stringify({ keyword, categoryId: categoryId ?? undefined, isExclusion }) }),
+  adminUpdateNgKeyword: (id: number, keyword: string, categoryId: number | null, isExclusion: boolean) =>
+    request<NgKeyword>(`/api/admin/ng/keywords/${id}`, { method: 'PUT', body: JSON.stringify({ keyword, categoryId: categoryId ?? undefined, isExclusion }) }),
+  adminDeleteNgKeyword: (id: number) => request<void>(`/api/admin/ng/keywords/${id}`, { method: 'DELETE' }),
 
   // AI 功能（需管理者開放）：判斷單張照片的營養素份數、對貼文產生 AI 評語
   aiOcr: (entryId: number, photo: string) =>

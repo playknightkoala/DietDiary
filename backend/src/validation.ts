@@ -78,6 +78,10 @@ export const dateSchema = z.string().regex(DATE_RE).refine((s) => {
 // 路由參數（:date、from/to）用：所有日期入口都要擋非真實日期，不能只靠 DATE_RE 字形檢查
 export const isRealDate = (s: unknown): s is string => dateSchema.safeParse(s).success;
 
+// 月份參數（month-stats 的 ?month=）：regex 已保證真實月份（01–12）
+export const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const isRealMonth = (s: unknown): s is string => typeof s === 'string' && MONTH_RE.test(s);
+
 // body/ex 數值以字串儲存（'' = 未填）：需為非負數字，上限 99999（體重/體脂/腰圍/分鐘都遠低於此）
 const numText = z.string().max(20).refine((s) => {
   if (s === '') return true;
@@ -219,6 +223,29 @@ export const adminPatchUserSchema = z.object({
   role: z.enum(ROLES).optional(),
   status: z.enum(['pending', 'active']).optional(),
   aiEnabled: z.boolean().optional(),
+});
+
+// NG 分類等級。與前端 lib/ng.ts 的 NG_LEVEL_LABELS 是同步契約，改任一邊要同步改另一邊
+export const NG_LEVELS = ['extreme', 'high', 'medium'] as const;
+
+// NG 分類是資料不是 enum（管理員可自行增刪改）
+export const ngCategorySchema = z.object({
+  name: z.string().trim().min(1).max(20),
+  level: z.enum(NG_LEVELS),
+  note: z.string().trim().max(100).optional(),
+});
+
+// isExclusion＝排除詞：命中的字段先從掃描文字剔除再比對 NG 關鍵字（如「黑巧克力」不算「巧克力」）。
+// 非排除詞必須帶 categoryId（路由層檢查）；排除詞不屬於任何分類
+export const ngKeywordSchema = z.object({
+  keyword: z.string().trim().min(1).max(30),
+  categoryId: z.number().int().positive().optional(),
+  isExclusion: z.boolean().optional(),
+});
+
+// 每日精緻糖門檻（公克，全域設定；WHO 建議 25）
+export const sugarLimitSchema = z.object({
+  grams: z.number().int().min(1).max(200),
 });
 
 // AI：判斷單張照片的營養素份數

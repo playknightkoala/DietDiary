@@ -16,6 +16,7 @@ import { AccountModal } from '../components/modals/AccountModal';
 import { NotificationsModal } from '../components/modals/NotificationsModal';
 import { LayoutModal } from '../components/modals/LayoutModal';
 import { BodyOverviewModal } from '../components/modals/BodyOverviewModal';
+import { SugarNgModal } from '../components/modals/SugarNgModal';
 
 export function MainScreen() {
   const modal = useStore((s) => s.modal);
@@ -97,6 +98,7 @@ export function MainScreen() {
       {modal === 'notify' && <NotificationsModal />}
       {modal === 'layout' && <LayoutModal />}
       {modal === 'bodyView' && <BodyOverviewModal />}
+      {modal === 'sugarNg' && <SugarNgModal />}
     </div>
   );
 }

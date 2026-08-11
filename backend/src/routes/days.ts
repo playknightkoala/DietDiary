@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { dayPatchSchema, entryCreateSchema, exLogCreateSchema, isRealDate, waterLogCreateSchema } from '../validation.js';
+import { dayPatchSchema, entryCreateSchema, exLogCreateSchema, isRealDate, isRealMonth, waterLogCreateSchema } from '../validation.js';
+import { getSugarLimit, monthSugarNgStats } from '../ng.js';
 import { ENTRY_COLS, getDayJson, ensureDayRow, getMarkedDates, entryToJsonWithRatings, notifyFollowers, recomputeDayEx, recomputeDayWater, deleteExLog, deleteWaterLog, type EntryRow, type WaterLogRow } from '../helpers.js';
 
 export const daysRouter = Router();
@@ -17,6 +18,14 @@ daysRouter.get('/marks', (req, res) => {
   if (dayMs < 0 || dayMs > 62 * 86400000) return res.status(400).json({ error: 'range too large' });
 
   return res.json({ dates: getMarkedDates(req.userId, from, to) });
+});
+
+// 當月「精緻糖／NG 食品」統計（主頁警示卡）。超標判定在前端做（sugar > sugarLimit），
+// 這裡只回每日原始糖量與當前門檻。必須宣告在 /:date 之前，否則會被它吃掉
+daysRouter.get('/month-stats', (req, res) => {
+  const month = req.query.month;
+  if (!isRealMonth(month)) return res.status(400).json({ error: 'invalid month' });
+  return res.json({ month, sugarLimit: getSugarLimit(), days: monthSugarNgStats(req.userId, month) });
 });
 
 daysRouter.get('/:date', (req, res) => {

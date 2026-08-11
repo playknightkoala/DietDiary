@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store';
+import { NgAdminPanel } from '../components/NgAdminPanel';
 import type { AdminUser, Role } from '../types';
 
 const ROLE_NAMES: Record<Role, string> = { member: '一般會員', citizen: '駒駒國民', dietitian: '營養師', admin: '管理者' };
@@ -22,6 +23,8 @@ export function AdminScreen() {
   const setView = useStore((s) => s.setView);
   const username = useStore((s) => s.username);
 
+  // 後台分頁：會員管理／飲食警示設定（NG 關鍵字＋糖門檻）
+  const [tab, setTab] = useState<'users' | 'ng'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -95,6 +98,28 @@ export function AdminScreen() {
         </button>
       </div>
 
+      <div style={{ display: 'flex', gap: 8 }}>
+        {([['users', '會員管理'], ['ng', '飲食警示設定']] as const).map(([key, name]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={tab === key ? undefined : 'hv-cream'}
+            style={{
+              height: 38, padding: '0 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
+              border: tab === key ? 'none' : '1.5px solid #DDD8CA',
+              background: tab === key ? '#4A7C59' : '#fff',
+              color: tab === key ? '#fff' : '#4A5A4A',
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'ng' ? (
+        <NgAdminPanel />
+      ) : (
+        <>
       <div style={{ fontSize: 12.5, color: '#6B7565' }}>
         新註冊的帳號需在此開通後才能登入。也可以在這裡調整會員身分（一般會員／營養師／管理者）、停用或刪除會員，或逐一開放「AI 功能」（AI 判斷營養素、AI 評語）。
       </div>
@@ -180,6 +205,8 @@ export function AdminScreen() {
       </div>
       {!loading && users.length === 0 && (
         <div style={{ padding: 30, textAlign: 'center', color: '#8A9284' }}>目前沒有任何帳號。</div>
+      )}
+        </>
       )}
     </div>
   );

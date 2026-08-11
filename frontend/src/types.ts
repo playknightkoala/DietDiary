@@ -185,6 +185,43 @@ export interface Profile {
 // citizen（駒駒國民）：權限與 member 完全相同，僅名稱不同
 export type Role = 'member' | 'citizen' | 'dietitian' | 'admin';
 
+// NG 分類等級。與後端 validation.ts 的 NG_LEVELS 是同步契約，改任一邊要同步改另一邊
+export type NgLevel = 'extreme' | 'high' | 'medium';
+
+// NG 分類（資料不是 enum，管理員可自行增刪改）
+export interface NgCategoryInfo {
+  id: number;
+  name: string;
+  level: NgLevel;
+  note: string;
+}
+
+// NG 關鍵字（全域、管理員維護；keyword 為後端正規化後的形）。
+// isExclusion＝排除詞：命中的字段先從掃描文字剔除再比對 NG 關鍵字（如「黑巧克力」不算「巧克力」），
+// 本身不算 NG、不屬於任何分類（categoryId null）
+export interface NgKeyword {
+  id: number;
+  keyword: string;
+  categoryId: number | null;
+  isExclusion: boolean;
+  createdAt: string;
+}
+
+// 當月糖／NG 統計的單日資料（只包含 sugar > 0 或有命中的天）
+export interface MonthStatDay {
+  date: string;
+  // 當日精緻糖公克數（自定義「糖」項目累計；與 domain.dayMacros().sugar 同一契約）
+  sugar: number;
+  ngHits: { keyword: string; category: string; level: NgLevel }[];
+}
+
+export interface MonthStats {
+  month: string; // 'YYYY-MM'
+  // 每日精緻糖門檻（管理員全域設定；超標判定 sugar > sugarLimit 只在前端 lib/ng.ts 做）
+  sugarLimit: number;
+  days: MonthStatDay[];
+}
+
 export interface AdminUser {
   id: number;
   username: string;

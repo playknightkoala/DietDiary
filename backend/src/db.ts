@@ -206,6 +206,93 @@ CREATE TABLE IF NOT EXISTS search_cache (
 );
 `);
 
+// 全域設定 key-value（sugar_limit_g＝每日精緻糖門檻公克數；未設定時程式預設 25＝WHO 建議）。
+db.exec(`
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`);
+
+// 早期開發版的 ng_keywords 把分類寫死成 enum CHECK；此功能從未釋出（只存在開發環境），
+// 偵測到舊表就直接重建並清掉舊播種旗標，讓下方 v2 種子重播（新清單涵蓋舊清單全部內容）
+const ngOldSql = (
+  db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ng_keywords'`).get() as { sql: string } | undefined
+)?.sql;
+if (ngOldSql && ngOldSql.includes("'fried'")) {
+  db.exec('DROP TABLE ng_keywords');
+  db.prepare(`DELETE FROM app_settings WHERE key = 'ng_keywords_seeded'`).run();
+}
+
+// NG 加工食品分類與關鍵字（全域、管理員維護，ng.ts）。
+// 分類是資料不是 enum（管理員可自行增刪改）；level 等級（extreme 極高／high 高／medium 中）
+// 與前端 lib/ng.ts 的 NG_LEVEL_LABELS 是同步契約。keyword 存正規化形（NFKC＋小寫＋trim），
+// 比對用「子字串包含」，UNIQUE 防重複；is_exclusion=1＝排除詞（命中字段先剔除再比對，不算 NG），
+// 排除詞不屬於任何分類（category_id NULL）。刪分類時 FK 會擋下仍有關鍵字的分類。
+db.exec(`
+CREATE TABLE IF NOT EXISTS ng_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  level TEXT NOT NULL DEFAULT 'high' CHECK (level IN ('extreme','high','medium')),
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ng_keywords (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword TEXT NOT NULL UNIQUE,
+  category_id INTEGER REFERENCES ng_categories(id),
+  is_exclusion INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
+// NG 分類＋關鍵字種子（v2）：只播一次（旗標與種子同一交易，中斷可重跑；管理員刪改後不會復活）
+if (!db.prepare(`SELECT 1 FROM app_settings WHERE key = 'ng_seeded_v2'`).get()) {
+  // [分類, 等級, 為什麼 NG, 關鍵字…]；關鍵字全域 UNIQUE，重複出現的品項只歸最具代表性的分類
+  const seedCats: [string, string, string, string[]][] = [
+    ['含糖手搖飲', 'extreme', '液體熱量＋糖，很不容易產生相應飽足感', ['珍珠奶茶', '黑糖鮮奶', '奶蓋茶', '楊枝甘露', '水果茶', '多多綠', '冬瓜茶']],
+    ['含糖瓶裝飲料', 'extreme', '一瓶可能就多出數百 kcal，而且不太影響下一餐食量', ['可樂', '汽水', '果汁', '奶茶', '運動飲料', '能量飲', '加糖咖啡']],
+    ['酒精', 'extreme', '酒精本身有熱量，又容易搭配炸物、宵夜', ['啤酒', '調酒', '梅酒', '威士忌', '燒酒']],
+    ['炸物', 'extreme', '食材吸油後熱量密度大幅上升', ['鹹酥雞', '鹽酥雞', '雞排', '炸雞', '甜不辣', '薯條', '炸豆腐', '炸杏鮑菇', '地瓜球']],
+    ['酥皮／糕餅', 'extreme', '「澱粉＋糖＋大量油脂」組合，非常容易吃進高熱量', ['蛋黃酥', '鳳梨酥', '太陽餅', '老婆餅', '奶油酥餅', '可頌', '丹麥麵包']],
+    ['甜點', 'extreme', '糖＋脂肪、份量小但熱量高', ['蛋糕', '泡芙', '甜甜圈', '冰淇淋', '布丁', '提拉米蘇', '車輪餅']],
+    ['零食', 'extreme', '飽足感低，很容易無意識一直吃', ['洋芋片', '蝦味先', '玉米濃湯棒', '餅乾', '威化餅', '巧克力', '糖果']],
+    ['台式早餐高油組合', 'high', '油、醬料和精製澱粉容易疊加', ['鐵板麵', '薯餅蛋餅', '培根蛋餅', '炸雞堡', '蘿蔔糕煎蛋']],
+    ['傳統飯糰', 'high', '糯米份量高，再加油條與肉鬆，熱量密度很高', ['飯糰', '油條']],
+    ['滷肉飯／爌肉飯', 'high', '白飯本身不是問題，主要是大量肥肉、滷汁與份量', ['滷肉飯', '肉燥飯', '爌肉飯']],
+    ['油飯／炒飯／炒麵', 'high', '最大問題是看不到的烹調油', ['油飯', '炒飯', '炒米粉', '炒麵']],
+    ['乾拌麵', 'high', '麵＋芝麻醬／油蔥等脂肪，熱量容易很高', ['麻醬麵', '乾麵', '炸醬麵']],
+    ['夜市小吃', 'high', '通常同時具備大量油脂、精製澱粉和醬料', ['蔥油餅', '蚵仔煎', '大腸包小腸', '棺材板', '臭豆腐']],
+    ['火鍋加工料', 'high', '小小一顆但脂肪與熱量可能不低，且容易吃很多', ['貢丸', '魚餃', '蛋餃', '燕餃', '蟹味棒', '鑫鑫腸']],
+    ['火鍋沾醬', 'high', '很典型的「看不到的熱量」，兩三匙就差很多', ['沙茶醬', '芝麻醬', '花生醬']],
+    ['肥肉類', 'high', '蛋白質沒問題，問題在脂肪比例很高', ['五花肉', '三層肉', '臘肉', '肥牛']],
+    ['加工肉品', 'high', '脂肪較高、容易搭配高熱量澱粉', ['熱狗', '香腸', '培根', '火腿', '午餐肉']],
+    ['濃醬料理', 'high', '醬汁裡通常有大量油、奶油、糖', ['咖哩飯', '奶油義大利麵', '白醬', '焗烤', '三杯']],
+    ['泡麵', 'high', '麵體與醬包油脂高，蛋白質與蔬菜少，飽足感不理想', ['泡麵']],
+    ['花生／芝麻類甜品', 'high', '花生芝麻本身不是壞食物，但「脂肪＋糖」後熱量非常集中', ['花生湯', '芝麻糊', '花生糖', '芝麻糖']],
+    ['麵包', 'medium', '不是所有麵包都 NG，主要看奶油、糖、餡料', ['奶酥', '菠蘿麵包', '紅豆麵包', '肉鬆麵包', '起司麵包']],
+    ['水餃／鍋貼', 'medium', '可以吃，但一餐吃 15–20 顆很容易超量；鍋貼又多煎油', ['水餃', '鍋貼', '煎餃']],
+    ['披薩／漢堡', 'medium', '起司、醬汁、肥肉與精製澱粉疊加', ['披薩', '漢堡']],
+    ['勾芡料理', 'medium', '勾芡不是罪魁禍首，主要是容易搭配大量澱粉與油', ['羹麵', '肉羹', '酸辣湯', '燴飯']],
+    ['果汁／果昔', 'medium', '就算不加糖，也比直接吃水果容易快速攝取大量糖與熱量', ['柳橙汁', '西瓜汁', '果昔']],
+    ['高熱量健康食品', 'medium', '營養價值高，但並非「減肥吃多少都可以」', ['堅果', '酪梨', '起司']],
+    ['全脂乳製品甜品', 'medium', '無糖牛奶不等於 NG，真正要注意的是額外糖和份量', ['調味優格', '優酪乳', '奶昔']],
+  ];
+  db.transaction(() => {
+    const insCat = db.prepare('INSERT OR IGNORE INTO ng_categories (name, level, note) VALUES (?, ?, ?)');
+    const getCat = db.prepare('SELECT id FROM ng_categories WHERE name = ?');
+    const insKw = db.prepare('INSERT OR IGNORE INTO ng_keywords (keyword, category_id, is_exclusion) VALUES (?, ?, 0)');
+    for (const [name, level, note, keywords] of seedCats) {
+      insCat.run(name, level, note);
+      const catId = (getCat.get(name) as { id: number }).id;
+      for (const kw of keywords) insKw.run(kw, catId);
+    }
+    // 預設排除詞：黑巧克力不被「巧克力」誤判
+    db.prepare('INSERT OR IGNORE INTO ng_keywords (keyword, category_id, is_exclusion) VALUES (?, NULL, 1)').run('黑巧克力');
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('ng_seeded_v2', '1')`).run();
+  })();
+}
+
 // 舊資料庫沒有 status / approval_token 欄位：補上，且既有帳號一律視為已開通
 const userCols = (db.pragma('table_info(users)') as { name: string }[]).map((c) => c.name);
 if (!userCols.includes('status')) {

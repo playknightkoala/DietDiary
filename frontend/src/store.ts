@@ -2,16 +2,17 @@ import { create } from 'zustand';
 import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
 import { isOutdated } from './lib/version';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
-import type { BodyTrendRow, DayData, Goal, NotificationItem, Profile, Role } from './types';
+import type { BodyTrendRow, DayData, Goal, MonthStats, NotificationItem, Profile, Role } from './types';
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
-  | 'calendar' | 'goals' | 'account' | 'notify' | 'layout' | 'bodyView' | null;
+  | 'calendar' | 'goals' | 'account' | 'notify' | 'layout' | 'bodyView' | 'sugarNg' | null;
 
 // ---- 主頁總覽卡片自定義（順序＋顯示與否；存在此裝置的 localStorage）----
 // 身體數據已移到獨立視窗（漢堡選單 → 身體數據），不在主頁卡片清單內
 export type CardKey = 'kcal' | 'water' | 'macro' | 'groups';
 export interface LayoutConfig { order: CardKey[]; hidden: CardKey[] }
+// 同時是 sanitizeLayout 的合法 key 白名單：新卡片沒加進來會被靜默丟棄、永不顯示
 export const DEFAULT_CARD_ORDER: CardKey[] = ['kcal', 'water', 'macro', 'groups'];
 const LAYOUT_KEY = 'dd_layout';
 
@@ -67,6 +68,11 @@ interface AppState {
 
   day: DayData;
   marks: Record<string, true>;
+  // 選取日期所在月份的糖／NG 統計（null＝尚未載入；月份不符時顯示占位）
+  monthStats: MonthStats | null;
+  // 飲食警示明細視窗顯示哪一種：sugar＝精緻糖超標、ng＝NG 食品
+  sugarNgMode: 'sugar' | 'ng';
+  openSugarNg: (mode: 'sugar' | 'ng') => void;
   goals: Goal[];
   // 身體數據歷程紀錄（所有指標、以量測日對齊，舊→新）
   trendRows: BodyTrendRow[];
@@ -92,6 +98,7 @@ interface AppState {
   loadDay: () => Promise<void>;
   loadWeekMarks: () => Promise<void>;
   loadMonthMarks: (y: number, m: number) => Promise<void>;
+  loadMonthStats: () => Promise<void>;
   // mutation 已回傳完整 DayData 時直接寫回，省掉 refresh() 的 day＋marks 重抓
   replaceDay: (date: string, day: DayData) => void;
   markDate: (date: string, hasData: boolean) => void;
@@ -148,6 +155,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   day: emptyDay(),
   marks: {},
+  monthStats: null,
+  sugarNgMode: 'sugar',
+  openSugarNg: (mode) => set({ sugarNgMode: mode, modal: 'sugarNg' }),
   goals: [],
   trendRows: [],
   profile: null,
@@ -176,7 +186,7 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.removeItem(LAYOUT_KEY); } catch { /* ignore */ }
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
-      day: emptyDay(), marks: {}, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
+      day: emptyDay(), marks: {}, monthStats: null, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
       layout: { order: [...DEFAULT_CARD_ORDER], hidden: [] },
     });
@@ -187,6 +197,8 @@ export const useStore = create<AppState>((set, get) => ({
     set(setAnchor ? { selected: date, weekAnchor: date } : { selected: date });
     void get().loadDay();
     if (setAnchor) void get().loadWeekMarks();
+    // 跨月時重載糖／NG 統計（警示卡跟著選取日期所在月份）
+    if (date.slice(0, 7) !== get().monthStats?.month) void get().loadMonthStats();
   },
   prevWeek: () => {
     set((s) => ({ weekAnchor: addDays(s.weekAnchor, -7) }));
@@ -229,6 +241,12 @@ export const useStore = create<AppState>((set, get) => ({
       return { marks };
     });
   },
+  loadMonthStats: async () => {
+    const month = get().selected.slice(0, 7);
+    const stats = await api.getMonthStats(month);
+    // 避免慢速回應覆蓋掉已切換的月份
+    if (get().selected.slice(0, 7) === month) set({ monthStats: stats });
+  },
   replaceDay: (date, day) => {
     // 只在仍停留於該日期時替換，避免蓋掉已切換的畫面
     if (get().selected === date) set({ day });
@@ -243,7 +261,7 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
   refresh: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks()]);
+    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadMonthStats()]);
   },
   loadGoals: async () => {
     const goals = await api.getGoals();
@@ -300,7 +318,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   loadAll: async () => {
     // photo cookie 先補（照片 <img> 需要它；升級前已登入的 session 沒有），其餘並行載入
-    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
+    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadMonthStats(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
   layout: loadLayout(),

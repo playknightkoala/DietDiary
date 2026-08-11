@@ -5,9 +5,13 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { adminPatchUserSchema, adminResetPasswordSchema } from '../validation.js';
 import { deleteUserData } from '../helpers.js';
 import { mailerConfigured, sendAccountApproved } from '../mailer.js';
+import { adminNgRouter } from './admin-ng.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole('admin'));
+
+// NG 加工食品關鍵字＋糖門檻管理（/api/admin/ng）
+adminRouter.use('/ng', adminNgRouter);
 
 interface AdminUserRow {
   id: number;

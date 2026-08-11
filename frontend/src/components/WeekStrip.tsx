@@ -1,5 +1,6 @@
 import { useStore } from '../store';
 import { WD_NAMES, dparse, dstr, weekOf } from '../lib/domain';
+import { ngDays, overSugarDays } from '../lib/ng';
 
 export function WeekStrip() {
   const selected = useStore((s) => s.selected);
@@ -9,6 +10,8 @@ export function WeekStrip() {
   const prevWeek = useStore((s) => s.prevWeek);
   const nextWeek = useStore((s) => s.nextWeek);
   const goToday = useStore((s) => s.goToday);
+  const monthStats = useStore((s) => s.monthStats);
+  const openSugarNg = useStore((s) => s.openSugarNg);
 
   const todayStr = dstr(new Date());
   const week = weekOf(weekAnchor);
@@ -17,6 +20,24 @@ export function WeekStrip() {
   const selectedLabel =
     selD.getFullYear() + ' 年 ' + (selD.getMonth() + 1) + ' 月 ' + selD.getDate() + ' 日（週' +
     WD_NAMES[(selD.getDay() + 6) % 7] + '）' + (selected === todayStr ? '・今天' : '');
+
+  // 當月飲食警示（跟著選取日期所在月份）：點文字開明細，糖與 NG 分開
+  const ready = monthStats !== null && monthStats.month === selected.slice(0, 7);
+  const overCount = ready ? overSugarDays(monthStats).length : 0;
+  const ngCount = ready ? ngDays(monthStats).length : 0;
+  const monthLabel = selected.slice(0, 7) === todayStr.slice(0, 7) ? '本月' : `${selD.getMonth() + 1} 月`;
+  const statLink = (label: string, onClick: () => void) => (
+    <button
+      onClick={onClick}
+      className="hv-cream"
+      style={{
+        border: '1.5px solid #E4DFD2', background: '#F7F5EF', padding: '2px 12px', borderRadius: 99, cursor: 'pointer',
+        fontSize: 12.5, color: '#6B7565',
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <>
@@ -69,6 +90,13 @@ export function WeekStrip() {
           </button>
         )}
       </div>
+      {ready && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '4px 12px 0', fontSize: 12.5, color: '#6B7565' }}>
+          <span style={{ marginRight: 2 }}>{monthLabel}</span>
+          {statLink(`糖超標 ${overCount} 天`, () => openSugarNg('sugar'))}
+          {statLink(`NG 食品 ${ngCount} 天`, () => openSugarNg('ng'))}
+        </div>
+      )}
     </>
   );
 }
