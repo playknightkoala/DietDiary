@@ -11,7 +11,9 @@ import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
 import { NotificationsModal } from '../components/modals/NotificationsModal';
-import type { CommentTarget, CustomItem, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, PhotoRating, Profile } from '../types';
+import { SugarNgDetail } from '../components/modals/SugarNgModal';
+import { ngDays, overSugarDays } from '../lib/ng';
+import type { CommentTarget, CustomItem, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, MonthStats, PhotoRating, Profile } from '../types';
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF', borderRadius: 20, border: '1.5px solid #E4DFD2', padding: 18,
@@ -118,6 +120,25 @@ export function DietitianScreen() {
       .catch((e) => setError(e instanceof Error ? e.message : '載入當日紀錄失敗'));
     return () => { cancelled = true; };
   }, [memberId, date]);
+
+  // 該會員「選取日期所在月份」的糖／NG 統計（顯示於日期選擇列下方；點文字開明細）
+  const statsMonth = date.slice(0, 7);
+  const [memberStats, setMemberStats] = useState<MonthStats | null>(null);
+  const [statsMode, setStatsMode] = useState<'sugar' | 'ng' | null>(null);
+  const loadMemberStats = useCallback(async (mid: number, month: string) => {
+    const stats = await api.proMonthStats(mid, month);
+    // 避免慢速回應覆蓋掉已切換的會員／月份（重新比對目前狀態由 effect 的 cancelled 守）
+    return stats;
+  }, []);
+  useEffect(() => {
+    setMemberStats(null);
+    if (memberId === '') return;
+    let cancelled = false;
+    loadMemberStats(memberId, statsMonth)
+      .then((s) => { if (!cancelled) setMemberStats(s); })
+      .catch(() => { /* 統計載入失敗不擋其他資料，顯示占位 */ });
+    return () => { cancelled = true; };
+  }, [memberId, statsMonth, loadMemberStats]);
 
   // 照片評分：點同色再點一次＝取消
   const ratePhoto = async (entryId: number, photo: string, rating: PhotoRating, current: PhotoRating | undefined) => {
@@ -250,12 +271,15 @@ export function DietitianScreen() {
       const updated = await api.proEditFood(memberId, foodEditing.id, { photoFoods, photoCustoms, items, expectedRevision: foodEditing.revision });
       setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === updated.id ? updated : en)) } : d));
       setFoodEditing(null);
+      // 調整份數／自定義可能改變糖量與 NG 命中：重載該月統計
+      loadMemberStats(memberId, statsMonth).then(setMemberStats).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : '儲存份數失敗，請再試一次');
-      // 409 衝突：重新載入當日紀錄讓畫面回到最新內容，並關閉編輯器（重開即拿到新版本）
+      // 409 衝突：重新載入當日紀錄與月統計讓畫面回到最新內容，並關閉編輯器（重開即拿到新版本）
       if (e instanceof ApiError && e.status === 409) {
         setFoodEditing(null);
         api.proDay(memberId, date).then(setDay).catch(() => {});
+        loadMemberStats(memberId, statsMonth).then(setMemberStats).catch(() => {});
       }
     } finally {
       setSavingFood(false);
@@ -441,6 +465,22 @@ export function DietitianScreen() {
           <button onClick={() => selectDate(todayStr)} className="hv-cream" style={{ border: '1px solid #4A7C59', color: '#4A7C59', background: 'transparent', borderRadius: 99, fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}>
             回到今天
           </button>
+        )}
+        {/* 該月糖／NG 統計（與會員主頁同一契約：判定只在 lib/ng.ts）；點文字開明細 */}
+        {memberId !== '' && memberStats !== null && (
+          <div style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6B7565' }}>
+            <span style={{ marginRight: 2 }}>{Number(statsMonth.slice(5, 7))} 月</span>
+            {([['sugar', `糖超標 ${overSugarDays(memberStats).length} 天`], ['ng', `NG 食品 ${ngDays(memberStats).length} 天`]] as const).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setStatsMode(m)}
+                className="hv-cream"
+                style={{ border: '1.5px solid #E4DFD2', background: '#F7F5EF', padding: '2px 12px', borderRadius: 99, cursor: 'pointer', fontSize: 12.5, color: '#6B7565' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -956,6 +996,16 @@ export function DietitianScreen() {
       )}
 
       {modal === 'notify' && <NotificationsModal />}
+      {/* 該會員的糖／NG 明細；點日期跳到該會員的那一天 */}
+      {statsMode && (
+        <SugarNgDetail
+          stats={memberStats}
+          mode={statsMode}
+          month={statsMonth}
+          onPickDate={(d) => { selectDate(d); setStatsMode(null); }}
+          onClose={() => setStatsMode(null)}
+        />
+      )}
       {lightbox && (
         <Lightbox
           photos={lightbox.photos}

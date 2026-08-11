@@ -25,7 +25,8 @@ export function WeekStrip() {
   const ready = monthStats !== null && monthStats.month === selected.slice(0, 7);
   const overCount = ready ? overSugarDays(monthStats).length : 0;
   const ngCount = ready ? ngDays(monthStats).length : 0;
-  const monthLabel = selected.slice(0, 7) === todayStr.slice(0, 7) ? '本月' : `${selD.getMonth() + 1} 月`;
+  // 一律顯示實際月份（8 月、7 月…），跟著選取日期所在的月份走
+  const monthLabel = `${selD.getMonth() + 1} 月`;
   const statLink = (label: string, onClick: () => void) => (
     <button
       onClick={onClick}

@@ -188,6 +188,19 @@ try {
     check(`member 打 ${init.method ?? 'GET'} ${url} → 403`, r.status === 403);
   }
 
+  // 營養師檢視會員統計（pro 路由）：dietitian 可讀、member 403、形狀與會員端一致
+  const dietUid = Number(
+    db.prepare(`INSERT INTO users (username, password_hash, status, role) VALUES ('ngdiet@x.com', 'x', 'active', 'dietitian')`).run().lastInsertRowid
+  );
+  const dietToken = jwt.sign({ uid: dietUid }, JWT_SECRET, { expiresIn: '1d' });
+  const proOk = await fetch(`${BASE}/api/pro/members/${uid}/month-stats?month=2026-08`, { headers: { Authorization: `Bearer ${dietToken}` } });
+  const proJson = (await proOk.json()) as { month: string; sugarLimit: number; days: unknown[] };
+  check('pro month-stats（dietitian）→ 200 且與會員端同形狀', proOk.status === 200 && proJson.month === '2026-08' && proJson.days.length === stats.length);
+  const proMember = await fetch(`${BASE}/api/pro/members/${uid}/month-stats?month=2026-08`, { headers: H });
+  check('pro month-stats（member token）→ 403', proMember.status === 403);
+  const proBadMonth = await fetch(`${BASE}/api/pro/members/${uid}/month-stats?month=2026-13`, { headers: { Authorization: `Bearer ${dietToken}` } });
+  check('pro month-stats month=2026-13 → 400', proBadMonth.status === 400);
+
   const adminGet = await fetch(`${BASE}/api/admin/ng`, { headers: AJ });
   const adminJson = (await adminGet.json()) as { sugarLimit: number; categories: { id: number; name: string }[]; keywords: { keyword: string }[] };
   check('admin GET /api/admin/ng → 200 含門檻／分類／清單', adminGet.status === 200 && adminJson.sugarLimit === 30 && adminJson.categories.length >= 27 && adminJson.keywords.length >= 120);

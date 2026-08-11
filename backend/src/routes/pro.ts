@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { COMMENT_TARGET_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, isRealDate, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
+import { COMMENT_TARGET_RE, FOOD_KEYS, aliasSchema, commentCreateSchema, commentEditSchema, followSchema, foodSchema, goalsSchema, isRealDate, isRealMonth, itemsSchema, photoCustomsSchema, photoFoodsSchema, photoRatingSchema } from '../validation.js';
+import { getSugarLimit, monthSugarNgStats } from '../ng.js';
 import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 import { profileJson } from './profile.js';
@@ -89,6 +90,15 @@ proRouter.get('/members/:id/marks', (req, res) => {
   const dayMs = new Date(to).getTime() - new Date(from).getTime();
   if (dayMs < 0 || dayMs > 62 * 86400000) return res.status(400).json({ error: 'range too large' });
   return res.json({ dates: getMarkedDates(member.id, from, to) });
+});
+
+// 會員的當月糖／NG 統計（營養師檢視；與 days.ts /month-stats 同一形狀與契約）
+proRouter.get('/members/:id/month-stats', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  const month = req.query.month;
+  if (!isRealMonth(month)) return res.status(400).json({ error: 'invalid month' });
+  return res.json({ month, sugarLimit: getSugarLimit(), days: monthSugarNgStats(member.id, month) });
 });
 
 // 替會員的單張照片評分（綠燈／黃燈／紅燈；rating: null 清除評分）

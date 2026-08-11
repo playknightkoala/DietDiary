@@ -299,6 +299,9 @@ export const api = {
   proSetFollow: (memberId: number, follow: boolean) =>
     request<{ ok: true; followed: boolean }>(`/api/pro/members/${memberId}/follow`, { method: 'PUT', body: JSON.stringify({ follow }) }),
   proDay: (memberId: number, date: string) => request<DayData>(`/api/pro/members/${memberId}/days/${date}`),
+  // 會員的當月糖／NG 統計（營養師檢視）
+  proMonthStats: (memberId: number, month: string) =>
+    request<MonthStats>(`/api/pro/members/${memberId}/month-stats?month=${month}`),
   // 會員的 TDEE 基本資料＋最近體重（營養師頁顯示 BMR/TDEE 與熱量目標比對）
   proProfile: (memberId: number) => request<Profile>(`/api/pro/members/${memberId}/profile`),
   proMarks: (memberId: number, from: string, to: string) =>
