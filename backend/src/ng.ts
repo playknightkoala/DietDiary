@@ -124,6 +124,43 @@ export function deleteNgKeyword(id: number): boolean {
   return db.prepare('DELETE FROM ng_keywords WHERE id = ?').run(id).changes === 1;
 }
 
+// ---- 批量匯入 ----
+
+export interface NgImportResult {
+  categoriesAdded: number;
+  keywordsAdded: number;
+  skipped: number;
+}
+
+// 批量匯入（整批同一交易，重複匯入冪等）：分類依名稱比對——已存在就沿用該分類（不更新
+// level/note），不存在才建立；關鍵字正規化後已存在（全域 UNIQUE，含排除詞與檔內重複）
+// 則忽略並計入 skipped。呼叫端先驗過 schema 與「正規化後非空」，所以 INSERT OR IGNORE
+// 只會因 UNIQUE 被略過（level 由 schema 擋、category_id 來自同交易內的查詢）；
+// 分類插入後仍查不到 id 屬異常，直接拋錯讓整筆回滾
+export function importNg(
+  categories: { name: string; level: NgLevel; note: string; keywords: string[] }[],
+  exclusions: string[]
+): NgImportResult {
+  return db.transaction(() => {
+    const insCat = db.prepare('INSERT OR IGNORE INTO ng_categories (name, level, note) VALUES (?, ?, ?)');
+    const getCat = db.prepare('SELECT id FROM ng_categories WHERE name = ?');
+    const insKw = db.prepare('INSERT OR IGNORE INTO ng_keywords (keyword, category_id, is_exclusion) VALUES (?, ?, ?)');
+    const result: NgImportResult = { categoriesAdded: 0, keywordsAdded: 0, skipped: 0 };
+    const addKeyword = (keyword: string, categoryId: number | null, isExclusion: boolean) => {
+      if (insKw.run(normalizeNgText(keyword), categoryId, isExclusion ? 1 : 0).changes === 1) result.keywordsAdded++;
+      else result.skipped++;
+    };
+    for (const c of categories) {
+      if (insCat.run(c.name, c.level, c.note).changes === 1) result.categoriesAdded++;
+      const row = getCat.get(c.name) as { id: number } | undefined;
+      if (!row) throw new Error(`ng import: category missing after insert: ${c.name}`);
+      for (const kw of c.keywords) addKeyword(kw, row.id, false);
+    }
+    for (const kw of exclusions) addKeyword(kw, null, true);
+    return result;
+  })();
+}
+
 // ---- 月統計 ----
 
 export interface MonthStatDay {

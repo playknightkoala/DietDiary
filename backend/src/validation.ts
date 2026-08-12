@@ -248,6 +248,28 @@ export const sugarLimitSchema = z.object({
   grams: z.number().int().min(1).max(200),
 });
 
+// NG 匯入檔（與前端「匯出」下載的檔案同格式，可直接 round-trip）。
+// strict：未知欄位不默默放行——拼錯欄位名（keyword vs keywords）要 400，不能靜默匯入 0 筆；
+// 陣列上限抓在 express json limit 1mb 之內
+export const ngImportSchema = z
+  .object({
+    categories: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(20),
+            level: z.enum(NG_LEVELS),
+            note: z.string().trim().max(100).optional(),
+            keywords: z.array(z.string().trim().min(1).max(30)).max(1000).optional(),
+          })
+          .strict()
+      )
+      .max(200)
+      .optional(),
+    exclusions: z.array(z.string().trim().min(1).max(30)).max(1000).optional(),
+  })
+  .strict();
+
 // AI：判斷單張照片的營養素份數
 export const aiOcrSchema = z.object({
   entryId: z.number().int().positive(),

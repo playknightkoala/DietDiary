@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { api } from '../lib/api';
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
+import { api, ApiError } from '../lib/api';
 import { NG_LEVELS, NG_LEVEL_COLORS, NG_LEVEL_LABELS } from '../lib/ng';
 import { CloseButton, ModalShell } from './modals/ModalShell';
 import type { NgCategoryInfo, NgKeyword, NgLevel } from '../types';
@@ -31,6 +31,8 @@ export function NgAdminPanel() {
   const [keywords, setKeywords] = useState<NgKeyword[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 匯入完成的結果訊息（成功綠字；任何新操作開始時清掉）
+  const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
 
   // 門檻草稿（字串；儲存時才 parse）
@@ -50,6 +52,10 @@ export function NgAdminPanel() {
   const emptyCatDraft = { name: '', level: 'high' as NgLevel, note: '' };
   const [editingCat, setEditingCat] = useState<number | null>(null);
   const [catDraft, setCatDraft] = useState(emptyCatDraft);
+
+  // 分類卡片內的就地新增關鍵字（分類已定，只需輸入關鍵字）
+  const [addingKwCat, setAddingKwCat] = useState<number | null>(null);
+  const [inlineKwDraft, setInlineKwDraft] = useState('');
 
   const load = async () => {
     setError('');
@@ -72,6 +78,7 @@ export function NgAdminPanel() {
     if (busy) return;
     setBusy(true);
     setError('');
+    setInfo('');
     try {
       await fn();
     } catch (e) {
@@ -116,6 +123,8 @@ export function NgAdminPanel() {
     setCatDraft(emptyCatDraft);
     setEditingKw(null);
     setEditingCat(null);
+    setAddingKwCat(null);
+    setInlineKwDraft('');
     setError('');
   };
 
@@ -139,6 +148,82 @@ export function NgAdminPanel() {
       await load();
       setAddOpen(false);
       setCatDraft(emptyCatDraft);
+    });
+
+  // ---- 匯出／匯入 ----
+
+  // 匯出目前設定為 JSON 檔（同時是匯入的格式範本，round-trip：匯出後直接匯入＝全數略過）
+  const exportNg = () => {
+    const data = {
+      categories: categories.map((c) => ({
+        name: c.name,
+        level: c.level,
+        note: c.note,
+        keywords: keywords.filter((k) => k.categoryId === c.id).map((k) => k.keyword),
+      })),
+      exclusions: keywords.filter((k) => k.isExclusion).map((k) => k.keyword),
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `NG食品設定-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onImportFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 清掉 value，同一個檔案修正後可重選
+    if (!file) return;
+    void run(async () => {
+      if (file.size > 900 * 1024) {
+        setError('檔案過大（上限 900 KB）');
+        return;
+      }
+      const text = await file.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setError('檔案不是有效的 JSON');
+        return;
+      }
+      try {
+        const r = await api.adminImportNg(data);
+        await load();
+        setInfo(`匯入完成：新增 ${r.categoriesAdded} 個分類、${r.keywordsAdded} 個關鍵字${r.skipped > 0 ? `，略過 ${r.skipped} 個已存在或重複的關鍵字` : ''}`);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 400) {
+          setError('檔案格式不符：請先用「匯出」下載目前設定作為範本，依同樣格式編輯後再匯入');
+          return;
+        }
+        throw err;
+      }
+    });
+  };
+
+  // ---- 分類卡片內就地新增關鍵字 ----
+
+  const startInlineAdd = (catId: number) => {
+    setAddingKwCat(catId);
+    setInlineKwDraft('');
+    setEditingKw(null);
+    setEditingCat(null);
+    setError('');
+  };
+
+  // 成功後清空輸入但保持列展開，方便連續新增；失敗保留草稿（guardrails 12）
+  const addInlineKeyword = (catId: number) =>
+    run(async () => {
+      if (!inlineKwDraft.trim()) {
+        setError('關鍵字不可為空');
+        return;
+      }
+      await api.adminAddNgKeyword(inlineKwDraft.trim(), catId, false);
+      await load();
+      setInlineKwDraft('');
     });
 
   // ---- 就地編輯／刪除 ----
@@ -168,6 +253,7 @@ export function NgAdminPanel() {
       level: categories.find((c) => c.id === k.categoryId)?.level ?? null,
     });
     setEditingCat(null);
+    setAddingKwCat(null);
     setError('');
   };
 
@@ -200,6 +286,7 @@ export function NgAdminPanel() {
     setEditingCat(c.id);
     setCatDraft({ name: c.name, level: c.level, note: c.note });
     setEditingKw(null);
+    setAddingKwCat(null);
     setError('');
   };
 
@@ -325,21 +412,44 @@ export function NgAdminPanel() {
         會員主頁日期旁的「糖超標／NG 食品」統計會比對每天精緻糖是否超過門檻，並用下方關鍵字掃描飲食敘述與自定義項目名稱。
         比對方式為<b>文字包含</b>，過短的關鍵字（如單字「糖」）容易誤判，建議至少兩個字。
         <b>排除詞</b>可擋誤判：命中排除詞的字段不參與比對——例如把「黑巧克力」設為排除詞，「70% 黑巧克力」就不會被「巧克力」判成 NG。
+        <b>匯出</b>會下載目前全部設定的 JSON 檔；<b>匯入</b>用同格式檔案批量新增——已存在的分類會沿用並把關鍵字加進去，已存在的關鍵字自動略過。
       </div>
       {error && !addOpen && <div style={{ fontSize: 13, color: '#C0564A', fontWeight: 700 }}>{error}</div>}
+      {info && <div style={{ fontSize: 13, color: '#4A7C59', fontWeight: 700 }}>{info}</div>}
       {loading ? (
         <div style={{ padding: 20, textAlign: 'center', color: '#8A9284' }}>載入中…</div>
       ) : (
         <>
-          {/* 新增入口（置頂）：開 modal，分頁選關鍵字／分類 */}
-          <button
-            onClick={openAdd}
-            disabled={busy}
-            className="hv-cream"
-            style={{ height: 42, border: '1.5px dashed #C9C3B2', borderRadius: 13, background: 'transparent', color: '#4A7C59', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-          >
-            ＋ 新增關鍵字或分類
-          </button>
+          {/* 新增入口（置頂）：開 modal，分頁選關鍵字／分類；旁邊是匯出／匯入 */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={openAdd}
+              disabled={busy}
+              className="hv-cream"
+              style={{ flex: 1, minWidth: 0, height: 42, border: '1.5px dashed #C9C3B2', borderRadius: 13, background: 'transparent', color: '#4A7C59', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+            >
+              ＋ 新增關鍵字或分類
+            </button>
+            <button
+              onClick={exportNg}
+              disabled={busy}
+              className="hv-cream"
+              title="下載目前全部分類與關鍵字的 JSON 檔（也是匯入的格式範本）"
+              style={{ height: 42, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', color: '#4A5A4A', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', flex: 'none' }}
+            >
+              匯出
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              className="hv-cream"
+              title="上傳 JSON 檔批量新增：已存在的分類會沿用並把關鍵字加進去，已存在的關鍵字自動略過"
+              style={{ height: 42, padding: '0 14px', border: '1.5px solid #DDD8CA', borderRadius: 13, background: '#fff', color: '#4A5A4A', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', flex: 'none' }}
+            >
+              匯入
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={onImportFile} />
+          </div>
 
           {/* 每日精緻糖門檻 */}
           <div style={{ background: '#FFFFFF', border: '1.5px solid #E4DFD2', borderRadius: 16, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -372,8 +482,26 @@ export function NgAdminPanel() {
                       {levelBadge(cat.level)}
                       <span style={{ fontSize: 13.5, fontWeight: 800, color: '#2D3B2D', flex: 'none' }}>{cat.name}</span>
                       <span style={{ fontSize: 11.5, color: '#8A9284', flex: '1 1 120px', minWidth: 0 }}>{cat.note}</span>
+                      <button onClick={() => startInlineAdd(cat.id)} disabled={busy} className="hv-cream" style={{ ...smallBtn('plain'), color: '#4A7C59', borderStyle: 'dashed' }}>＋ 關鍵字</button>
                       <button onClick={() => startEditCat(cat)} disabled={busy} className="hv-cream" style={smallBtn('plain')}>編輯</button>
                       <button onClick={() => { setDeletingCat(cat); setDeleteText(''); setError(''); }} disabled={busy} className="hv-red-tint" style={smallBtn('red')}>刪除</button>
+                    </div>
+                  )}
+                  {/* 就地新增：緊貼分類標題下方；分類已定，只需輸入關鍵字 */}
+                  {addingKwCat === cat.id && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1.5px solid #4A7C59', borderRadius: 13, background: '#FBFAF6', padding: '9px 12px' }}>
+                      <input
+                        value={inlineKwDraft}
+                        onChange={(e) => setInlineKwDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void addInlineKeyword(cat.id); }}
+                        placeholder={`新增「${cat.name}」的關鍵字`}
+                        maxLength={30}
+                        autoFocus
+                        disabled={busy}
+                        style={{ ...inputStyle, flex: '1 1 140px', minWidth: 0 }}
+                      />
+                      <button onClick={() => void addInlineKeyword(cat.id)} disabled={busy} className="hv-green" style={smallBtn('green')}>新增</button>
+                      <button onClick={() => { setAddingKwCat(null); setInlineKwDraft(''); setError(''); }} disabled={busy} className="hv-cream" style={smallBtn('plain')}>完成</button>
                     </div>
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -388,7 +516,7 @@ export function NgAdminPanel() {
                         </div>
                       )
                     )}
-                    {list.length === 0 && <div style={{ fontSize: 12, color: '#A39C8C' }}>（此分類目前沒有關鍵字）</div>}
+                    {list.length === 0 && addingKwCat !== cat.id && <div style={{ fontSize: 12, color: '#A39C8C' }}>（此分類目前沒有關鍵字）</div>}
                   </div>
                 </div>
               );

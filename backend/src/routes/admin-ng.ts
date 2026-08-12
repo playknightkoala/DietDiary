@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { ngCategorySchema, ngKeywordSchema, sugarLimitSchema } from '../validation.js';
+import { ngCategorySchema, ngImportSchema, ngKeywordSchema, sugarLimitSchema } from '../validation.js';
 import {
   createNgCategory,
   createNgKeyword,
   deleteNgCategory,
   deleteNgKeyword,
   getSugarLimit,
+  importNg,
   listNgCategories,
   listNgKeywords,
   normalizeNgText,
@@ -113,6 +114,21 @@ adminNgRouter.put('/keywords/:id', (req, res) => {
     if (isFkViolation(e)) return res.status(400).json({ error: 'invalid payload' });
     throw e;
   }
+});
+
+// ---- 批量匯入（檔案格式＝前端「匯出」的 JSON，round-trip）----
+
+// 已存在的分類沿用（不動 level/note）、關鍵字已存在則略過；整批同一交易、回報計數。
+// 正規化後變空的關鍵字（zod trim 擋不住的怪空白）整檔 400 擋下，不靜默略過
+adminNgRouter.post('/import', (req, res) => {
+  const parsed = ngImportSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid payload' });
+  const categories = (parsed.data.categories ?? []).map((c) => ({ ...c, note: c.note ?? '', keywords: c.keywords ?? [] }));
+  const exclusions = parsed.data.exclusions ?? [];
+  if ([...categories.flatMap((c) => c.keywords), ...exclusions].some((k) => !normalizeNgText(k))) {
+    return res.status(400).json({ error: 'invalid payload' });
+  }
+  return res.json(importNg(categories, exclusions));
 });
 
 adminNgRouter.delete('/keywords/:id', (req, res) => {

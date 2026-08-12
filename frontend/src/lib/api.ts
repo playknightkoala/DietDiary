@@ -246,6 +246,9 @@ export const api = {
   adminUpdateNgKeyword: (id: number, keyword: string, categoryId: number | null, isExclusion: boolean) =>
     request<NgKeyword>(`/api/admin/ng/keywords/${id}`, { method: 'PUT', body: JSON.stringify({ keyword, categoryId: categoryId ?? undefined, isExclusion }) }),
   adminDeleteNgKeyword: (id: number) => request<void>(`/api/admin/ng/keywords/${id}`, { method: 'DELETE' }),
+  // 批量匯入 NG 分類／關鍵字（檔案內容原樣送後端驗證；格式＝「匯出」下載的 JSON）
+  adminImportNg: (data: unknown) =>
+    request<{ categoriesAdded: number; keywordsAdded: number; skipped: number }>('/api/admin/ng/import', { method: 'POST', body: JSON.stringify(data) }),
 
   // AI 功能（需管理者開放）：判斷單張照片的營養素份數、對貼文產生 AI 評語
   aiOcr: (entryId: number, photo: string) =>

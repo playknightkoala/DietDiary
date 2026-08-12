@@ -4,7 +4,8 @@
 // 月界不外漏、排除詞剔除；分類 CRUD（資料化、有關鍵字的分類不可刪）；門檻預設 25／UPSERT 冪等；
 // 種子（v2）只播一次。
 // Part B（HTTP）——month-stats 授權與 month 驗證；/api/admin/ng 全端點 admin-only（fail-closed）；
-// 重複關鍵字／分類 409 且零副作用；非法門檻 400 且值不動；刪有關鍵字的分類 409。
+// 重複關鍵字／分類 409 且零副作用；非法門檻 400 且值不動；刪有關鍵字的分類 409；
+// 批量匯入（既有分類沿用不更新、已存在關鍵字略過、重複匯入冪等、400 零副作用、strict 擋拼錯欄位）。
 // 用法：cd backend && npx tsx scripts/sugar-ng.ts
 import fs from 'node:fs';
 import os from 'node:os';
@@ -234,6 +235,43 @@ try {
     const r = await fetch(`${BASE}/api/admin/ng/sugar-limit`, { method: 'PUT', headers: AJ, body: JSON.stringify({ grams }) });
     check(`PUT sugar-limit grams=${grams} → 400 且值不動`, r.status === 400 && ng.getSugarLimit() === 30);
   }
+
+  // ---- Part B：匯入 ----
+  const impDenied = await fetch(`${BASE}/api/admin/ng/import`, { method: 'POST', headers: HJ, body: '{}' });
+  check('member 打 POST /api/admin/ng/import → 403', impDenied.status === 403);
+
+  const friedBefore = db.prepare(`SELECT level, note FROM ng_categories WHERE name = '炸物'`).get() as { level: string; note: string };
+  const impCatsBefore = catCountRow();
+  const impKwBefore = kwCount();
+  const impBody = JSON.stringify({
+    categories: [
+      // 既有分類：沿用（level/note 不得被匯入更新）；零卡可樂已存在（排除詞）→ 略過；檔內重複（正規化同形）只進一次
+      { name: '炸物', level: friedBefore.level === 'high' ? 'medium' : 'high', note: '匯入不應更新', keywords: ['匯入詞一', '零卡可樂', ' 匯入詞一 '] },
+      { name: '匯入新分類', level: 'extreme', note: '由匯入建立', keywords: ['匯入詞二'] },
+    ],
+    exclusions: ['匯入排除詞', '零卡可樂'],
+  });
+  const imp = await fetch(`${BASE}/api/admin/ng/import`, { method: 'POST', headers: AJ, body: impBody });
+  const impJson = (await imp.json()) as { categoriesAdded: number; keywordsAdded: number; skipped: number };
+  check('匯入 → 200 計數正確（+1 分類 +3 關鍵字，略過 3）', imp.status === 200 && impJson.categoriesAdded === 1 && impJson.keywordsAdded === 3 && impJson.skipped === 3, JSON.stringify(impJson));
+  check('匯入後筆數吻合', catCountRow() === impCatsBefore + 1 && kwCount() === impKwBefore + 3);
+  const friedAfter = db.prepare(`SELECT id, level, note FROM ng_categories WHERE name = '炸物'`).get() as { id: number; level: string; note: string };
+  check('既有分類 level/note 不被匯入更新', friedAfter.level === friedBefore.level && friedAfter.note === friedBefore.note);
+  const impKw1 = db.prepare(`SELECT category_id, is_exclusion FROM ng_keywords WHERE keyword = '匯入詞一'`).get() as { category_id: number; is_exclusion: number } | undefined;
+  check('匯入關鍵字掛進既有分類', impKw1?.category_id === friedAfter.id && impKw1.is_exclusion === 0);
+  const impEx = db.prepare(`SELECT category_id, is_exclusion FROM ng_keywords WHERE keyword = '匯入排除詞'`).get() as { category_id: number | null; is_exclusion: number } | undefined;
+  check('匯入排除詞：is_exclusion=1 且無分類', impEx?.is_exclusion === 1 && impEx.category_id === null);
+  const imp2 = await fetch(`${BASE}/api/admin/ng/import`, { method: 'POST', headers: AJ, body: impBody });
+  const imp2Json = (await imp2.json()) as { categoriesAdded: number; keywordsAdded: number; skipped: number };
+  check(
+    '重複匯入冪等（全略過、筆數不變）',
+    imp2.status === 200 && imp2Json.categoriesAdded === 0 && imp2Json.keywordsAdded === 0 && imp2Json.skipped === 6 && catCountRow() === impCatsBefore + 1 && kwCount() === impKwBefore + 3,
+    JSON.stringify(imp2Json)
+  );
+  const impBad = await fetch(`${BASE}/api/admin/ng/import`, { method: 'POST', headers: AJ, body: '{"categories":[{"name":"壞等級","level":"ultra","keywords":["壞詞"]}]}' });
+  check('匯入非法等級 → 400 且零副作用', impBad.status === 400 && catCountRow() === impCatsBefore + 1 && kwCount() === impKwBefore + 3);
+  const impTypo = await fetch(`${BASE}/api/admin/ng/import`, { method: 'POST', headers: AJ, body: '{"categories":[{"name":"拼錯欄位","level":"high","keyword":["x"]}]}' });
+  check('匯入拼錯欄位名（strict）→ 400 而非靜默匯入 0 筆', impTypo.status === 400 && catCountRow() === impCatsBefore + 1);
 
   // 種子不復活：刪光關鍵字後旗標仍在，重啟不會重播（旗標即防復活契約）
   db.prepare('DELETE FROM ng_keywords').run();
