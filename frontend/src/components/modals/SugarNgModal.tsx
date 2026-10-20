@@ -88,10 +88,9 @@ export function SugarNgModal() {
   const closeModal = useStore((s) => s.closeModal);
 
   const month = selected.slice(0, 7);
-  const ready = monthStats !== null && monthStats.month === month;
   return (
     <SugarNgDetail
-      stats={ready ? monthStats : null}
+      stats={monthStats[month] ?? null}
       mode={mode}
       month={month}
       onPickDate={(d) => { selectDate(d, true); closeModal(); }}

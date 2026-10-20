@@ -4,6 +4,7 @@ const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
 const ROLE_KEY = 'diet-role';
 const REMEMBER_ACCOUNT_KEY = 'diet-remember-account';
+const AUTO_LOGIN_KEY = 'diet-auto-login';
 
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY);
@@ -47,6 +48,18 @@ export function getRememberedAccount(): string {
 export function setRememberedAccount(account: string | null) {
   if (account) localStorage.setItem(REMEMBER_ACCOUNT_KEY, account);
   else localStorage.removeItem(REMEMBER_ACCOUNT_KEY);
+}
+
+// 「自動登入」勾選偏好：與記住帳號一樣存在這台裝置，下次登入頁預設帶入（登出不清）
+export function getAutoLoginPref(): boolean {
+  try { return localStorage.getItem(AUTO_LOGIN_KEY) === '1'; } catch { return false; }
+}
+
+export function setAutoLoginPref(on: boolean) {
+  try {
+    if (on) localStorage.setItem(AUTO_LOGIN_KEY, '1');
+    else localStorage.removeItem(AUTO_LOGIN_KEY);
+  } catch { /* 無法存取 storage 就只影響下次預設勾選 */ }
 }
 
 let onUnauthorized: () => void = () => {};
@@ -181,7 +194,7 @@ export const api = {
     return request<{ photos: string[]; revision: number }>(`/api/entries/${id}/photos`, { method: 'POST', body: form });
   },
   // 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組）；limit 為每餐別的餐卡上限
-  entryHistory: (excludeId?: number, limit = 30) =>
+  entryHistory: (excludeId?: number, limit = 50) =>
     request<HistoryMeal[]>(`/api/entries/history?limit=${limit}${excludeId ? `&exclude=${excludeId}` : ''}`),
   // 最近記過的「自訂名稱＋大卡」自定義項目（快速再次加入）
   customItemHistory: () => request<{ name: string; kcal: number }[]>('/api/entries/custom-history'),
@@ -307,6 +320,9 @@ export const api = {
     request<MonthStats>(`/api/pro/members/${memberId}/month-stats?month=${month}`),
   // 會員的 TDEE 基本資料＋最近體重（營養師頁顯示 BMR/TDEE 與熱量目標比對）
   proProfile: (memberId: number) => request<Profile>(`/api/pro/members/${memberId}/profile`),
+  // 會員的身體數據歷程（營養師頁身體數據視窗；唯讀）
+  proBodyTrend: (memberId: number, limit = 30) =>
+    request<{ rows: BodyTrendRow[] }>(`/api/pro/members/${memberId}/body-trend?limit=${limit}`),
   proMarks: (memberId: number, from: string, to: string) =>
     request<{ dates: string[] }>(`/api/pro/members/${memberId}/marks?from=${from}&to=${to}`),
   proEditFood: (memberId: number, entryId: number, payload: { food?: Food; photoFoods?: Record<string, Food>; photoCustoms?: Record<string, CustomItem[]>; items?: EntryFoodItem[]; expectedRevision?: number }) =>

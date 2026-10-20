@@ -1,11 +1,13 @@
 import { WD_NAMES, dstr } from '../../lib/domain';
 import { useStore } from '../../store';
+import { WARN_COLORS, dayWarn } from '../../lib/ng';
 import { CloseButton, ModalShell } from './ModalShell';
 
 export function CalendarModal() {
   const selected = useStore((s) => s.selected);
   const calMonth = useStore((s) => s.calMonth);
   const marks = useStore((s) => s.marks);
+  const monthStats = useStore((s) => s.monthStats);
   const selectDate = useStore((s) => s.selectDate);
   const setCalMonth = useStore((s) => s.setCalMonth);
   const closeModal = useStore((s) => s.closeModal);
@@ -49,16 +51,18 @@ export function CalendarModal() {
           const isSel = c.key === selected;
           const isToday = c.key === todayStr;
           const isMarked = !!marks[c.key];
+          // 紅燈：糖超標或有 NG 食品（與週列同一判定）
+          const warn = isMarked && dayWarn(monthStats[c.key.slice(0, 7)], c.key);
           return (
             <button
               key={c.key}
               onClick={() => { selectDate(c.key!, true); closeModal(); }}
-              title={isMarked ? '這天有紀錄' : undefined}
+              title={warn ? '這天糖超標或有 NG 食品' : isMarked ? '這天有紀錄' : undefined}
               style={{
                 height: 42, borderRadius: 11, cursor: 'pointer',
-                // 有紀錄的日期亮燈：淡橘底＋橘框＋發光圓點
-                border: isMarked && !isSel ? '1.5px solid #E8C49A' : '1.5px solid transparent',
-                background: isSel ? '#4A7C59' : isMarked ? '#FDF3E7' : isToday ? '#EDF2E6' : '#FBFAF6',
+                // 有紀錄的日期亮燈：淡橘底＋橘框＋發光圓點；糖超標／NG 改為紅底＋紅框＋紅點
+                border: isMarked && !isSel ? `1.5px solid ${warn ? WARN_COLORS.border : '#E8C49A'}` : '1.5px solid transparent',
+                background: isSel ? '#4A7C59' : warn ? WARN_COLORS.bg : isMarked ? '#FDF3E7' : isToday ? '#EDF2E6' : '#FBFAF6',
                 color: isSel ? '#fff' : isToday ? '#4A7C59' : '#4A5A4A',
                 fontFamily: 'Outfit', fontSize: 14, fontWeight: 600,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
@@ -68,8 +72,12 @@ export function CalendarModal() {
               <span
                 style={{
                   width: 6, height: 6, borderRadius: '50%',
-                  background: isMarked ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent',
-                  boxShadow: isMarked ? (isSel ? '0 0 5px rgba(244,241,234,.9)' : '0 0 5px rgba(199,123,74,.85)') : 'none',
+                  background: !isMarked ? 'transparent' : warn ? (isSel ? WARN_COLORS.selDot : WARN_COLORS.dot) : isSel ? '#F4F1EA' : '#C77B4A',
+                  boxShadow: !isMarked
+                    ? 'none'
+                    : warn
+                      ? `0 0 5px ${isSel ? WARN_COLORS.selGlow : WARN_COLORS.glow}`
+                      : isSel ? '0 0 5px rgba(244,241,234,.9)' : '0 0 5px rgba(199,123,74,.85)',
                 }}
               />
             </button>

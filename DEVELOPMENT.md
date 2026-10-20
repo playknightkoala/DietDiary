@@ -68,7 +68,7 @@ docker compose up -d --build
 - **首次登入須設定暱稱**：暱稱為空的帳號登入後會先跳出暱稱設定視窗（不可跳過），設定完成才能開始使用；暱稱顯示於動態牆與營養師端。
 - **會員中心**：右上角人像圖示可查看帳號並變更密碼。
 - **忘記密碼**：登入頁「忘記密碼？」→ 圖形驗證碼 → Email 認證碼 → 設定新密碼（`/api/auth/forgot/*`；帳號不存在或未開通時靜默回成功、不寄信，避免帳號探測）。會員收不到信時，管理者可在後台「重置密碼」直接設定新密碼。
-- **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。也可替會員的每張餐點照片評分（綠燈＝均衡良好、黃燈＝尚可、紅燈＝需改善），燈號會顯示在會員端的照片角落。
+- **營養師**：營養師（與管理者）可進入「營養師頁面」選會員＋選日期檢視每日紀錄，並替會員設定階段目標；營養師設定的目標會在會員端標示「營養師設定」且會員無法自行修改。也可替會員的每張餐點照片評分（綠燈＝均衡良好、黃燈＝尚可、紅燈＝需改善），燈號會顯示在會員端的照片角落。會員的身體數據以「身體數據」按鈕開啟唯讀視窗（當日數值、BMR／TDEE、歷程趨勢，與會員端相同版面但不能新增或修改）；會員月曆上糖超標／NG 的日期亮紅燈。
 
 防濫用：nginx 對 `/api/auth/` 做 per-IP 限流（5 req/s、burst 10，超過回 429），設定在 `frontend/nginx.conf`。
 
@@ -94,7 +94,7 @@ docker compose up -d --build
 | POST | `/api/auth/verify-captcha` | `{captchaId, captchaAnswer}` → 確認圖形驗證碼 |
 | POST | `/api/auth/send-code` | `{email, captchaId(已驗證)}` → 寄送註冊認證碼 |
 | POST | `/api/auth/register` | `{username(email), password, confirmPassword, code}` → `{pending, message}`（待管理者開通）|
-| POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403 |
+| POST | `/api/auth/login` | `{username, password, remember?}` → `{token, username, role}`（remember=true 效期 30 天、否則 1 天）；未開通回 403。前端「記住帳號」「自動登入」勾選分別存在 localStorage（`diet-remember-account`／`diet-auto-login`），登出不清 |
 | GET | `/api/auth/me` | 目前登入者 `{username, role, nickname, aiEnabled, uiLayout, createdAt}` |
 | POST | `/api/auth/change-password` | `{oldPassword, newPassword, confirmPassword}` 變更密碼 |
 | POST | `/api/auth/photo-cookie` | 補發照片存取 cookie（`/uploads` 需驗證；前端啟動時呼叫）|
@@ -102,7 +102,8 @@ docker compose up -d --build
 | POST | `/api/auth/forgot/send-code` | `{email, captchaId(已驗證)}` → 寄送密碼重設認證碼；帳號不存在／未開通時**靜默回成功**（不寄信、不寫碼，避免帳號探測）|
 | POST | `/api/auth/forgot/reset` | `{email, code, newPassword, confirmPassword}` → 驗證認證碼並重設密碼（成功即消耗認證碼）|
 | GET / PATCH | `/api/days/:date` | 當日資料（water / ex / body / entries，含 waterTime / exTime / bodyTime 紀錄時間）|
-| GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈）|
+| GET | `/api/days/marks?from&to` | 有紀錄的日期（週曆／月曆亮燈；範圍最多 62 天）。紅燈（糖超標／NG）不在此端點，由前端拿 `month-stats` 以 `lib/ng.ts dayWarn` 判定 |
+| GET | `/api/days/month-stats?month=YYYY-MM` | 該月糖／NG 統計 `{month, sugarLimit, days:[{date, sugar, ngHits:[{keyword, category, level}]}]}`（只含 sugar>0 或有命中的天；**不回 over 旗標**，超標判定只在前端）|
 | POST | `/api/days/:date/entries` | 建立餐次紀錄 `{meal, eatTime?}` |
 | POST | `/api/days/:date/water` | 逐筆記錄喝水 `{ml, time?}`（一筆＝一則動態）|
 | DELETE | `/api/days/:date/water/:id` | 刪除單筆喝水紀錄（`DELETE /api/days/:date/water` 為整天歸零）|
@@ -110,7 +111,7 @@ docker compose up -d --build
 | DELETE | `/api/days/:date/ex/:id` | 刪除單筆運動紀錄 |
 | PATCH / DELETE | `/api/entries/:id` | 更新（desc / photoFoods＋photoCustoms＋items 整組份量替換 / photos 子集合＝刪除照片 / eatTime / date＝移到別天；舊 client 的 `food` 仍相容）／刪除。皆可帶 `expectedRevision`（樂觀鎖）：與現值不符回 **409** 且不落任何變更，防兩台裝置互相覆蓋；無效值回 400、不帶＝舊 client 相容 |
 | POST | `/api/entries/:id/photos` | multipart 上傳多張照片（每筆最多 10 張，前端已壓縮 640px JPEG）；可帶 `expectedRevision` 文字欄位（不符 409、檔案收回），回傳含最新 `revision` |
-| GET | `/api/entries/history?limit&exclude` | 「從歷史加入」：最近記過的餐（以原始紀錄分組成卡，含各照片份數／自定義與敘述；limit 為每餐別上限）|
+| GET | `/api/entries/history?limit&exclude` | 「從歷史加入」：最近記過的餐（以原始紀錄分組成卡，含各照片份數／自定義與敘述；limit 為每餐別上限，最多 50、預設 50；關鍵字搜尋為前端過濾）|
 | GET | `/api/entries/custom-history` | 最近記過的「自訂名稱＋大卡」自定義項目（去重、最多 10 筆，供快速再次加入）|
 | POST | `/api/entries/:id/photos/copy` | 從歷史複製自己的一張照片到這筆紀錄 `{photo, expectedRevision?}`（不符 409、複製檔收回），回傳含最新 `revision` |
 | GET / POST | `/api/comments?target=` | 留言（target：`entry:<id>`／`water:<id>`／`ex:<id>`）|
@@ -127,12 +128,19 @@ docker compose up -d --build
 | PATCH | `/api/admin/users/:id` | （admin）`{role?, status?}` 調整角色／停用 |
 | POST | `/api/admin/users/:id/reset-password` | （admin）`{password}` 替會員重置密碼（會員收不到重設信時的後台救援管道）|
 | DELETE | `/api/admin/users/:id` | （admin）刪除會員與其所有資料 |
+| GET | `/api/admin/ng` | （admin）飲食警示設定：精緻糖門檻＋NG 分類與關鍵字（含排除詞）|
+| PUT | `/api/admin/ng/sugar-limit` | （admin）`{grams}` 設定每日精緻糖門檻（1–200 整數）|
+| POST / PUT / DELETE | `/api/admin/ng/categories[/:id]` | （admin）新增／修改／刪除 NG 分類（刪除連同底下關鍵字；重複名稱 409）|
+| POST / PUT / DELETE | `/api/admin/ng/keywords[/:id]` | （admin）新增／修改／刪除關鍵字（排除詞不需分類；重複 409）|
+| POST | `/api/admin/ng/import` | （admin）匯入分類＋關鍵字 JSON（既有分類沿用、既有關鍵字略過，冪等；回報新增／略過數）|
 | GET | `/api/pro/members` | （dietitian/admin）會員清單（含追蹤狀態與私人暱稱，追蹤中置頂）|
 | PUT | `/api/pro/members/:id/follow` | （dietitian/admin）`{follow}` 追蹤／取消追蹤會員（追蹤中的會員發文會收到通知）|
 | PUT | `/api/pro/members/:id/alias` | （dietitian/admin）`{alias}` 替會員取私人暱稱（僅自己可見；空字串＝清除）|
 | GET | `/api/pro/members/:id/days/:date` | （dietitian/admin）會員當日紀錄 |
 | GET | `/api/pro/members/:id/profile` | （dietitian/admin）會員的 TDEE 基本資料＋最近體重（營養師頁顯示 BMR/TDEE 與熱量目標比對）|
+| GET | `/api/pro/members/:id/body-trend?limit=` | （dietitian/admin）會員的身體數據歷程（與 `/api/body-trend?field=all` 同形狀；營養師頁「身體數據」唯讀視窗的趨勢圖）|
 | GET | `/api/pro/members/:id/marks?from&to` | （dietitian/admin）會員有紀錄的日期 |
+| GET | `/api/pro/members/:id/month-stats?month=` | （dietitian/admin）會員該月糖／NG 統計（與 `/api/days/month-stats` 同形狀；營養師頁警示文字與月曆紅燈）|
 | PUT | `/api/pro/members/:id/entries/:eid/photo-rating` | （dietitian/admin）`{photo, rating: green/yellow/red/null}` 替單張照片評分（null＝取消）|
 | PUT | `/api/pro/members/:id/entries/:eid/food` | （dietitian/admin）`{photoFoods, photoCustoms, items, expectedRevision?}` 調整該筆份數與自定義項目（份數有變才標示「營養師調整份數」；樂觀鎖不符回 409；舊 client 的 `{food}` 仍相容）|
 | GET / POST | `/api/pro/members/:id/comments?target=` | （dietitian/admin）查看／新增對會員紀錄的留言 |

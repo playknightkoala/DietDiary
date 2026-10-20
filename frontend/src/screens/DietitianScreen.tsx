@@ -11,8 +11,9 @@ import { Lightbox } from '../components/Lightbox';
 import { PickerInput } from '../components/PickerInput';
 import { CloseButton, ModalShell } from '../components/modals/ModalShell';
 import { NotificationsModal } from '../components/modals/NotificationsModal';
+import { MemberBodyModal } from '../components/modals/MemberBodyModal';
 import { SugarNgDetail } from '../components/modals/SugarNgModal';
-import { ngDays, overSugarDays } from '../lib/ng';
+import { WARN_COLORS, dayWarn, ngDays, overSugarDays } from '../lib/ng';
 import type { CommentTarget, CustomItem, DayData, Entry, Food, FoodKey, Goal, GoalKey, MemberInfo, MonthStats, PhotoRating, Profile } from '../types';
 
 const cardStyle: CSSProperties = {
@@ -47,6 +48,8 @@ export function DietitianScreen() {
   const [memberProfile, setMemberProfile] = useState<Profile | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [marks, setMarks] = useState<Record<string, true>>({});
+  // 月曆顯示月份的糖／NG 統計（月曆可翻到與選取日期不同的月份，與 memberStats 分開存）
+  const [calStats, setCalStats] = useState<MonthStats | null>(null);
   const [calMonth, setCalMonth] = useState<{ y: number; m: number }>(() => {
     const [y, m] = todayStr.split('-').map(Number);
     return { y, m: m - 1 };
@@ -85,10 +88,12 @@ export function DietitianScreen() {
   const loadMarks = useCallback(async (mid: number, y: number, m: number) => {
     const from = dstr(new Date(y, m, 1));
     const to = dstr(new Date(y, m + 1, 0));
-    const { dates } = await api.proMarks(mid, from, to);
+    // 月曆紅燈需要該月統計；統計失敗只少紅燈，不擋標記
+    const [{ dates }, stats] = await Promise.all([api.proMarks(mid, from, to), api.proMonthStats(mid, from.slice(0, 7)).catch(() => null)]);
     const next: Record<string, true> = {};
     dates.forEach((d) => (next[d] = true));
     setMarks(next);
+    setCalStats(stats);
   }, []);
 
   // 選定會員後載入其目標與當月標記
@@ -152,6 +157,9 @@ export function DietitianScreen() {
   };
 
   const [lightbox, setLightbox] = useState<{ entryId: number; photos: string[]; index: number } | null>(null);
+  // 會員身體數據視窗（唯讀）；換會員或日期時關閉，避免顯示到舊資料
+  const [bodyOpen, setBodyOpen] = useState(false);
+  useEffect(() => { setBodyOpen(false); }, [memberId, date]);
   const lightboxEntry = lightbox ? (day?.entries ?? []).find((en) => en.id === lightbox.entryId) : null;
 
   // 編輯會員某筆紀錄的份數與自定義項目（會標記「營養師調整」；只改自定義後端不會蓋章）。
@@ -271,15 +279,15 @@ export function DietitianScreen() {
       const updated = await api.proEditFood(memberId, foodEditing.id, { photoFoods, photoCustoms, items, expectedRevision: foodEditing.revision });
       setDay((d) => (d ? { ...d, entries: d.entries.map((en) => (en.id === updated.id ? updated : en)) } : d));
       setFoodEditing(null);
-      // 調整份數／自定義可能改變糖量與 NG 命中：重載該月統計
-      loadMemberStats(memberId, statsMonth).then(setMemberStats).catch(() => {});
+      // 調整份數／自定義可能改變糖量與 NG 命中：重載該月統計（月曆若正顯示同一月，紅燈一併更新）
+      loadMemberStats(memberId, statsMonth).then((s) => { setMemberStats(s); setCalStats((c) => (c && c.month === s.month ? s : c)); }).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : '儲存份數失敗，請再試一次');
       // 409 衝突：重新載入當日紀錄與月統計讓畫面回到最新內容，並關閉編輯器（重開即拿到新版本）
       if (e instanceof ApiError && e.status === 409) {
         setFoodEditing(null);
         api.proDay(memberId, date).then(setDay).catch(() => {});
-        loadMemberStats(memberId, statsMonth).then(setMemberStats).catch(() => {});
+        loadMemberStats(memberId, statsMonth).then((s) => { setMemberStats(s); setCalStats((c) => (c && c.month === s.month ? s : c)); }).catch(() => {});
       }
     } finally {
       setSavingFood(false);
@@ -375,7 +383,7 @@ export function DietitianScreen() {
   // 六大類份數熱量＋自定義熱量項目
   const totalKcal = kcalOfFood(totals) + dayCustomKcal(entries);
   // BMR/TDEE：與會員主頁同一套（基本資料＋最近體重；資料不齊為 null 就不顯示）
-  const { bmr, tdee } = bmrTdeeOf(memberProfile);
+  const { tdee } = bmrTdeeOf(memberProfile);
   const kcalOver = tdee !== null && totalKcal > tdee;
   const totalExMin = Math.round((day?.exLogs ?? []).reduce((a, l) => a + (Number(l.min) || 0), 0) * 10) / 10;
   const bodyItems = day ? BODY_DEFS.filter((b) => day.body[b.k] !== '') : [];
@@ -551,27 +559,29 @@ export function DietitianScreen() {
                   if (!c.key) return <div key={`e${i}`} style={{ height: 40 }} />;
                   const isSel = c.key === date;
                   const isMarked = !!marks[c.key];
+                  // 紅燈：該會員當天糖超標或有 NG 食品（與會員端週列／月曆同一判定）
+                  const warn = isMarked && dayWarn(calStats, c.key);
                   return (
                     <button
                       key={c.key}
                       onClick={() => selectDate(c.key!)}
-                      title={isMarked ? '這天有紀錄' : undefined}
+                      title={warn ? '這天糖超標或有 NG 食品' : isMarked ? '這天有紀錄' : undefined}
                       style={{
                         height: 40, borderRadius: 10, cursor: 'pointer',
-                        border: isMarked && !isSel ? '1.5px solid #E8C49A' : '1.5px solid transparent',
-                        background: isSel ? '#4A7C59' : isMarked ? '#FDF3E7' : '#FBFAF6',
+                        border: isMarked && !isSel ? `1.5px solid ${warn ? WARN_COLORS.border : '#E8C49A'}` : '1.5px solid transparent',
+                        background: isSel ? '#4A7C59' : warn ? WARN_COLORS.bg : isMarked ? '#FDF3E7' : '#FBFAF6',
                         color: isSel ? '#fff' : '#4A5A4A',
                         fontFamily: 'Outfit', fontSize: 13.5, fontWeight: 600,
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
                       }}
                     >
                       <span>{c.num}</span>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: isMarked ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent' }} />
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: !isMarked ? 'transparent' : warn ? (isSel ? WARN_COLORS.selDot : WARN_COLORS.dot) : isSel ? '#F4F1EA' : '#C77B4A' }} />
                     </button>
                   );
                 })}
               </div>
-              <div style={{ fontSize: 11.5, color: '#8A9284' }}>亮燈的日期表示該會員當天有紀錄。</div>
+              <div style={{ fontSize: 11.5, color: '#8A9284' }}>亮燈＝該會員當天有紀錄；紅燈＝當天糖超標或有 NG 食品。</div>
             </div>
 
             <div style={cardStyle}>
@@ -667,18 +677,20 @@ export function DietitianScreen() {
                     />
                   </div>
                 ))}
-                <div>
-                  身體數據：{bodyItems.length
-                    ? bodyItems.map((b) => `${b.name} ${day!.body[b.k]} ${b.unit}`).join('、') + (day!.bodyTime ? `（${day!.bodyTime}）` : '')
-                    : '未記錄'}
-                </div>
-                {/* BMR/TDEE：依會員基本資料與最近體重計算，資料不齊就不顯示 */}
-                {(bmr !== null || tdee !== null) && (
-                  <div>
-                    代謝估算：{[bmr !== null ? `BMR ${bmr} kcal` : '', tdee !== null ? `TDEE ${tdee} kcal` : ''].filter(Boolean).join('、')}
-                    <span style={{ fontSize: 11.5, color: '#8A9284' }}>（依基本資料與最近體重）</span>
-                  </div>
-                )}
+                {/* 身體數據：按鈕開啟與會員端相同的視窗（當日數值、BMR/TDEE、歷程趨勢），唯讀 */}
+                <button
+                  onClick={() => setBodyOpen(true)}
+                  className="hv-cream"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #EEEAE0', background: '#FBFAF6', borderRadius: 11, padding: '8px 10px', cursor: 'pointer', textAlign: 'left', color: '#4A5A4A', fontSize: 13 }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A7C59" strokeWidth="2" strokeLinecap="round" style={{ flex: 'none' }}><path d="M12 3v18M5 8c2-2 12-2 14 0M5 16c2 2 12 2 14 0" /></svg>
+                  <span style={{ fontWeight: 800 }}>身體數據</span>
+                  <span style={{ fontSize: 12.5, color: '#8A9284', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {bodyItems.length ? `已記錄 ${bodyItems.length} 項${day!.bodyTime ? `（${day!.bodyTime}）` : ''}` : '未記錄'}
+                    {tdee !== null ? `・TDEE ${tdee} kcal` : ''}
+                  </span>
+                  <span style={{ color: '#8A9284', flex: 'none' }}>›</span>
+                </button>
               </div>
             </div>
 
@@ -996,6 +1008,10 @@ export function DietitianScreen() {
       )}
 
       {modal === 'notify' && <NotificationsModal />}
+      {/* 會員身體數據視窗（唯讀） */}
+      {bodyOpen && memberId !== '' && day && (
+        <MemberBodyModal memberId={memberId} date={date} day={day} profile={memberProfile} onClose={() => setBodyOpen(false)} />
+      )}
       {/* 該會員的糖／NG 明細；點日期跳到該會員的那一天 */}
       {statsMode && (
         <SugarNgDetail

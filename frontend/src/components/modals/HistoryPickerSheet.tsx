@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { MEALS, customItemLabel, customItemsKcal, foodSummary, kcalOfFood } from '../../lib/domain';
 import type { EntryFoodItem, HistoryMeal, HistoryPhoto, MealKey } from '../../types';
@@ -16,6 +16,14 @@ const pageSummary = (p: { food: HistoryPhoto['food']; customItems: HistoryPhoto[
   [foodSummary(p.food), p.customItems.map((c) => customItemLabel(c)).join('、')].filter(Boolean).join('、') || '未記份數';
 // 項目頁的識別鍵（同一張卡內以索引區分）
 const itemKey = (m: HistoryMeal, idx: number) => `${m.entryId}:item:${idx}`;
+// 搜尋比對文字：敘述＋每頁摘要（六大類名稱與自定義項目名稱都在 pageSummary 裡）
+const searchText = (m: HistoryMeal) =>
+  [m.desc, ...m.photos.map(pageSummary), ...m.items.map(pageSummary)].join(' ').toLowerCase();
+// 以空白分隔多個關鍵字，全部命中才算符合（AND）
+const matchQuery = (m: HistoryMeal, terms: string[]) => {
+  const text = searchText(m);
+  return terms.every((t) => text.includes(t));
+};
 
 // 從歷史加入：最近記過的餐（新→舊，以原始紀錄分組成卡），照片頁與無照片項目頁都會列出。
 // 「加入整餐」＝所有頁面＋各自份數與自定義＋敘述一次；也可點單頁只加那頁（敘述同樣只帶一次）
@@ -40,6 +48,8 @@ export function HistoryPickerSheet({
   const [busy, setBusy] = useState<string | null>(null); // `${entryId}` 整餐或 `${entryId}:...` 單頁
   const [added, setAdded] = useState<string[]>([]); // 已加入的頁（照片 url／項目鍵）
   const [activeTab, setActiveTab] = useState<MealKey | null>(null);
+  const [query, setQuery] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -91,7 +101,17 @@ export function HistoryPickerSheet({
       : defaultMeal && tabMeals.includes(defaultMeal)
         ? defaultMeal
         : tabMeals[0];
-  const activeList = groups.find((g) => g.meal.k === active)?.list ?? [];
+  // 搜尋：跨所有餐別比對（不受分頁限制），結果維持新→舊；清空即回到分頁模式
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const searching = terms.length > 0;
+  const activeList = searching
+    ? (meals ?? []).filter((m) => matchQuery(m, terms))
+    : (groups.find((g) => g.meal.k === active)?.list ?? []);
+
+  // 切換分頁或改變搜尋字時，清單回到最上方（分頁共用同一個捲動容器，否則會殘留上一頁的捲動位置）
+  useLayoutEffect(() => {
+    listRef.current?.scrollTo({ top: 0 });
+  }, [active, query]);
 
   const badge = (state: 'added' | 'busy' | 'idle') => (
     <span
@@ -210,10 +230,33 @@ export function HistoryPickerSheet({
       {/* 固定表頭：說明 + 餐別分頁（不隨清單捲動，避免項目多時最上方的分頁被捲掉遮住） */}
       <div style={{ flex: 'none', padding: '10px 20px 0' }}>
         <div style={{ fontSize: 13, color: '#6B7565', lineHeight: 1.6 }}>
-          一張卡＝過去的一餐（含照片與無照片項目）。「加入整餐」帶入<b>所有頁面、各自份數與敘述</b>；點單頁只加那頁（每個餐別顯示最近 30 餐）。
+          一張卡＝過去的一餐（含照片與無照片項目）。「加入整餐」帶入<b>所有頁面、各自份數與敘述</b>；點單頁只加那頁（每個餐別顯示最近 50 餐）。
           {full && <span style={{ color: '#C0564A' }}>　已達頁面上限</span>}
         </div>
-        {groups.length > 0 && (
+        {/* 搜尋：比對敘述、自定義項目名稱與六大類名稱，跨所有餐別 */}
+        {meals !== null && meals.length > 0 && (
+          <div style={{ position: 'relative', marginTop: 10 }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋敘述或項目關鍵字（所有餐別）"
+              style={{ width: '100%', boxSizing: 'border-box', height: 38, border: '1.5px solid #DDD8CA', borderRadius: 12, padding: '0 34px 0 12px', fontSize: 13.5, outline: 'none', background: '#FBFAF6' }}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                aria-label="清除搜尋"
+                style={{ position: 'absolute', right: 6, top: 6, width: 26, height: 26, borderRadius: 13, border: 'none', background: '#E4DFD2', color: '#4A5A4A', cursor: 'pointer', fontSize: 13, lineHeight: '26px', padding: 0 }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
+        {searching && meals !== null && meals.length > 0 && (
+          <div style={{ fontSize: 12.5, color: '#6B7565', margin: '8px 0 0' }}>搜尋結果 {activeList.length} 餐</div>
+        )}
+        {!searching && groups.length > 0 && (
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, margin: '10px -2px 0' }}>
             {groups.map(({ meal, list }) => {
               const on = meal.k === active;
@@ -238,12 +281,15 @@ export function HistoryPickerSheet({
       </div>
 
       {/* 捲動區：只有清單本身（flex:1 + minHeight:0 才能在固定高度卡片內正確捲動） */}
-      <div style={{ flex: 1, minHeight: 0, padding: '10px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div ref={listRef} style={{ flex: 1, minHeight: 0, padding: '10px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {meals === null && <div style={{ fontSize: 13, color: '#8A9284', padding: '20px 0', textAlign: 'center' }}>載入中…</div>}
         {meals !== null && meals.length === 0 && (
           <div style={{ fontSize: 13, color: '#8A9284', padding: '24px 0', textAlign: 'center', lineHeight: 1.7 }}>
             還沒有記過份數的紀錄。<br />先記幾餐，之後就能從這裡快速加入。
           </div>
+        )}
+        {searching && meals !== null && meals.length > 0 && activeList.length === 0 && (
+          <div style={{ fontSize: 13, color: '#8A9284', padding: '24px 0', textAlign: 'center' }}>沒有符合的歷史紀錄</div>
         )}
         {activeList.map(card)}
       </div>

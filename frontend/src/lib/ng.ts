@@ -21,3 +21,20 @@ export const NG_LEVEL_COLORS: Record<NgLevel, { fg: string; bg: string }> = {
 export const isOverSugar = (d: MonthStatDay, stats: MonthStats) => d.sugar > stats.sugarLimit;
 export const overSugarDays = (stats: MonthStats) => stats.days.filter((d) => isOverSugar(d, stats));
 export const ngDays = (stats: MonthStats) => stats.days.filter((d) => d.ngHits.length > 0);
+
+// 單日「飲食警示」判定：糖超標或有任一 NG 命中（週列／月曆紅燈共用；stats 未載入或月份不符＝不亮）
+export const dayWarn = (stats: MonthStats | null | undefined, date: string): boolean => {
+  if (!stats || stats.month !== date.slice(0, 7)) return false;
+  const d = stats.days.find((x) => x.date === date);
+  return !!d && (isOverSugar(d, stats) || d.ngHits.length > 0);
+};
+
+// 紅燈色票（週列、月曆、營養師月曆共用）
+export const WARN_COLORS = {
+  dot: '#C0564A',
+  glow: 'rgba(192,86,74,.85)',
+  bg: '#F8E6E2',
+  border: '#E8B4A8',
+  selDot: '#F5A79A', // 選取中（綠底）的紅燈圓點
+  selGlow: 'rgba(245,167,154,.9)',
+};

@@ -68,8 +68,8 @@ interface AppState {
 
   day: DayData;
   marks: Record<string, true>;
-  // 選取日期所在月份的糖／NG 統計（null＝尚未載入；月份不符時顯示占位）
-  monthStats: MonthStats | null;
+  // 糖／NG 統計快取，以月份 'YYYY-MM' 為 key（週列可能跨月、月曆可翻月，各月獨立載入；缺 key＝尚未載入）
+  monthStats: Record<string, MonthStats>;
   // 飲食警示明細視窗顯示哪一種：sugar＝精緻糖超標、ng＝NG 食品
   sugarNgMode: 'sugar' | 'ng';
   openSugarNg: (mode: 'sugar' | 'ng') => void;
@@ -98,7 +98,8 @@ interface AppState {
   loadDay: () => Promise<void>;
   loadWeekMarks: () => Promise<void>;
   loadMonthMarks: (y: number, m: number) => Promise<void>;
-  loadMonthStats: () => Promise<void>;
+  // 載入某月糖／NG 統計（預設為選取日期所在月份）
+  loadMonthStats: (month?: string) => Promise<void>;
   // mutation 已回傳完整 DayData 時直接寫回，省掉 refresh() 的 day＋marks 重抓
   replaceDay: (date: string, day: DayData) => void;
   markDate: (date: string, hasData: boolean) => void;
@@ -155,7 +156,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   day: emptyDay(),
   marks: {},
-  monthStats: null,
+  monthStats: {},
   sugarNgMode: 'sugar',
   openSugarNg: (mode) => set({ sugarNgMode: mode, modal: 'sugarNg' }),
   goals: [],
@@ -186,7 +187,7 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.removeItem(LAYOUT_KEY); } catch { /* ignore */ }
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
-      day: emptyDay(), marks: {}, monthStats: null, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
+      day: emptyDay(), marks: {}, monthStats: {}, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
       layout: { order: [...DEFAULT_CARD_ORDER], hidden: [] },
     });
@@ -194,11 +195,12 @@ export const useStore = create<AppState>((set, get) => ({
   setView: (view) => set({ view, modal: null, editingId: null, calMonth: null, guideOpen: false, logBodyReturn: false }),
 
   selectDate: (date, setAnchor = false) => {
+    const prevMonth = get().selected.slice(0, 7);
     set(setAnchor ? { selected: date, weekAnchor: date } : { selected: date });
     void get().loadDay();
     if (setAnchor) void get().loadWeekMarks();
-    // 跨月時重載糖／NG 統計（警示卡跟著選取日期所在月份）
-    if (date.slice(0, 7) !== get().monthStats?.month) void get().loadMonthStats();
+    // 跨月時重載糖／NG 統計（警示卡跟著選取日期所在月份）；setAnchor 時 loadWeekMarks 已涵蓋該月，不重複抓
+    if (!setAnchor && date.slice(0, 7) !== prevMonth) void get().loadMonthStats(date.slice(0, 7));
   },
   prevWeek: () => {
     set((s) => ({ weekAnchor: addDays(s.weekAnchor, -7) }));
@@ -221,7 +223,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
   loadWeekMarks: async () => {
     const week = weekOf(get().weekAnchor);
-    const { dates } = await api.getMarks(week[0], week[6]);
+    // 這一週涵蓋的月份（跨月週有兩個）同步重抓糖／NG 統計，讓紅燈與標記一樣每次導覽都是最新
+    const months = [...new Set([week[0].slice(0, 7), week[6].slice(0, 7)])];
+    const [{ dates }] = await Promise.all([api.getMarks(week[0], week[6]), ...months.map((m) => get().loadMonthStats(m).catch(() => {}))]);
     set((s) => {
       const marks = { ...s.marks };
       week.forEach((d) => delete marks[d]);
@@ -232,7 +236,8 @@ export const useStore = create<AppState>((set, get) => ({
   loadMonthMarks: async (y, m) => {
     const from = dstr(new Date(y, m, 1));
     const to = dstr(new Date(y, m + 1, 0));
-    const { dates } = await api.getMarks(from, to);
+    // 月曆紅燈需要該月統計（失敗只少紅燈，不擋標記）
+    const [{ dates }] = await Promise.all([api.getMarks(from, to), get().loadMonthStats(from.slice(0, 7)).catch(() => {})]);
     set((s) => {
       const marks = { ...s.marks };
       const dim = new Date(y, m + 1, 0).getDate();
@@ -241,11 +246,11 @@ export const useStore = create<AppState>((set, get) => ({
       return { marks };
     });
   },
-  loadMonthStats: async () => {
-    const month = get().selected.slice(0, 7);
-    const stats = await api.getMonthStats(month);
-    // 避免慢速回應覆蓋掉已切換的月份
-    if (get().selected.slice(0, 7) === month) set({ monthStats: stats });
+  loadMonthStats: async (month) => {
+    const m = month ?? get().selected.slice(0, 7);
+    const stats = await api.getMonthStats(m);
+    // 以月份為 key 寫入快取；慢速回應也只會更新自己那個月，不會蓋到別月
+    set((s) => ({ monthStats: { ...s.monthStats, [m]: stats } }));
   },
   replaceDay: (date, day) => {
     // 只在仍停留於該日期時替換，避免蓋掉已切換的畫面
@@ -261,7 +266,11 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
   refresh: async () => {
-    await Promise.all([get().loadDay(), get().loadWeekMarks(), get().loadMonthStats()]);
+    // loadWeekMarks 已重抓週列涵蓋月份的統計；選取日期不在目前週列時才另外補抓其所在月份
+    const week = weekOf(get().weekAnchor);
+    const selMonth = get().selected.slice(0, 7);
+    const covered = selMonth === week[0].slice(0, 7) || selMonth === week[6].slice(0, 7);
+    await Promise.all([get().loadDay(), get().loadWeekMarks(), covered ? Promise.resolve() : get().loadMonthStats()]);
   },
   loadGoals: async () => {
     const goals = await api.getGoals();
@@ -318,7 +327,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   loadAll: async () => {
     // photo cookie 先補（照片 <img> 需要它；升級前已登入的 session 沒有），其餘並行載入
-    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadMonthStats(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
+    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
   layout: loadLayout(),

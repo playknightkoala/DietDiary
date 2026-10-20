@@ -6,6 +6,7 @@ import { getSugarLimit, monthSugarNgStats } from '../ng.js';
 import { ENTRY_COLS, commentTargetOwned, computeEntryFood, createComment, entryToJsonWithRatings, getDayJson, getMarkedDates, getPhotoRatings, listComments, normalizeCustomItems, normalizeItems, parseFood, parseItems, parsePhotoCustoms, parsePhotoFoods, parsePhotos, pushNotification, type CustomItem, type EntryItem, type EntryRow, type Food } from '../helpers.js';
 import { createGoal, getGoal, goalToJson, listGoals, updateGoal } from './goals.js';
 import { profileJson } from './profile.js';
+import { bodyTrendRows, clampTrendLimit } from './trend.js';
 
 // 營養師（管理者亦可）檢視會員每日紀錄、替會員設定目標
 export const proRouter = Router();
@@ -70,6 +71,13 @@ proRouter.get('/members/:id/profile', (req, res) => {
   const member = getMember(req.params.id);
   if (!member) return res.status(404).json({ error: 'not found' });
   return res.json(profileJson(member.id));
+});
+
+// 會員的身體數據歷程（營養師頁「身體數據」視窗的趨勢圖；唯讀，與會員端 /api/body-trend?field=all 同形狀）
+proRouter.get('/members/:id/body-trend', (req, res) => {
+  const member = getMember(req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found' });
+  return res.json({ rows: bodyTrendRows(member.id, clampTrendLimit(req.query.limit)) });
 });
 
 proRouter.get('/members/:id/days/:date', (req, res) => {

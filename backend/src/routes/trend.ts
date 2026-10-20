@@ -15,34 +15,42 @@ interface BodyDayRow {
   body_fatkg: string;
 }
 
+// limit 夾限（1–365，預設 30）：會員端與營養師端共用同一規則
+export function clampTrendLimit(raw: unknown): number {
+  return Math.min(365, Math.max(1, parseInt(String(raw || '30'), 10) || 30));
+}
+
+// 歷程紀錄（InBody 樣式）：一次回傳所有指標、以量測日對齊的資料列（舊→新）。
+// 會員端 GET /api/body-trend?field=all 與營養師端 GET /api/pro/members/:id/body-trend 共用
+export function bodyTrendRows(userId: number, limit: number) {
+  const rows = db
+    .prepare(
+      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+       WHERE user_id = ?
+         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+       ORDER BY date DESC LIMIT ?`
+    )
+    .all(userId, limit) as BodyDayRow[];
+  const num = (s: string) => {
+    const v = parseFloat(s);
+    return isNaN(v) ? null : v;
+  };
+  return rows.reverse().map((r) => ({
+    date: r.date,
+    weight: num(r.body_weight),
+    fat: num(r.body_fat),
+    waist: num(r.body_waist),
+    muscle: num(r.body_muscle),
+    fatkg: num(r.body_fatkg),
+  }));
+}
+
 trendRouter.get('/', (req, res) => {
   const field = String(req.query.field || 'all');
-  const limit = Math.min(365, Math.max(1, parseInt(String(req.query.limit || '30'), 10) || 30));
+  const limit = clampTrendLimit(req.query.limit);
 
-  // 歷程紀錄（InBody 樣式）：一次回傳所有指標、以量測日對齊的資料列（舊→新）
   if (field === 'all') {
-    const rows = db
-      .prepare(
-        `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
-         WHERE user_id = ?
-           AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
-         ORDER BY date DESC LIMIT ?`
-      )
-      .all(req.userId, limit) as BodyDayRow[];
-    const num = (s: string) => {
-      const v = parseFloat(s);
-      return isNaN(v) ? null : v;
-    };
-    return res.json({
-      rows: rows.reverse().map((r) => ({
-        date: r.date,
-        weight: num(r.body_weight),
-        fat: num(r.body_fat),
-        waist: num(r.body_waist),
-        muscle: num(r.body_muscle),
-        fatkg: num(r.body_fatkg),
-      })),
-    });
+    return res.json({ rows: bodyTrendRows(req.userId, limit) });
   }
 
   // 單一指標（保留給尚未強制更新的舊前端）

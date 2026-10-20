@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { api, getRememberedAccount, setRememberedAccount } from '../lib/api';
+import { api, getAutoLoginPref, getRememberedAccount, setAutoLoginPref, setRememberedAccount } from '../lib/api';
 import { VersionFooter } from '../components/VersionFooter';
 import { useStore } from '../store';
 
@@ -18,7 +18,7 @@ export function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [username, setUsername] = useState(() => getRememberedAccount());
   const [rememberAccount, setRememberAccount] = useState(() => getRememberedAccount() !== '');
-  const [autoLogin, setAutoLogin] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(() => getAutoLoginPref());
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
@@ -203,6 +203,7 @@ export function LoginScreen() {
       if (mode === 'login') {
         const res = await api.login(account, password, autoLogin);
         setRememberedAccount(rememberAccount ? account : null);
+        setAutoLoginPref(autoLogin);
         loginSuccess(res.token, res.username, res.role, autoLogin);
       } else if (mode === 'register') {
         const res = await api.register(account, password, confirmPassword, code.trim());

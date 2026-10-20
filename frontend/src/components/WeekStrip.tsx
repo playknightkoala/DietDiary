@@ -1,6 +1,6 @@
 import { useStore } from '../store';
 import { WD_NAMES, dparse, dstr, weekOf } from '../lib/domain';
-import { ngDays, overSugarDays } from '../lib/ng';
+import { WARN_COLORS, dayWarn, ngDays, overSugarDays } from '../lib/ng';
 
 export function WeekStrip() {
   const selected = useStore((s) => s.selected);
@@ -22,9 +22,10 @@ export function WeekStrip() {
     WD_NAMES[(selD.getDay() + 6) % 7] + '）' + (selected === todayStr ? '・今天' : '');
 
   // 當月飲食警示（跟著選取日期所在月份）：點文字開明細，糖與 NG 分開
-  const ready = monthStats !== null && monthStats.month === selected.slice(0, 7);
-  const overCount = ready ? overSugarDays(monthStats).length : 0;
-  const ngCount = ready ? ngDays(monthStats).length : 0;
+  const selStats = monthStats[selected.slice(0, 7)];
+  const ready = selStats !== undefined;
+  const overCount = ready ? overSugarDays(selStats).length : 0;
+  const ngCount = ready ? ngDays(selStats).length : 0;
   // 一律顯示實際月份（8 月、7 月…），跟著選取日期所在的月份走
   const monthLabel = `${selD.getMonth() + 1} 月`;
   const statLink = (label: string, onClick: () => void) => (
@@ -51,17 +52,19 @@ export function WeekStrip() {
             const isSel = key === selected;
             const isToday = key === todayStr;
             const isMarked = !!marks[key];
+            // 紅燈：當天糖超標或有 NG 食品（判定只在 lib/ng.ts；跨月週各自讀該月統計）
+            const warn = isMarked && dayWarn(monthStats[key.slice(0, 7)], key);
             return (
               <button
                 key={key}
                 onClick={() => selectDate(key)}
-                title={isMarked ? '這天有紀錄' : undefined}
+                title={warn ? '這天糖超標或有 NG 食品' : isMarked ? '這天有紀錄' : undefined}
                 style={{
                   cursor: 'pointer', borderRadius: 14, padding: '8px 2px',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                  // 有紀錄的日期亮燈：淡橘底＋橘框＋發光圓點
-                  border: isMarked && !isSel ? '1.5px solid #E8C49A' : '1.5px solid transparent',
-                  background: isSel ? '#4A7C59' : isMarked ? '#FDF3E7' : '#FFFFFF',
+                  // 有紀錄的日期亮燈：淡橘底＋橘框＋發光圓點；糖超標／NG 改為紅底＋紅框＋紅點
+                  border: isMarked && !isSel ? `1.5px solid ${warn ? WARN_COLORS.border : '#E8C49A'}` : '1.5px solid transparent',
+                  background: isSel ? '#4A7C59' : warn ? WARN_COLORS.bg : isMarked ? '#FDF3E7' : '#FFFFFF',
                   color: isSel ? '#F4F1EA' : isToday ? '#4A7C59' : '#4A5A4A',
                   boxShadow: isSel ? '0 6px 14px rgba(74,124,89,.3)' : 'none',
                 }}
@@ -71,8 +74,12 @@ export function WeekStrip() {
                 <span
                   style={{
                     width: 7, height: 7, borderRadius: '50%',
-                    background: isMarked ? (isSel ? '#F4F1EA' : '#C77B4A') : 'transparent',
-                    boxShadow: isMarked ? (isSel ? '0 0 6px rgba(244,241,234,.9)' : '0 0 6px rgba(199,123,74,.85)') : 'none',
+                    background: !isMarked ? 'transparent' : warn ? (isSel ? WARN_COLORS.selDot : WARN_COLORS.dot) : isSel ? '#F4F1EA' : '#C77B4A',
+                    boxShadow: !isMarked
+                      ? 'none'
+                      : warn
+                        ? `0 0 6px ${isSel ? WARN_COLORS.selGlow : WARN_COLORS.glow}`
+                        : isSel ? '0 0 6px rgba(244,241,234,.9)' : '0 0 6px rgba(199,123,74,.85)',
                   }}
                 />
               </button>

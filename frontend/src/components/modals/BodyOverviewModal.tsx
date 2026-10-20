@@ -1,25 +1,29 @@
 import { useEffect } from 'react';
 import { useStore } from '../../store';
 import { BODY_DEFS, bmrTdeeOf } from '../../lib/domain';
+import type { BodyKey, BodyTrendRow, Profile } from '../../types';
 import { TrendChart } from '../TrendChart';
 import { CloseButton, ModalShell } from './ModalShell';
 
-// 身體數據總覽（漢堡選單 → 身體數據）：當日數值、BMR／TDEE 與歷程趨勢一次呈現，
-// 主頁不再顯示身體數據卡片；記錄入口在此視窗與右下角「＋」選單
-export function BodyOverviewModal() {
-  const day = useStore((s) => s.day);
-  const selected = useStore((s) => s.selected);
-  const trendRows = useStore((s) => s.trendRows);
-  const loadTrend = useStore((s) => s.loadTrend);
-  const openLogBody = useStore((s) => s.openLogBody);
-  const closeModal = useStore((s) => s.closeModal);
-  const profile = useStore((s) => s.profile);
-
-  // 開啟即載入趨勢（含剛記錄完的新數值）
-  useEffect(() => {
-    void loadTrend();
-  }, [loadTrend]);
-
+// 身體數據視窗的純展示層：當日數值、BMR／TDEE 與歷程趨勢。
+// 會員端（BodyOverviewModal）傳 onAdd 顯示「＋ 記錄」；營養師端（MemberBodyModal）不傳＝唯讀
+export function BodyOverviewView({
+  dateLabel,
+  body,
+  bodyTime,
+  profile,
+  trendRows,
+  onAdd,
+  onClose,
+}: {
+  dateLabel: string;
+  body: Record<BodyKey, string>;
+  bodyTime: string;
+  profile: Profile | null;
+  trendRows: BodyTrendRow[];
+  onAdd?: () => void;
+  onClose: () => void;
+}) {
   // BMR／TDEE：以基本資料＋最近一次體重計算（公式見 domain.bmrTdeeOf；資料不齊顯示 —）
   const { bmr, tdee } = bmrTdeeOf(profile);
 
@@ -40,25 +44,27 @@ export function BodyOverviewModal() {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A7C59" strokeWidth="2" strokeLinecap="round"><path d="M12 3v18M5 8c2-2 12-2 14 0M5 16c2 2 12 2 14 0" /></svg>
           <div style={{ fontSize: 17, fontWeight: 900 }}>身體數據</div>
         </div>
-        <CloseButton onClick={closeModal} />
+        <CloseButton onClick={onClose} />
       </div>
       <div style={{ padding: '14px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* 當日數值 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#4A5A4A' }}>
-            {selected} 的數值
-            {day.bodyTime && <span style={{ fontSize: 11.5, fontWeight: 400, color: '#8A9284', marginLeft: 6 }}>{day.bodyTime} 測量</span>}
+            {dateLabel} 的數值
+            {bodyTime && <span style={{ fontSize: 11.5, fontWeight: 400, color: '#8A9284', marginLeft: 6 }}>{bodyTime} 測量</span>}
           </div>
-          <button
-            onClick={() => openLogBody(true)}
-            className="hv-green"
-            style={{ border: 'none', background: '#4A7C59', color: '#fff', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '6px 16px', cursor: 'pointer', flex: 'none' }}
-          >
-            ＋ 記錄
-          </button>
+          {onAdd && (
+            <button
+              onClick={onAdd}
+              className="hv-green"
+              style={{ border: 'none', background: '#4A7C59', color: '#fff', borderRadius: 99, fontSize: 12, fontWeight: 700, padding: '6px 16px', cursor: 'pointer', flex: 'none' }}
+            >
+              ＋ 記錄
+            </button>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10 }}>
-          {BODY_DEFS.map((b) => tile(b.name, day.body[b.k] !== '' ? day.body[b.k] : '—', b.unit))}
+          {BODY_DEFS.map((b) => tile(b.name, body[b.k] !== '' ? body[b.k] : '—', b.unit))}
         </div>
 
         {/* 代謝估算：BMR／TDEE（基本資料與活動量在「＋ 記錄」視窗內設定） */}
@@ -74,5 +80,34 @@ export function BodyOverviewModal() {
         </div>
       </div>
     </ModalShell>
+  );
+}
+
+// 身體數據總覽（漢堡選單 → 身體數據）：當日數值、BMR／TDEE 與歷程趨勢一次呈現，
+// 主頁不再顯示身體數據卡片；記錄入口在此視窗與右下角「＋」選單
+export function BodyOverviewModal() {
+  const day = useStore((s) => s.day);
+  const selected = useStore((s) => s.selected);
+  const trendRows = useStore((s) => s.trendRows);
+  const loadTrend = useStore((s) => s.loadTrend);
+  const openLogBody = useStore((s) => s.openLogBody);
+  const closeModal = useStore((s) => s.closeModal);
+  const profile = useStore((s) => s.profile);
+
+  // 開啟即載入趨勢（含剛記錄完的新數值）
+  useEffect(() => {
+    void loadTrend();
+  }, [loadTrend]);
+
+  return (
+    <BodyOverviewView
+      dateLabel={selected}
+      body={day.body}
+      bodyTime={day.bodyTime}
+      profile={profile}
+      trendRows={trendRows}
+      onAdd={() => openLogBody(true)}
+      onClose={closeModal}
+    />
   );
 }
