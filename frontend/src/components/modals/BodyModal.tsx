@@ -17,6 +17,7 @@ export function BodyModal() {
   const aiEnabled = useStore((s) => s.aiEnabled);
   const trendOpen = useStore((s) => s.trendOpen);
   const loadTrend = useStore((s) => s.loadTrend);
+  const loadDay = useStore((s) => s.loadDay);
   const profile = useStore((s) => s.profile);
   const setProfile = useStore((s) => s.setProfile);
   const replaceDay = useStore((s) => s.replaceDay);
@@ -92,6 +93,9 @@ export function BodyModal() {
       }
       replaceDay(date, updated);
       markDate(date, dayHasData(updated));
+      // 掃描報告存到別的日期時，replaceDay 的日期保護不會更新目前檢視日——
+      // 但那筆體重可能改變目前檢視日的 weightAt（BMR/TDEE 與今日攝取熱量目標），重抓一次
+      if (date !== selected) await loadDay().catch(() => {});
       if (trendOpen) await loadTrend();
       // 基本資料一併儲存（回傳含最新體重，BMR/TDEE 格子立即更新）
       setProfile(await api.putProfile({ height: pHeight, birthYear: pBirthYear, gender: pGender, activity: pActivity, goal: pGoal, goalKcal: pGoalKcal }));

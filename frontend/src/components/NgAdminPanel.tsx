@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react';
 import { api, ApiError } from '../lib/api';
+import { dstr } from '../lib/domain';
 import { NG_LEVELS, NG_LEVEL_COLORS, NG_LEVEL_LABELS } from '../lib/ng';
 import { CloseButton, ModalShell } from './modals/ModalShell';
 import type { NgCategoryInfo, NgKeyword, NgLevel } from '../types';
@@ -166,7 +167,7 @@ export function NgAdminPanel() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `NG食品設定-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `NG食品設定-${dstr(new Date())}.json`; // 本地日期（toISOString 是 UTC，台灣早上 8 點前會差一天）
     a.click();
     URL.revokeObjectURL(url);
   };

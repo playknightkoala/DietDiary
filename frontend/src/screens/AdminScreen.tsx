@@ -1,10 +1,18 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { api } from '../lib/api';
+import { dstr } from '../lib/domain';
 import { useStore } from '../store';
 import { NgAdminPanel } from '../components/NgAdminPanel';
 import type { AdminUser, Role } from '../types';
 
 const ROLE_NAMES: Record<Role, string> = { member: '一般會員', citizen: '駒駒國民', dietitian: '營養師', admin: '管理者' };
+
+// users.created_at 是 SQLite datetime('now')＝UTC 字串：轉成本地日期再顯示，
+// 台灣 00:00–07:59 註冊的帳號才不會顯示成前一天（直接 slice 會拿到 UTC 日）
+function regDate(utc: string): string {
+  const d = new Date(utc.replace(' ', 'T') + 'Z');
+  return isNaN(d.getTime()) ? utc.slice(0, 10) : dstr(d);
+}
 
 // 最後使用時間：顯示為 YYYY-MM-DD HH:MM（本地時區）；null＝從未使用
 function formatLastSeen(ts: number | null): string {
@@ -143,7 +151,7 @@ export function AdminScreen() {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: '#8A9284', marginTop: 2 }}>
-                  註冊於 {u.createdAt.slice(0, 10)}
+                  註冊於 {regDate(u.createdAt)}
                   <span style={{ margin: '0 6px', color: '#CBCFC3' }}>·</span>
                   最後使用 {formatLastSeen(u.lastSeenAt)}
                 </div>

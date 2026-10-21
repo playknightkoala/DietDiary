@@ -81,15 +81,22 @@ export function bmrOf(gender: 'male' | 'female', weightKg: number, heightCm: num
   return 9.99 * weightKg + 6.25 * heightCm - 4.92 * age + (166 * (gender === 'male' ? 1 : 0) - 161);
 }
 
-// BMR／TDEE：以 TDEE 基本資料＋最近一次體重計算，資料不齊回傳 null；
+// BMR／TDEE：以 TDEE 基本資料＋體重計算，資料不齊回傳 null；
 // TDEE 含體重目標調整（減重－goalKcal、增重＋goalKcal、一般不調整）。
-// 身體數據卡與今日攝取熱量卡共用。
-export function bmrTdeeOf(profile: Profile | null): { bmr: number | null; tdee: number | null } {
+// 身體數據視窗、今日攝取熱量卡與營養師頁共用。
+// weightAt（第二參數）＝「檢視日期當天含以前最近一次」的體重（DayData.weightAt）：
+// 傳入時以它計算——記錄新體重只影響記錄當天含以後的目標，過去日期維持當時的體重；
+// 不傳（undefined）才退回 profile 的最新一筆體重（與日期無關的場合，如基本資料編輯）。
+export function bmrTdeeOf(
+  profile: Profile | null,
+  weightAt?: { date: string; value: number } | null
+): { bmr: number | null; tdee: number | null } {
+  const weight = weightAt === undefined ? profile?.weight ?? null : weightAt;
   const act = profile ? ACTIVITY_DEFS.find((a) => a.k === profile.activity) : undefined;
   const age = profile && profile.birthYear !== '' ? new Date().getFullYear() - Number(profile.birthYear) : null;
-  if (!profile || profile.height === '' || age === null || profile.gender === '' || !act || !profile.weight)
+  if (!profile || profile.height === '' || age === null || profile.gender === '' || !act || !weight)
     return { bmr: null, tdee: null };
-  const bmr = Math.round(bmrOf(profile.gender, profile.weight.value, Number(profile.height), age));
+  const bmr = Math.round(bmrOf(profile.gender, weight.value, Number(profile.height), age));
   const goalAdj =
     profile.goal !== 'normal' && profile.goalKcal !== '' && isFinite(Number(profile.goalKcal))
       ? (profile.goal === 'cut' ? -1 : 1) * Number(profile.goalKcal)
@@ -117,6 +124,7 @@ export function emptyDay(): DayData {
     exLogs: [],
     body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '' },
     bodyTime: '',
+    weightAt: null,
     entries: [],
     aiSummary: null,
   };

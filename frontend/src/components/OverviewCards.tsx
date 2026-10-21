@@ -9,8 +9,9 @@ export function KcalCard() {
 
   // 六大類份數熱量＋自定義熱量項目（含糖飲料、酒精等）
   const totalKcal = kcalOfFood(dayFoodTotals(day.entries)) + dayCustomKcal(day.entries);
-  // TDEE 當作當日熱量目標（含體重目標調整）；基本資料不齊為 null，維持原本樣式
-  const { tdee } = bmrTdeeOf(profile);
+  // TDEE 當作「這一天」的熱量目標：體重用 day.weightAt（檢視日期當天含以前最近一次），
+  // 記錄新體重只改變記錄當天含以後的目標，過去日期維持當時的體重
+  const { tdee } = bmrTdeeOf(profile, day.weightAt);
   const kcalOver = tdee !== null && totalKcal > tdee;
   const kcalPct = tdee !== null ? Math.min(100, (totalKcal / tdee) * 100) + '%' : '0%';
 

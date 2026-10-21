@@ -29,6 +29,9 @@ export interface WebSearchResult {
   fromCache: boolean;
 }
 
+// 額度月鍵用「伺服器（UTC）」的月份——刻意不用使用者本地時區：這是對 Tavily 免費額度的
+// 內部記帳，對齊供應商自己的（UTC 制）重置週期比對齊台灣月界更準；月初幾小時的歸屬差異
+// 由每日 GET /usage 對帳（MAX(local, remote)）自我修正。請勿「修正」成本地時間。
 function monthKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

@@ -130,6 +130,9 @@ export interface DayData {
   exLogs: ExLog[];
   body: Record<BodyKey, string>;
   bodyTime: string;
+  // 這一天適用的體重＝當天（含）以前最近一次量測（null＝這天之前沒有體重紀錄）。
+  // TDEE 目標據此計算：記錄新體重只影響記錄當天含以後，過去日期維持當時的體重
+  weightAt: { date: string; value: number } | null;
   entries: Entry[];
   // AI 今日總評（尚未產生為 null）
   aiSummary: DailySummary | null;

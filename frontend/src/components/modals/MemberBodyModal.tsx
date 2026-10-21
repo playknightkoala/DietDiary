@@ -33,6 +33,7 @@ export function MemberBodyModal({
       dateLabel={date}
       body={day.body}
       bodyTime={day.bodyTime}
+      weightAt={day.weightAt}
       profile={profile}
       trendRows={trendRows}
       onClose={onClose}

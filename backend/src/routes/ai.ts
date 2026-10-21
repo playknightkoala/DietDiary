@@ -13,6 +13,7 @@
 //   ai/inbody.ts    InBody 報告辨識
 //   ai/ocr.ts       餐點照片估份數＋敘述（含品牌搜尋校正）
 //   ai/comment.ts   單篇評語與今日總評（共用偏好提示、SEARCH 查證協定）
+//   ai/body.ts      身體數據歷程趨勢的 AI 評語（31b 主模型）
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAI } from './ai/common.js';
@@ -21,6 +22,7 @@ import { researchRouter } from './ai/research.js';
 import { inbodyRouter } from './ai/inbody.js';
 import { ocrRouter } from './ai/ocr.js';
 import { commentRouter } from './ai/comment.js';
+import { bodyRouter } from './ai/body.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -33,3 +35,4 @@ aiRouter.use(requireAI);
 aiRouter.use(inbodyRouter);
 aiRouter.use(ocrRouter);
 aiRouter.use(commentRouter);
+aiRouter.use(bodyRouter);

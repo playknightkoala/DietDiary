@@ -742,6 +742,13 @@ export function getDayJson(userId: number, date: string) {
     for (const r of countRows) commentCounts.set(r.target, r.c);
   }
 
+  // 這一天適用的體重＝當天（含）以前最近一次量測：今日攝取熱量卡的 TDEE 目標據此計算，
+  // 之後記錄新體重只影響「記錄當天含以後」的目標，過去日期維持當時的體重
+  const weightRow = db
+    .prepare(`SELECT date, body_weight FROM days WHERE user_id = ? AND date <= ? AND body_weight != '' ORDER BY date DESC LIMIT 1`)
+    .get(userId, date) as { date: string; body_weight: string } | undefined;
+  const weightVal = weightRow ? parseFloat(weightRow.body_weight) : NaN;
+
   const entries = entryRows.map((e) => ({
     ...entryToJson(e),
     ratings: ratingsByEntry.get(e.id) ?? {},
@@ -767,6 +774,8 @@ export function getDayJson(userId: number, date: string) {
       fatkg: row?.body_fatkg ?? '',
     },
     bodyTime: row?.body_time ?? '',
+    // 這一天適用的體重（當天含以前最近一次；null＝這天之前沒有任何體重紀錄）
+    weightAt: weightRow && isFinite(weightVal) ? { date: weightRow.date, value: weightVal } : null,
     entries,
     aiSummary: getDailySummary(userId, date),
   };

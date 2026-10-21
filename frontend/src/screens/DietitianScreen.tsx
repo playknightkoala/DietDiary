@@ -382,8 +382,8 @@ export function DietitianScreen() {
   const gInfo = goalsFor(date, goals);
   // 六大類份數熱量＋自定義熱量項目
   const totalKcal = kcalOfFood(totals) + dayCustomKcal(entries);
-  // BMR/TDEE：與會員主頁同一套（基本資料＋最近體重；資料不齊為 null 就不顯示）
-  const { tdee } = bmrTdeeOf(memberProfile);
+  // BMR/TDEE：與會員主頁同一套，體重用檢視日期的 weightAt（資料不齊為 null 就不顯示）
+  const { tdee } = bmrTdeeOf(memberProfile, day?.weightAt ?? null);
   const kcalOver = tdee !== null && totalKcal > tdee;
   const totalExMin = Math.round((day?.exLogs ?? []).reduce((a, l) => a + (Number(l.min) || 0), 0) * 10) / 10;
   const bodyItems = day ? BODY_DEFS.filter((b) => day.body[b.k] !== '') : [];

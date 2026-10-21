@@ -43,8 +43,8 @@ export const commentRouter = Router();
 
 // 依讚／倒讚組出「偏好提示」注入 system（混合）：
 // 這位使用者自己的評價優先，其他所有使用者的評價當次要基準。讚＝好範例、倒讚＝反例。
-// 讓評價能累積、跨項地影響往後每一次生成，兼顧個人化與全體品質。
-function preferenceHint(userId: number): string {
+// 讓評價能累積、跨項地影響往後每一次生成，兼顧個人化與全體品質。（body.ts 的身體數據評語也共用）
+export function preferenceHint(userId: number): string {
   const { personal, global } = getFeedbackExamples(userId);
   const has = (b: { liked: string[]; disliked: string[] }) => b.liked.length || b.disliked.length;
   if (!has(personal) && !has(global)) return '';

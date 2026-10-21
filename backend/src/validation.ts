@@ -295,6 +295,12 @@ export const aiDailySchema = z.object({
   date: dateSchema,
 });
 
+// AI 身體數據評語：date＝client 的「今天」（分析窗錨點）。
+// 伺服器時區是 UTC、日記日期是 client 本地日，不能用 server 時間推 today（台灣 00:00–07:59 會差一天）
+export const aiBodySchema = z.object({
+  date: dateSchema,
+});
+
 // 營養師查詢輔助：網路搜尋＋LLM 摘要的問題
 export const aiResearchSchema = z.object({
   question: z.string().trim().min(2).max(200),

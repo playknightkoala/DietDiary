@@ -123,7 +123,7 @@ const uid = seed();
 sqlCount = 0;
 const json = getDayJson(uid, DATE);
 const dayCount = sqlCount;
-assert.equal(dayCount, 7, `代表日 SQL 次數應為 7，實際 ${dayCount}`);
+assert.equal(dayCount, 8, `代表日 SQL 次數應為 8（含 weightAt 查詢），實際 ${dayCount}`);
 assert.equal(json.entries.length, 10);
 assert.equal(json.entries[0].ratings['/uploads/e0.jpg'], 'green');
 assert.equal(json.entries[0].commentCount, 1);
@@ -144,18 +144,22 @@ assert.equal(json.exLogs[0].commentCount, 1);
 assert.equal(json.water, 800);
 assert.equal(json.aiSummary?.body, '總評內容');
 assert.equal(json.aiSummary?.feedback, 1);
+// 當天有量體重（60）：weightAt 用當天這筆
+assert.deepEqual(json.weightAt, { date: DATE, value: 60 });
 
-// ---- 空白日：不可組出 IN ()，次數固定 5（day/entries/water/ex/summary）----
+// ---- 空白日：不可組出 IN ()，次數固定 6（day/entries/water/ex/weightAt/summary）----
 sqlCount = 0;
 const empty = getDayJson(uid, EMPTY_DATE);
-assert.equal(sqlCount, 5, `空白日 SQL 次數應為 5，實際 ${sqlCount}`);
+assert.equal(sqlCount, 6, `空白日 SQL 次數應為 6，實際 ${sqlCount}`);
 assert.equal(empty.entries.length, 0);
 assert.equal(empty.aiSummary, null);
+// 空白日（DATE 之後）：weightAt 沿用「上一筆」體重——記錄新體重只影響記錄當天含以後
+assert.deepEqual(empty.weightAt, { date: DATE, value: 60 });
 
-// ---- 極端資料日：1200 個 target → 留言數分 3 批，總次數 8 ----
+// ---- 極端資料日：1200 個 target → 留言數分 3 批，總次數 9 ----
 sqlCount = 0;
 const big = getDayJson(uid, BIG_DATE);
-assert.equal(sqlCount, 8, `1200 筆日 SQL 次數應為 8（含 3 批留言查詢），實際 ${sqlCount}`);
+assert.equal(sqlCount, 9, `1200 筆日 SQL 次數應為 9（含 3 批留言查詢與 weightAt），實際 ${sqlCount}`);
 assert.equal(big.waterLogs.length, 1200);
 assert.ok(big.waterLogs.every((w) => w.commentCount === 0));
 
@@ -167,7 +171,7 @@ assert.ok(marked.includes(DATE));
 assert.ok(!marked.includes(EMPTY_DATE));
 
 console.log(`PASS  代表日（10 飲食/8 喝水/3 運動＋總評）SQL 次數：${dayCount}`);
-console.log(`PASS  空白日 SQL 次數：5（無 IN () 錯誤）`);
+console.log(`PASS  空白日 SQL 次數：6（無 IN () 錯誤；weightAt 沿用上一筆）`);
 console.log(`PASS  1200 筆極端日：分批查詢正常`);
 console.log(`PASS  getMarkedDates（單月）SQL 次數：${marksCount}`);
 console.log(`PASS  回傳內容斷言全數通過`);
