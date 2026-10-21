@@ -142,6 +142,16 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
   PRIMARY KEY (user_id, date)
 );
 
+-- AI 身體數據評語歷史：每次產生都新增一筆（不覆蓋），供「歷史評語」回看
+CREATE TABLE IF NOT EXISTS body_ai_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_body_ai_comments_user ON body_ai_comments(user_id, id);
+
 -- AI 評價：使用者對某則 AI 產出（評語／今日總評）按讚(1)或倒讚(-1)。
 -- body 存下被評價當下的內容快照：讚過的當「好範例」、倒讚過的當「反例」，
 -- 注入使用者往後每一次 AI 生成的提示，讓模型照他的偏好調整。

@@ -838,6 +838,7 @@ export function deleteUserData(userId: number) {
     db.prepare('DELETE FROM days WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM goal_periods WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM daily_summaries WHERE user_id = ?').run(userId);
+    db.prepare('DELETE FROM body_ai_comments WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM ai_feedback WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM kb_votes WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);

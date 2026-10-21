@@ -182,7 +182,17 @@ bodyRouter.post('/body', async (req, res) => {
           { role: 'user', content: context },
         ],
       });
-      return res.json({ comment: text.replace(/\s+$/, '').slice(0, 2000), model });
+      const comment = text.replace(/\s+$/, '').slice(0, 2000);
+      const createdAt = Date.now();
+      // 持久化供「歷史評語」回看。存檔失敗（磁碟滿等）只記 log、照常回覆——
+      // 評語本體是主要契約，這次的結果使用者當下看得到，只是少存一筆歷史
+      try {
+        db.prepare('INSERT INTO body_ai_comments (user_id, body, model, created_at) VALUES (?, ?, ?, ?)')
+          .run(req.userId, comment, model, createdAt);
+      } catch (e) {
+        console.error('body ai comment save failed (ignored):', e);
+      }
+      return res.json({ comment, model, createdAt });
     } catch (e) {
       lastError = e;
       console.error(`ai body comment attempt failed (${model}), trying next:`, e instanceof Error ? e.message : e);
@@ -190,4 +200,12 @@ bodyRouter.post('/body', async (req, res) => {
   }
   console.error('ai body comment failed (all attempts):', lastError);
   return res.status(502).json({ error: 'AI 評語產生失敗，請稍後再試' });
+});
+
+// 歷史評語：本人最近 20 筆（新→舊）
+bodyRouter.get('/body/history', (req, res) => {
+  const items = db
+    .prepare('SELECT id, body, model, created_at AS createdAt FROM body_ai_comments WHERE user_id = ? ORDER BY id DESC LIMIT 20')
+    .all(req.userId);
+  return res.json({ items });
 });

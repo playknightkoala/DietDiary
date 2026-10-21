@@ -106,6 +106,14 @@ export interface DailySummary {
   feedback: number; // 擁有者的評價（1＝讚、-1＝倒讚、0＝未評）
 }
 
+// AI 身體數據評語的歷史紀錄（每次產生都保留一筆）
+export interface BodyAiComment {
+  id: number;
+  body: string;
+  model: string;
+  createdAt: number; // Unix ms
+}
+
 // 逐筆喝水紀錄（一筆＝動態牆一則貼文）
 export interface WaterLog {
   id: number;

@@ -1,4 +1,4 @@
-import type { AdminUser, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, MonthStats, NgCategoryInfo, NgKeyword, NgLevel, NotificationItem, PhotoRating, Profile, Role } from '../types';
+import type { AdminUser, BodyAiComment, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, MonthStats, NgCategoryInfo, NgKeyword, NgLevel, NotificationItem, PhotoRating, Profile, Role } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -288,10 +288,12 @@ export const api = {
   // AI 今日總評：針對某天產生整天綜合評語，存為當天一則 AI 動態，回傳更新後的當日資料
   aiDaily: (date: string) =>
     request<DayData>('/api/ai/daily', { method: 'POST', body: JSON.stringify({ date }) }),
-  // AI 身體數據評語：分析量測歷程趨勢＋近三個月攝取與 BMR/TDEE（唯讀，結果不持久化）。
+  // AI 身體數據評語：分析量測歷程趨勢＋近三個月攝取與 BMR/TDEE（每次產生都存入歷史）。
   // date＝client 的「今天」當分析錨點（伺服器是 UTC，不能自己推本地日）
   aiBodyComment: (date: string) =>
-    request<{ comment: string; model: string }>('/api/ai/body', { method: 'POST', body: JSON.stringify({ date }) }),
+    request<{ comment: string; model: string; createdAt: number }>('/api/ai/body', { method: 'POST', body: JSON.stringify({ date }) }),
+  // 歷史評語：本人最近 20 筆（新→舊）
+  aiBodyHistory: () => request<{ items: BodyAiComment[] }>('/api/ai/body/history'),
   // AI 評價：對某則 AI 產出按讚(1)／倒讚(-1)／取消(0)。
   // kind：comment(ref=留言id)｜daily(ref=日期)｜ocr_caption/ocr_food(ref=照片url，body 帶內容快照)
   // ocr_food 若對應知識庫某道菜，帶 dishId 以累計該菜的讚/倒讚

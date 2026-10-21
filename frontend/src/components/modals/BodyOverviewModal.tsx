@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiError, api } from '../../lib/api';
 import { useStore } from '../../store';
-import { BODY_DEFS, bmrTdeeOf, dstr } from '../../lib/domain';
-import type { BodyKey, BodyTrendRow, Profile } from '../../types';
+import { BODY_DEFS, bmrTdeeOf, dstr, fmtCommentTime } from '../../lib/domain';
+import type { BodyAiComment, BodyKey, BodyTrendRow, Profile } from '../../types';
 import { TrendChart } from '../TrendChart';
 import { CloseButton, ModalShell } from './ModalShell';
 
@@ -104,16 +104,40 @@ export function BodyOverviewModal() {
   const profile = useStore((s) => s.profile);
   const aiEnabled = useStore((s) => s.aiEnabled);
 
-  // AI 評語（唯讀分析，不寫入任何資料；結果只存在本視窗，關閉即消失）
+  // AI 評語：每次產生都會存入歷史（後端 body_ai_comments），可從「歷史評語」回看
   const [aiBusy, setAiBusy] = useState(false);
   const [aiText, setAiText] = useState('');
   const [aiModel, setAiModel] = useState('');
   const [aiError, setAiError] = useState('');
+  // 歷史評語：null＝尚未載入（展開時才抓）
+  const [histOpen, setHistOpen] = useState(false);
+  const [histBusy, setHistBusy] = useState(false);
+  const [histItems, setHistItems] = useState<BodyAiComment[] | null>(null);
+  const [histError, setHistError] = useState('');
 
   // 開啟即載入趨勢（含剛記錄完的新數值）
   useEffect(() => {
     void loadTrend();
   }, [loadTrend]);
+
+  const loadHist = async () => {
+    setHistBusy(true);
+    setHistError('');
+    try {
+      const { items } = await api.aiBodyHistory();
+      setHistItems(items);
+    } catch (e) {
+      setHistError(e instanceof ApiError ? e.message : '歷史評語載入失敗，請再試一次');
+    } finally {
+      setHistBusy(false);
+    }
+  };
+
+  const toggleHist = () => {
+    const next = !histOpen;
+    setHistOpen(next);
+    if (next && histItems === null && !histBusy) void loadHist();
+  };
 
   const runAi = async () => {
     if (aiBusy) return;
@@ -124,8 +148,11 @@ export function BodyOverviewModal() {
       const { comment, model } = await api.aiBodyComment(dstr(new Date()));
       setAiText(comment);
       setAiModel(model);
+      // 新評語已入庫：歷史展開中就重抓，否則清掉快取讓下次展開拿最新
+      if (histOpen) void loadHist();
+      else setHistItems(null);
     } catch (e) {
-      // 唯讀分析：失敗只顯示錯誤讓使用者重試，不影響視窗其他內容
+      // 失敗只顯示錯誤讓使用者重試，不影響視窗其他內容
       setAiError(e instanceof ApiError ? e.message : 'AI 評語產生失敗，請稍後再試');
     } finally {
       setAiBusy(false);
@@ -134,20 +161,50 @@ export function BodyOverviewModal() {
 
   const aiSection = aiEnabled ? (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <button
-        onClick={() => void runAi()}
-        disabled={aiBusy}
-        className="hv-cream"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 44, flex: 'none', border: '1.5px solid #D9CEEA', borderRadius: 12, background: '#F6F3FB', color: '#7A5AB8', fontSize: 14, fontWeight: 700, cursor: aiBusy ? 'default' : 'pointer', opacity: aiBusy ? 0.65 : 1 }}
-      >
-        <span style={{ fontSize: 15 }}>✨</span>
-        {aiBusy ? 'AI 分析中…約需 10～30 秒' : aiText ? '重新產生 AI 評語' : 'AI 評語（分析趨勢與近三個月飲食）'}
-      </button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => void runAi()}
+          disabled={aiBusy}
+          className="hv-cream"
+          style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 44, border: '1.5px solid #D9CEEA', borderRadius: 12, background: '#F6F3FB', color: '#7A5AB8', fontSize: 14, fontWeight: 700, cursor: aiBusy ? 'default' : 'pointer', opacity: aiBusy ? 0.65 : 1 }}
+        >
+          <span style={{ fontSize: 15 }}>✨</span>
+          {aiBusy ? 'AI 分析中…約需 10～30 秒' : aiText ? '重新產生 AI 評語' : 'AI 評語（分析趨勢與近三個月飲食）'}
+        </button>
+        <button
+          onClick={toggleHist}
+          className="hv-cream"
+          style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 5, height: 44, padding: '0 14px', border: `1.5px solid ${histOpen ? '#7A5AB8' : '#DDD8CA'}`, borderRadius: 12, background: histOpen ? '#F6F3FB' : '#fff', color: histOpen ? '#7A5AB8' : '#4A5A4A', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+        >
+          歷史評語
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: histOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
       {aiError && <div style={{ fontSize: 12, color: '#C0564A', textAlign: 'center' }}>{aiError}</div>}
       {aiText && (
         <div style={{ background: '#FBF9FE', border: '1.5px solid #E0D6F0', borderRadius: 14, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: '#7A5AB8' }}>AI 評語{aiModel ? `（${aiModel}）` : ''}</div>
           <div style={{ fontSize: 13.5, color: '#2D3B2D', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{aiText}</div>
+        </div>
+      )}
+      {histOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {histBusy && <div style={{ fontSize: 12.5, color: '#8A9284', textAlign: 'center', padding: '6px 0' }}>載入中…</div>}
+          {histError && <div style={{ fontSize: 12, color: '#C0564A', textAlign: 'center' }}>{histError}</div>}
+          {!histBusy && !histError && histItems !== null && histItems.length === 0 && (
+            <div style={{ fontSize: 12.5, color: '#8A9284', textAlign: 'center', padding: '6px 0' }}>還沒有歷史評語，產生第一則後會保留在這裡。</div>
+          )}
+          {(histItems ?? []).map((h) => (
+            <div key={h.id} style={{ background: '#FBFAF6', border: '1px solid #EEEAE0', borderRadius: 14, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A9284' }}>{fmtCommentTime(h.createdAt)}{h.model ? `・${h.model}` : ''}</div>
+              <div style={{ fontSize: 13, color: '#2D3B2D', lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{h.body}</div>
+            </div>
+          ))}
+          {histItems !== null && histItems.length >= 20 && (
+            <div style={{ fontSize: 11.5, color: '#8A9284', textAlign: 'center' }}>只顯示最近 20 筆</div>
+          )}
         </div>
       )}
     </div>

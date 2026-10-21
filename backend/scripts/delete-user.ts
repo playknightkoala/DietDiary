@@ -38,6 +38,7 @@ db.prepare(`INSERT INTO days (user_id, date, water) VALUES (?, '2026-08-07', 500
 db.prepare(`INSERT INTO daily_summaries (user_id, date, body, created_at) VALUES (?, '2026-08-07', 'AI 總評', ?)`).run(uid, now);
 db.prepare(`INSERT INTO ai_feedback (user_id, kind, ref, vote, body, created_at) VALUES (?, 'daily', '2026-08-07', 1, '', ?)`).run(uid, now);
 db.prepare(`INSERT INTO kb_votes (user_id, dish_id, vote, updated_at) VALUES (?, 99, 1, ?)`).run(uid, now);
+db.prepare(`INSERT INTO body_ai_comments (user_id, body, model, created_at) VALUES (?, '身體數據評語', 'test', ?)`).run(uid, now);
 db.prepare(`INSERT INTO daily_summaries (user_id, date, body, created_at) VALUES (?, '2026-08-07', '別人的總評', ?)`).run(other, now);
 
 let threw = false;
@@ -51,7 +52,7 @@ check('有 AI 資料的會員可刪除（不觸發 FK constraint）', !threw);
 
 const count = (table: string) =>
   (db.prepare(`SELECT COUNT(*) c FROM ${table} WHERE user_id = ?`).get(uid) as { c: number }).c;
-for (const t of ['users' /* WHERE id */, 'entries', 'days', 'daily_summaries', 'ai_feedback', 'kb_votes']) {
+for (const t of ['users' /* WHERE id */, 'entries', 'days', 'daily_summaries', 'body_ai_comments', 'ai_feedback', 'kb_votes']) {
   const c =
     t === 'users'
       ? (db.prepare('SELECT COUNT(*) c FROM users WHERE id = ?').get(uid) as { c: number }).c
