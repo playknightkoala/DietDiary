@@ -494,7 +494,7 @@ export function NgAdminPanel() {
                       <input
                         value={inlineKwDraft}
                         onChange={(e) => setInlineKwDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void addInlineKeyword(cat.id); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !busy) void addInlineKeyword(cat.id); }}
                         placeholder={`新增「${cat.name}」的關鍵字`}
                         maxLength={30}
                         autoFocus

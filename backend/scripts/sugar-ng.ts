@@ -69,6 +69,9 @@ try {
   insertEntry('2026-08-09');                                                       // 空白 entry
   insertEntry('2026-08-12', { desc: '吃了70%黑巧克力' });                           // 種子排除詞：不算 NG
   insertEntry('2026-08-13', { desc: '巧克力蛋糕真好吃' });                          // 排除詞不影響其他命中
+  insertEntry('2026-08-14', { desc: '摩斯漢堡：咖哩豬排堡、玉米白醬可樂餅' });       // 長詞優先：可樂餅不得命中可樂
+  insertEntry('2026-08-15', { desc: '珍珠奶茶一杯' });                              // 種子長短詞：珍珠奶茶不得再命中奶茶
+  insertEntry('2026-08-16', { desc: '可樂餅配可樂' });                              // 長詞吃掉後，獨立出現的短詞仍要命中
   insertEntry('2026-07-31', { photoCustoms: sugarPC(50) });                        // 月界外
   insertEntry('2026-09-01', { photoCustoms: sugarPC(50) });
 
@@ -117,6 +120,11 @@ try {
   check('schema 擋空字串', !ngKeywordSchema.safeParse({ keyword: '   ', categoryId: 1 }).success);
   check('schema 擋超長（31 字）', !ngKeywordSchema.safeParse({ keyword: 'x'.repeat(31), categoryId: 1 }).success);
 
+  // 長詞優先用的關鍵字：可樂餅（炸物）包含可樂（含糖瓶裝飲料）
+  const friedCat = ng.listNgCategories().find((c) => c.name === '炸物');
+  check('種子有炸物分類', !!friedCat);
+  if (friedCat) ng.createNgKeyword('可樂餅', friedCat.id, false);
+
   // ---- Part A：門檻 ----
   check('未設定門檻 → 預設 25', ng.getSugarLimit() === 25);
   ng.setSugarLimit(30);
@@ -151,6 +159,14 @@ try {
   const d13 = byDate.get('2026-08-13');
   check('排除詞不影響其他命中：巧克力蛋糕 → 巧克力＋蛋糕', !!d13 && ['巧克力', '蛋糕'].every((k) => d13.ngHits.some((h) => h.keyword === k)));
   check('排除詞本身不出現在命中清單', !stats.some((d) => d.ngHits.some((h) => h.keyword === '黑巧克力')));
+  const d14 = byDate.get('2026-08-14');
+  check('長詞優先：可樂餅命中炸物', d14?.ngHits.some((h) => h.keyword === '可樂餅' && h.category === '炸物') === true);
+  check('長詞優先：可樂餅不得連帶命中可樂', !!d14 && !d14.ngHits.some((h) => h.keyword === '可樂'));
+  check('長詞優先：同段其他關鍵字（白醬、漢堡）照常命中', !!d14 && ['白醬', '漢堡'].every((k) => d14.ngHits.some((h) => h.keyword === k)));
+  const d15 = byDate.get('2026-08-15');
+  check('種子長短詞：珍珠奶茶只報手搖飲，不再報奶茶', !!d15 && d15.ngHits.some((h) => h.keyword === '珍珠奶茶') && !d15.ngHits.some((h) => h.keyword === '奶茶'));
+  const d16 = byDate.get('2026-08-16');
+  check('長詞吃掉後，獨立出現的可樂仍命中', !!d16 && ['可樂餅', '可樂'].every((k) => d16.ngHits.some((h) => h.keyword === k)));
   check('前月末／次月初不落入本月', !byDate.has('2026-07-31') && !byDate.has('2026-09-01'));
   check('回應依日期升冪', stats.every((d, i) => i === 0 || stats[i - 1].date < d.date));
 

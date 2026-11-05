@@ -183,9 +183,12 @@ export function monthSugarNgStats(userId: number, ym: string): MonthStatDay[] {
     .prepare(`SELECT k.id, k.keyword, k.is_exclusion, c.name AS category, c.level
                 FROM ng_keywords k LEFT JOIN ng_categories c ON c.id = k.category_id`)
     .all() as { id: number; keyword: string; is_exclusion: number; category: string | null; level: NgLevel | null }[];
-  const keywords = all.filter((k) => !k.is_exclusion);
-  // 排除詞長的先剔除（「70%黑巧克力」要先吃掉「黑巧克力」才輪不到「巧克力」）
-  const exclusions = all.filter((k) => k.is_exclusion).sort((a, b) => b.keyword.length - a.keyword.length);
+  // 長詞優先：NG 關鍵字與排除詞都依長度降冪，命中後把該段文字吃掉再比對下一個——
+  // 「可樂餅」（炸物）吃掉後「可樂」（飲料）就看不到、「珍珠奶茶」不再連帶報「奶茶」；
+  // 排除詞同理（「70%黑巧克力」要先吃掉「黑巧克力」才輪不到「巧克力」）
+  const byLenDesc = (a: { keyword: string }, b: { keyword: string }) => b.keyword.length - a.keyword.length;
+  const keywords = all.filter((k) => !k.is_exclusion).sort(byLenDesc);
+  const exclusions = all.filter((k) => k.is_exclusion).sort(byLenDesc);
   const rows = db
     .prepare('SELECT date, desc, photo_customs, items FROM entries WHERE user_id = ? AND date >= ? AND date <= ?')
     .all(userId, from, to) as { date: string; desc: string; photo_customs: string; items: string }[];
@@ -203,12 +206,14 @@ export function monthSugarNgStats(userId: number, ym: string): MonthStatDay[] {
 
     if (keywords.length) {
       let haystack = normalizeNgText([r.desc, ...customs.map((c) => c.name)].join('\n'));
-      // 先剔除排除詞命中的字段（以換行取代，避免拼出新詞），再比對 NG 關鍵字
+      // 先剔除排除詞命中的字段（以換行取代，避免拼出新詞），再比對 NG 關鍵字；
+      // 命中的字段同樣以換行吃掉，較短的關鍵字只能比對剩下的文字
       for (const ex of exclusions) haystack = haystack.split(ex.keyword).join('\n');
       if (haystack) {
         let hits = hitsByDate.get(r.date);
         for (const kw of keywords) {
           if (!haystack.includes(kw.keyword)) continue;
+          haystack = haystack.split(kw.keyword).join('\n');
           if (!hits) {
             hits = new Map();
             hitsByDate.set(r.date, hits);
