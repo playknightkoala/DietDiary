@@ -47,6 +47,8 @@ daysRouter.patch('/:date', (req, res) => {
   if (body) {
     sets.push('body_weight = ?', 'body_fat = ?', 'body_waist = ?', 'body_muscle = ?', 'body_fatkg = ?');
     args.push(body.weight, body.fat, body.waist, body.muscle, body.fatkg);
+    // 舊版前端不會送 musclepct：未提供就不動既有值（提供 '' 才是清空）
+    if (body.musclepct !== undefined) { sets.push('body_musclepct = ?'); args.push(body.musclepct); }
   }
   if (bodyTime !== undefined) { sets.push('body_time = ?'); args.push(bodyTime); }
   if (sets.length) {

@@ -63,8 +63,10 @@ export const BODY_DEFS: { k: BodyKey; name: string; unit: string }[] = [
   { k: 'weight', name: '體重', unit: 'kg' },
   { k: 'fat', name: '體脂率', unit: '%' },
   { k: 'waist', name: '腰圍', unit: 'cm' },
-  { k: 'muscle', name: '肌肉重', unit: 'kg' },
+  // 兩組「率→重」相鄰：體脂率×體重＝體脂重、肌肉率×體重＝肌肉重（記錄視窗可一鍵換算）
   { k: 'fatkg', name: '體脂重', unit: 'kg' },
+  { k: 'musclepct', name: '肌肉率', unit: '%' },
+  { k: 'muscle', name: '肌肉重', unit: 'kg' },
 ];
 
 // TDEE 活動量：TDEE＝BMR×係數
@@ -122,7 +124,7 @@ export function emptyDay(): DayData {
     waterTime: '',
     waterLogs: [],
     exLogs: [],
-    body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '' },
+    body: { weight: '', fat: '', waist: '', muscle: '', fatkg: '', musclepct: '' },
     bodyTime: '',
     weightAt: null,
     entries: [],

@@ -99,6 +99,8 @@ export const dayPatchSchema = z.object({
       waist: numText,
       muscle: numText,
       fatkg: numText,
+      // 肌肉率（%）後加：舊版前端的 body 物件沒有這個鍵，缺省時保留原值、不清空（見 days.ts PATCH）
+      musclepct: numText.optional(),
     })
     .optional(),
   bodyTime: hmOrEmpty.optional(),
@@ -332,7 +334,7 @@ export const goalsSchema = z.object({
   water: z.number().int().min(0).max(999999),
 }).refine((d) => d.start <= d.end, { message: '起日不可晚於迄日' });
 
-export const BODY_FIELDS = ['weight', 'fat', 'waist', 'muscle', 'fatkg'] as const;
+export const BODY_FIELDS = ['weight', 'fat', 'waist', 'muscle', 'fatkg', 'musclepct'] as const;
 
 // TDEE 活動量（係數定義於前端 domain.ACTIVITY_DEFS：1.2／1.375／1.55／1.725／1.9）
 export const ACTIVITY_KEYS = ['sedentary', 'light', 'moderate', 'high', 'veryhigh'] as const;

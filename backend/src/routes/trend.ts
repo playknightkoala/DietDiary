@@ -13,6 +13,7 @@ interface BodyDayRow {
   body_waist: string;
   body_muscle: string;
   body_fatkg: string;
+  body_musclepct: string;
 }
 
 // limit 夾限（1–365，預設 30）：會員端與營養師端共用同一規則
@@ -25,9 +26,9 @@ export function clampTrendLimit(raw: unknown): number {
 export function bodyTrendRows(userId: number, limit: number) {
   const rows = db
     .prepare(
-      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg, body_musclepct FROM days
        WHERE user_id = ?
-         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '' OR body_musclepct != '')
        ORDER BY date DESC LIMIT ?`
     )
     .all(userId, limit) as BodyDayRow[];
@@ -42,6 +43,7 @@ export function bodyTrendRows(userId: number, limit: number) {
     waist: num(r.body_waist),
     muscle: num(r.body_muscle),
     fatkg: num(r.body_fatkg),
+    musclepct: num(r.body_musclepct),
   }));
 }
 

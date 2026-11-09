@@ -69,6 +69,15 @@ const cases: [string, () => void, boolean, string][] = [
     '只有身體資料',
   ],
   [
+    '2026-07-12',
+    () => {
+      ensureDayRow(uid, '2026-07-12');
+      db.prepare(`UPDATE days SET body_musclepct = '35.2' WHERE user_id = ? AND date = '2026-07-12'`).run(uid);
+    },
+    true,
+    '只有肌肉率（後加的身體欄位）',
+  ],
+  [
     '2026-07-09',
     () => {
       db.prepare(`INSERT INTO daily_summaries (user_id, date, body, model, created_at) VALUES (?, '2026-07-09', '總評', 't', 1)`).run(uid);

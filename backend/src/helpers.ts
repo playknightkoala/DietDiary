@@ -54,6 +54,7 @@ export interface DayRow {
   body_waist: string;
   body_muscle: string;
   body_fatkg: string;
+  body_musclepct: string;
   body_time: string;
 }
 
@@ -772,6 +773,7 @@ export function getDayJson(userId: number, date: string) {
       waist: row?.body_waist ?? '',
       muscle: row?.body_muscle ?? '',
       fatkg: row?.body_fatkg ?? '',
+      musclepct: row?.body_musclepct ?? '',
     },
     bodyTime: row?.body_time ?? '',
     // 這一天適用的體重（當天含以前最近一次；null＝這天之前沒有任何體重紀錄）
@@ -807,7 +809,7 @@ export function getMarkedDates(userId: number, from: string, to: string): string
     .prepare('SELECT * FROM days WHERE user_id = ? AND date >= ? AND date <= ?')
     .all(userId, from, to) as (DayRow & { date: string })[];
   for (const r of dayRows) {
-    const hasBody = [r.body_weight, r.body_fat, r.body_waist, r.body_muscle, r.body_fatkg].some((v) => v !== '');
+    const hasBody = [r.body_weight, r.body_fat, r.body_waist, r.body_muscle, r.body_fatkg, r.body_musclepct].some((v) => v !== '');
     const hasEx = (r.ex_min && +r.ex_min > 0) || !!r.ex_desc;
     if (r.water > 0 || hasEx || hasBody) dates.add(r.date);
   }

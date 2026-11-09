@@ -11,12 +11,13 @@ import { CATEGORY_LABEL_CAVEAT, goalForDate, goalSummaryZh, kcalOfFood, macrosOf
 
 export const bodyRouter = Router();
 
-const METRICS: [col: 'body_weight' | 'body_fat' | 'body_waist' | 'body_muscle' | 'body_fatkg', name: string, unit: string][] = [
+const METRICS: [col: 'body_weight' | 'body_fat' | 'body_waist' | 'body_muscle' | 'body_fatkg' | 'body_musclepct', name: string, unit: string][] = [
   ['body_weight', '體重', 'kg'],
   ['body_fat', '體脂率', '%'],
   ['body_waist', '腰圍', 'cm'],
   ['body_muscle', '肌肉重', 'kg'],
   ['body_fatkg', '體脂重', 'kg'],
+  ['body_musclepct', '肌肉率', '%'],
 ];
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -34,9 +35,9 @@ bodyRouter.post('/body', async (req, res) => {
   const rows = (
     db
       .prepare(
-        `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+        `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg, body_musclepct FROM days
          WHERE user_id = ? AND date <= ?
-           AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+           AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '' OR body_musclepct != '')
          ORDER BY date DESC LIMIT 8`
       )
       .all(req.userId, today) as Record<string, string>[]
@@ -159,7 +160,7 @@ bodyRouter.post('/body', async (req, res) => {
     '所有數字系統都已算好，請直接引用，不要自行加減或推算新數字；沒有提供的數據不要編造，' +
     '只有一筆量測的指標不要臆測趨勢。' +
     '趨勢方向的好壞要看使用者的體重目標：減重目標時體重／體脂下降是進步，增重目標時上升才是進步；' +
-    '未設定目標則以體脂率下降、肌肉重上升視為正向。' +
+    '未設定目標則以體脂率下降、肌肉重／肌肉率上升視為正向。' +
     '若趨勢是好的：先明確肯定使用者的成果，再給 1～2 個更精進的具體建議（不要潑冷水）；' +
     '若趨勢停滯或往反方向：溫和指出最可能的原因與 1～2 個具體、好執行的調整，不要責備。' +
     CATEGORY_LABEL_CAVEAT +

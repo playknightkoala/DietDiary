@@ -96,7 +96,7 @@ export interface EntryComment {
   feedback: number;
 }
 
-export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg';
+export type BodyKey = 'weight' | 'fat' | 'waist' | 'muscle' | 'fatkg' | 'musclepct';
 
 // AI 今日總評：整天的綜合評語（每天一份，重新產生會覆蓋；null＝尚未產生）
 export interface DailySummary {

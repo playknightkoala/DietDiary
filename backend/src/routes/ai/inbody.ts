@@ -57,6 +57,8 @@ inbodyRouter.post('/inbody', async (req, res) => {
       fatkg: numIn(out.fatkg, 1, 150),
       fat: numIn(out.pbf, 1, 70),
       waist: numIn(out.waist, 30, 250),
+      // InBody 報告沒有「肌肉率」欄位，一律回 null（前端只覆蓋非 null 的值）
+      musclepct: null,
     };
     if (Object.values(values).every((v) => v === null)) {
       return res.status(422).json({ error: '照片中找不到可辨識的 InBody 數值，請確認拍到完整報告、光線充足後再試' });
@@ -87,13 +89,13 @@ inbodyRouter.post('/inbody', async (req, res) => {
     // 前一次量測（嚴格早於檢測日；沒讀到日期就取最近一次），供前端顯示本次 vs 前次的比較
     const prevRow = db
       .prepare(
-        `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+        `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg, body_musclepct FROM days
          WHERE user_id = ? AND date < ?
-           AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+           AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '' OR body_musclepct != '')
          ORDER BY date DESC LIMIT 1`
       )
       .get(req.userId, date || '9999-12-31') as
-      | { date: string; body_weight: string; body_fat: string; body_waist: string; body_muscle: string; body_fatkg: string }
+      | { date: string; body_weight: string; body_fat: string; body_waist: string; body_muscle: string; body_fatkg: string; body_musclepct: string }
       | undefined;
     const prev = prevRow
       ? {
@@ -104,6 +106,7 @@ inbodyRouter.post('/inbody', async (req, res) => {
             waist: prevRow.body_waist,
             muscle: prevRow.body_muscle,
             fatkg: prevRow.body_fatkg,
+            musclepct: prevRow.body_musclepct,
           },
         }
       : null;

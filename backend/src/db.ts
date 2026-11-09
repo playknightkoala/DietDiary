@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS days (
   body_waist TEXT NOT NULL DEFAULT '',
   body_muscle TEXT NOT NULL DEFAULT '',
   body_fatkg TEXT NOT NULL DEFAULT '',
+  body_musclepct TEXT NOT NULL DEFAULT '',
   body_time TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (user_id, date)
 );
@@ -472,9 +473,9 @@ if (!entryCols.includes('orig_data')) {
   }
 }
 
-// 喝水／運動／身體數據的紀錄時間
+// 喝水／運動／身體數據的紀錄時間；body_musclepct＝肌肉率（%，v1.5.8 新增）。每欄各自判斷，中斷重啟可續跑
 const dayCols = (db.pragma('table_info(days)') as { name: string }[]).map((c) => c.name);
-for (const col of ['water_time', 'ex_time', 'body_time']) {
+for (const col of ['water_time', 'ex_time', 'body_time', 'body_musclepct']) {
   if (!dayCols.includes(col)) {
     db.exec(`ALTER TABLE days ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
   }

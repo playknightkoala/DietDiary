@@ -175,7 +175,7 @@ export function waterGoalNote(water: number, goalWater: number): string {
 
 const BODY_LABELS: [key: string, name: string, unit: string][] = [
   ['weight', '體重', 'kg'], ['fat', '體脂率', '%'], ['waist', '腰圍', 'cm'],
-  ['muscle', '肌肉重', 'kg'], ['fatkg', '體脂重', 'kg'],
+  ['muscle', '肌肉重', 'kg'], ['fatkg', '體脂重', 'kg'], ['musclepct', '肌肉率', '%'],
 ];
 
 export function bodyStrFrom(b: Record<string, string>): string {
@@ -251,15 +251,15 @@ export function bodyLineFor(userId: number, date: string, dayBody: Record<string
   if (today) return today + (dayBodyTime ? `（${dayBodyTime}）` : '');
   const row = db
     .prepare(
-      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg FROM days
+      `SELECT date, body_weight, body_fat, body_waist, body_muscle, body_fatkg, body_musclepct FROM days
        WHERE user_id = ? AND date <= ?
-         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '')
+         AND (body_weight != '' OR body_fat != '' OR body_waist != '' OR body_muscle != '' OR body_fatkg != '' OR body_musclepct != '')
        ORDER BY date DESC LIMIT 1`
     )
     .get(userId, date) as
-    | { date: string; body_weight: string; body_fat: string; body_waist: string; body_muscle: string; body_fatkg: string }
+    | { date: string; body_weight: string; body_fat: string; body_waist: string; body_muscle: string; body_fatkg: string; body_musclepct: string }
     | undefined;
   if (!row) return '未記錄';
-  const s = bodyStrFrom({ weight: row.body_weight, fat: row.body_fat, waist: row.body_waist, muscle: row.body_muscle, fatkg: row.body_fatkg });
+  const s = bodyStrFrom({ weight: row.body_weight, fat: row.body_fat, waist: row.body_waist, muscle: row.body_muscle, fatkg: row.body_fatkg, musclepct: row.body_musclepct });
   return s ? `${s}（最近一次量測：${row.date}）` : '未記錄';
 }

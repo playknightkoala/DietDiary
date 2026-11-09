@@ -7,9 +7,9 @@ import type { ActivityKey, BodyKey, GoalMode, InbodyResult } from '../../types';
 import { TimeSelect } from '../TimeSelect';
 import { CloseButton, ModalShell } from './ModalShell';
 
-// 數值變好的方向：肌肉重越多越好，其餘（體重／體脂率／腰圍／體脂重）越少越好。
+// 數值變好的方向：肌肉重／肌肉率越多越好，其餘（體重／體脂率／腰圍／體脂重）越少越好。
 // 體重依使用者的體重目標而定：增重目標時上升才是好（其餘欄位方向不變）
-const GOOD_UP: Record<BodyKey, boolean> = { weight: false, fat: false, waist: false, muscle: true, fatkg: false };
+const GOOD_UP: Record<BodyKey, boolean> = { weight: false, fat: false, waist: false, muscle: true, fatkg: false, musclepct: true };
 
 export function BodyModal() {
   const day = useStore((s) => s.day);
@@ -59,7 +59,7 @@ export function BodyModal() {
       // 讀到的值蓋進欄位；沒讀到的欄位保留原本輸入
       setBody((s) => {
         const next = { ...s };
-        for (const b of BODY_DEFS) if (r.values[b.k] !== null) next[b.k] = String(r.values[b.k]);
+        for (const b of BODY_DEFS) if (r.values[b.k] != null) next[b.k] = String(r.values[b.k]);
         return next;
       });
       setScan('done');
@@ -105,11 +105,14 @@ export function BodyModal() {
     }
   };
 
-  // 體脂重自動換算：體重×體脂率（%），四捨五入到小數第 1 位。
-  // 只有體脂率沒有體脂重的使用者可點一下帶入；已填的值不主動覆蓋，由使用者自行選擇。
+  // 自動換算：體脂重＝體重×體脂率（%）、肌肉重＝體重×肌肉率（%），四捨五入到小數第 1 位。
+  // 只有百分比沒有公斤數的使用者可點一下帶入；已填的值不主動覆蓋，由使用者自行選擇。
   const w = parseFloat(body.weight);
-  const f = parseFloat(body.fat);
-  const calcFatKg = isFinite(w) && w > 0 && isFinite(f) && f > 0 ? Math.round((w * f) / 10) / 10 : null;
+  const kgFromPct = (pctStr: string): number | null => {
+    const p = parseFloat(pctStr);
+    return isFinite(w) && w > 0 && isFinite(p) && p > 0 ? Math.round((w * p) / 10) / 10 : null;
+  };
+  const calcKg: Partial<Record<BodyKey, number | null>> = { fatkg: kgFromPct(body.fat), muscle: kgFromPct(body.musclepct) };
 
   // 本次輸入 vs 前次量測的變化（掃描後顯示在欄位下方）
   const deltaOf = (k: BodyKey): { text: string; color: string } | null => {
@@ -235,6 +238,7 @@ export function BodyModal() {
         {BODY_DEFS.map((b) => {
           const d = deltaOf(b.k);
           const prevStr = result?.prev?.body[b.k] ?? '';
+          const calc = calcKg[b.k] ?? null;
           return (
             <div key={b.k} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#6B7565' }}>{b.name}（{b.unit}）</label>
@@ -253,9 +257,9 @@ export function BodyModal() {
                   {d && <b style={{ color: d.color }}>　{d.text}</b>}
                 </span>
               )}
-              {b.k === 'fatkg' && calcFatKg !== null && parseFloat(body.fatkg) !== calcFatKg && (
+              {calc !== null && parseFloat(body[b.k]) !== calc && (
                 <button
-                  onClick={() => setBody((s) => ({ ...s, fatkg: String(calcFatKg) }))}
+                  onClick={() => setBody((s) => ({ ...s, [b.k]: String(calc) }))}
                   style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', fontSize: 11, color: '#4A7C59', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   自動換算
