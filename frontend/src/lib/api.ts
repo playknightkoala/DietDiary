@@ -1,4 +1,4 @@
-import type { AdminUser, BodyAiComment, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, MonthStats, NgCategoryInfo, NgKeyword, NgLevel, NotificationItem, PhotoRating, Profile, Role } from '../types';
+import type { AdminUser, BodyAiComment, BodyTrendRow, CommentTarget, CustomItem, DayData, Entry, EntryComment, EntryFoodItem, Food, Goal, GoalInput, HistoryMeal, InbodyResult, MealKey, MemberInfo, MonthStats, NgCategoryInfo, NgKeyword, NgLevel, NotificationItem, PhotoRating, Profile, ReviewItem, ReviewsReadPayload, Role } from '../types';
 
 const TOKEN_KEY = 'diet-token';
 const USER_KEY = 'diet-username';
@@ -218,6 +218,11 @@ export const api = {
   getNotifications: () => request<{ unread: number; items: NotificationItem[] }>('/api/notifications'),
   markNotificationsRead: (ids?: number[]) =>
     request<{ ok: true }>('/api/notifications/read', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }),
+
+  // 營養師回饋必讀視窗：尚未看過的回饋（依餐分組）／看完後標已讀
+  getUnreadReviews: () => request<{ items: ReviewItem[] }>('/api/reviews/unread'),
+  markReviewsRead: (payload: ReviewsReadPayload) =>
+    request<{ ok: true }>('/api/reviews/read', { method: 'POST', body: JSON.stringify(payload) }),
 
   getGoals: () => request<Goal[]>('/api/goals'),
   createGoal: (goal: GoalInput) =>

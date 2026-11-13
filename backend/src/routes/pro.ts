@@ -127,8 +127,12 @@ proRouter.put('/members/:id/entries/:eid/photo-rating', (req, res) => {
     db.prepare('DELETE FROM photo_ratings WHERE entry_id = ? AND photo = ?').run(entry.id, photo);
   } else {
     db.prepare(
-      `INSERT INTO photo_ratings (entry_id, photo, rating, rated_by) VALUES (?, ?, ?, ?)
-       ON CONFLICT(entry_id, photo) DO UPDATE SET rating = excluded.rating, rated_by = excluded.rated_by, rated_at = datetime('now')`
+      // unread＝會員必讀視窗的未讀標記：新評分一律未讀；換燈號才重新標未讀，
+      // 同燈號重送（重複點擊／重試）保留原狀態，不讓已看過的評分再跳一次
+      `INSERT INTO photo_ratings (entry_id, photo, rating, rated_by, unread) VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT(entry_id, photo) DO UPDATE SET
+         unread = CASE WHEN photo_ratings.rating = excluded.rating THEN photo_ratings.unread ELSE 1 END,
+         rating = excluded.rating, rated_by = excluded.rated_by, rated_at = datetime('now')`
     ).run(entry.id, photo, rating, req.userId);
     // 同一筆紀錄不論評幾張照片，只產生一則未讀通知
     pushNotification(member.id, 'rating', `entry:${entry.id}`);
@@ -221,11 +225,16 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
     : [];
   const setEdited = foodsChanged ? ', food_edited_at = ?' : '';
   const editedArgs = foodsChanged ? [Date.now()] : [];
+  // 會員必讀視窗的未讀標記：實際有改動才標（原封不動按儲存不打擾會員）。
+  // MAX(now, 舊值+1) 保證每次調整的值都不同——已讀時以此值比對，同一毫秒內連續兩次調整也分得開。
+  // 與內容寫在同一條 revision 條件式 UPDATE：409 時不會留下未讀
+  const setUnread = foodsChanged || customsChanged ? ', food_unread_at = MAX(?, food_unread_at + 1)' : '';
+  const unreadArgs = foodsChanged || customsChanged ? [Date.now()] : [];
   const revCond = expectedRevision !== undefined ? ' AND revision = ?' : '';
   const revArgs = expectedRevision !== undefined ? [expectedRevision] : [];
   const info = db
     .prepare(
-      `UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?, revision = revision + 1${setOrig}${setEdited} WHERE id = ?${revCond}`
+      `UPDATE entries SET photo_foods = ?, photo_customs = ?, items = ?, food = ?, revision = revision + 1${setOrig}${setEdited}${setUnread} WHERE id = ?${revCond}`
     )
     .run(
       JSON.stringify(nextPf),
@@ -234,6 +243,7 @@ proRouter.put('/members/:id/entries/:eid/food', (req, res) => {
       JSON.stringify(computeEntryFood(nextPf, nextItems)),
       ...origArgs,
       ...editedArgs,
+      ...unreadArgs,
       entry.id,
       ...revArgs
     );
@@ -263,7 +273,8 @@ proRouter.post('/members/:id/comments', (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: '請輸入留言內容（最多 1000 字）' });
   const { target, body } = parsed.data;
   if (!commentTargetOwned(member.id, target)) return res.status(400).json({ error: 'invalid target' });
-  createComment(member.id, target, req.userId, body);
+  // 某一餐（entry:）的營養師留言標未讀，進會員的必讀視窗；喝水／運動留言只走鈴鐺通知
+  createComment(member.id, target, req.userId, body, false, '', target.startsWith('entry:'));
   pushNotification(member.id, 'comment', target);
   return res.status(201).json(listComments(member.id, target, req.userId));
 });

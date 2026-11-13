@@ -221,6 +221,19 @@ export const photoRatingSchema = z.object({
   rating: z.enum(['green', 'yellow', 'red']).nullable(),
 });
 
+// 會員看完營養師回饋必讀視窗：送回「實際顯示過的」項目供伺服器逐筆比對後標已讀。
+// strict＋筆數上限：未知欄位不默默放行、單次請求的寫入量有界（視窗一次最多 30 餐）
+const positiveId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const reviewsReadSchema = z
+  .object({
+    ratings: z
+      .array(z.object({ entryId: positiveId, photo: z.string().min(1).max(300), rating: z.enum(['green', 'yellow', 'red']) }).strict())
+      .max(500),
+    commentIds: z.array(positiveId).max(500),
+    adjustments: z.array(z.object({ entryId: positiveId, foodUnreadAt: positiveId }).strict()).max(500),
+  })
+  .strict();
+
 export const adminPatchUserSchema = z.object({
   role: z.enum(ROLES).optional(),
   status: z.enum(['pending', 'active']).optional(),

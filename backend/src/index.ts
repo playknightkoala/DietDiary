@@ -12,6 +12,7 @@ import { adminRouter } from './routes/admin.js';
 import { proRouter } from './routes/pro.js';
 import { commentsRouter } from './routes/comments.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { reviewsRouter } from './routes/reviews.js';
 import { aiRouter } from './routes/ai.js';
 import { profileRouter } from './routes/profile.js';
 import { photoAuth } from './middleware/auth.js';
@@ -40,6 +41,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/pro', proRouter);
 app.use('/api/comments', commentsRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/reviews', reviewsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/profile', profileRouter);
 // 照片需登入才能看（cookie 驗證＋擁有者檢查，見 middleware/auth.photoAuth）；

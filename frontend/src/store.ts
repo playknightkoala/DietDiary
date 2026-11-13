@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api, clearAuth, getRole, getToken, getUsername, saveAuth, saveRole, setUnauthorizedHandler } from './lib/api';
 import { isOutdated } from './lib/version';
 import { addDays, dstr, emptyDay, weekOf } from './lib/domain';
-import type { BodyTrendRow, DayData, Goal, MonthStats, NotificationItem, Profile, Role } from './types';
+import type { BodyTrendRow, DayData, Goal, MonthStats, NotificationItem, Profile, ReviewItem, Role } from './types';
 
 export type ModalKey =
   | 'add' | 'logFood' | 'logWater' | 'logEx' | 'logBody'
@@ -80,6 +80,14 @@ interface AppState {
   profile: Profile | null;
   notifications: NotificationItem[];
   unreadCount: number;
+  // 營養師回饋必讀視窗的佇列（一項＝一餐尚未看過的回饋）：非空時 App 會蓋上必須逐頁看完才能關閉的視窗
+  reviewQueue: ReviewItem[];
+  // 已讀送出失敗後使用者選「稍後再說」：這次開啟期間不再自動跳（伺服器仍是未讀，下次開 App 再出現）
+  reviewsSnoozed: boolean;
+  loadReviews: () => Promise<void>;
+  // 看完最後一頁：把視窗實際顯示的那份清單標已讀；失敗會 throw，由視窗顯示錯誤並保留畫面
+  ackReviews: (shown: ReviewItem[]) => Promise<void>;
+  snoozeReviews: () => void;
 
   // 改版後強制更新：伺服器版號較新時為 true，App 會蓋上不可關閉的更新視窗
   updateRequired: boolean;
@@ -136,6 +144,10 @@ interface AppState {
   setCalMonth: (cm: { y: number; m: number }) => void;
 }
 
+// loadReviews 的 in-flight 標記（值＝發出請求的 token）：輪詢、回到前景、已讀後重抓可能同時觸發，
+// 同一個登入身分只讓一個請求在路上；換帳號後不被上一個帳號還沒回來的請求擋住
+let reviewsLoadingFor: string | null = null;
+
 export const useStore = create<AppState>((set, get) => ({
   token: getToken(),
   username: getUsername(),
@@ -164,6 +176,37 @@ export const useStore = create<AppState>((set, get) => ({
   profile: null,
   notifications: [],
   unreadCount: 0,
+  reviewQueue: [],
+  reviewsSnoozed: false,
+  loadReviews: async () => {
+    // 佇列非空＝視窗正在顯示：不換掉使用者眼前的內容（期間新到的回饋等這輪看完再抓）
+    const token = get().token;
+    if (!token || reviewsLoadingFor === token || get().reviewQueue.length || get().reviewsSnoozed) return;
+    reviewsLoadingFor = token;
+    try {
+      const { items } = await api.getUnreadReviews();
+      // await 之後重新確認：期間可能已登出／換帳號、或使用者按了稍後再說
+      if (get().token !== token || get().reviewQueue.length || get().reviewsSnoozed) return;
+      if (items.length) set({ reviewQueue: items });
+    } catch { /* 靜默失敗，下次輪詢／回到前景再試 */ } finally {
+      if (reviewsLoadingFor === token) reviewsLoadingFor = null;
+    }
+  },
+  ackReviews: async (shown) => {
+    await api.markReviewsRead({
+      ratings: shown.flatMap((it) =>
+        Object.entries(it.ratings).flatMap(([photo, rating]) => (rating ? [{ entryId: it.entry.id, photo, rating }] : []))
+      ),
+      commentIds: shown.flatMap((it) => it.comments.map((c) => c.id)),
+      adjustments: shown.filter((it) => it.foodUnreadAt > 0).map((it) => ({ entryId: it.entry.id, foodUnreadAt: it.foodUnreadAt })),
+    });
+    set({ reviewQueue: [] });
+    // 伺服器已把同餐的鈴鐺通知一併標已讀：重抓通知（未讀數歸位）；
+    // 再抓一次回饋，接住翻頁期間營養師新給的內容
+    void get().loadNotifications();
+    void get().loadReviews();
+  },
+  snoozeReviews: () => set({ reviewQueue: [], reviewsSnoozed: true }),
 
   updateRequired: false,
   latestVersion: null,
@@ -188,6 +231,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       token: null, username: null, role: 'member', nickname: null, aiEnabled: false, view: 'diary', modal: null, editingId: null,
       day: emptyDay(), marks: {}, monthStats: {}, goals: [], trendRows: [], profile: null, notifications: [], unreadCount: 0,
+      reviewQueue: [], reviewsSnoozed: false,
       trendOpen: false, guideOpen: false, proFocus: null, selected: dstr(new Date()), weekAnchor: dstr(new Date()),
       layout: { order: [...DEFAULT_CARD_ORDER], hidden: [] },
     });
@@ -289,6 +333,11 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const { unread, items } = await api.getNotifications();
       set({ notifications: items, unreadCount: unread });
+      // 有未讀的營養師回饋通知（自己某一餐的評分／留言／份量調整）就順手抓必讀視窗的清單：
+      // 搭既有的 60 秒輪詢，不另開計時器
+      if (items.some((n) => !n.read && n.memberId === 0 && n.target.startsWith('entry:') && n.type !== 'post')) {
+        void get().loadReviews();
+      }
     } catch { /* 靜默失敗，下次輪詢再試 */ }
   },
   readNotification: async (id) => {
@@ -326,8 +375,10 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* 401 由共用 handler 處理 */ }
   },
   loadAll: async () => {
+    // 開啟 App／登入＝新的一輪：上次「稍後再說」的回饋重新提醒
+    set({ reviewsSnoozed: false });
     // photo cookie 先補（照片 <img> 需要它；升級前已登入的 session 沒有），其餘並行載入
-    await Promise.all([api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
+    await Promise.all([get().loadReviews(), api.refreshPhotoCookie().catch(() => {}), get().loadDay(), get().loadWeekMarks(), get().loadGoals(), get().loadMe(), get().loadNotifications(), get().loadProfile()]);
   },
 
   layout: loadLayout(),

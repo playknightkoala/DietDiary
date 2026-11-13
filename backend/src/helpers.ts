@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
 import { invalidateLegacyPhotoOwner } from './middleware/auth.js';
-import { CUSTOM_ITEM_TYPES, CUSTOM_KCAL_FACTOR, FOOD_KEYS, MAX_CUSTOM_ITEMS, MAX_ITEMS } from './validation.js';
+import { CUSTOM_ITEM_TYPES, CUSTOM_KCAL_FACTOR, FOOD_KEYS, MAX_CUSTOM_ITEMS, MAX_ITEMS, MEAL_KEYS } from './validation.js';
 
 export type Food = Record<(typeof FOOD_KEYS)[number], number>;
 
@@ -507,10 +507,11 @@ export function listComments(ownerId: number, target: string, viewerId: number):
   }));
 }
 
-export function createComment(ownerId: number, target: string, authorId: number, body: string, isAi = false, aiModel = '') {
+// unread＝true：營養師在某一餐的留言，會員尚未在必讀視窗看過（會員自己的留言與 AI 評語一律 false）
+export function createComment(ownerId: number, target: string, authorId: number, body: string, isAi = false, aiModel = '', unread = false) {
   db.prepare(
-    'INSERT INTO entry_comments (user_id, target, author_id, body, created_at, is_ai, ai_model) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(ownerId, target, authorId, body, Date.now(), isAi ? 1 : 0, aiModel);
+    'INSERT INTO entry_comments (user_id, target, author_id, body, created_at, is_ai, ai_model, unread) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(ownerId, target, authorId, body, Date.now(), isAi ? 1 : 0, aiModel, unread ? 1 : 0);
 }
 
 // ---- 通知（營養師留言／照片評分／調整份數時通知會員）----
@@ -595,6 +596,158 @@ export function deletePhotoRatings(entryId: number, photos?: string[]) {
   }
   const del = db.prepare('DELETE FROM photo_ratings WHERE entry_id = ? AND photo = ?');
   for (const p of photos) del.run(entryId, p);
+}
+
+// ---- 營養師回饋「逐餐必讀」視窗（會員端）----
+// 未讀來源三種，全部掛在資料列本身：photo_ratings.unread（照片燈號）、entry_comments.unread
+// （營養師在某一餐的留言）、entries.food_unread_at（份量調整）。會員看完視窗後由 markReviewsRead 清除。
+
+export interface ReviewComment {
+  id: number;
+  body: string;
+  createdAt: number;
+  author: string;
+  role: string; // 作者角色（dietitian／admin），前端顯示對應標籤
+}
+
+export interface ReviewItem {
+  date: string;
+  entry: ReturnType<typeof entryToJson>;
+  ratings: Record<string, PhotoRating>; // 只含未讀的燈號
+  comments: ReviewComment[]; // 只含未讀的營養師留言（舊→新）
+  foodUnreadAt: number; // >0＝有未讀的份量調整（已讀時原值送回比對）
+}
+
+// 一次最多顯示幾餐：營養師一口氣回饋很多餐時分批跳，其餘留到下一輪
+const REVIEW_MAX_MEALS = 30;
+
+export function listUnreadReviews(userId: number): ReviewItem[] {
+  const ratingRows = db
+    .prepare(
+      `SELECT pr.entry_id, pr.photo, pr.rating FROM photo_ratings pr
+       JOIN entries e ON e.id = pr.entry_id
+       WHERE pr.unread = 1 AND e.user_id = ?`
+    )
+    .all(userId) as { entry_id: number; photo: string; rating: PhotoRating }[];
+  // 作者名稱：會員檢視，無私人暱稱可言——作者自訂暱稱＞帳號（同 listComments 去掉 alias 的部分）
+  const commentRows = db
+    .prepare(
+      `SELECT c.id, c.target, c.body, c.created_at, u.role, COALESCE(NULLIF(u.nickname, ''), u.username) AS author
+       FROM entry_comments c JOIN users u ON u.id = c.author_id
+       WHERE c.user_id = ? AND c.unread = 1 AND c.is_ai = 0 AND c.target LIKE 'entry:%'
+       ORDER BY c.id`
+    )
+    .all(userId) as { id: number; target: string; body: string; created_at: number; role: string; author: string }[];
+  const adjustRows = db
+    .prepare('SELECT id, food_unread_at FROM entries WHERE user_id = ? AND food_unread_at > 0')
+    .all(userId) as { id: number; food_unread_at: number }[];
+
+  const ratingsBy = new Map<number, Record<string, PhotoRating>>();
+  for (const r of ratingRows) {
+    const m = ratingsBy.get(r.entry_id) ?? {};
+    m[r.photo] = r.rating;
+    ratingsBy.set(r.entry_id, m);
+  }
+  const commentsBy = new Map<number, ReviewComment[]>();
+  for (const c of commentRows) {
+    const entryId = Number(c.target.slice('entry:'.length));
+    const list = commentsBy.get(entryId) ?? [];
+    list.push({ id: c.id, body: c.body, createdAt: c.created_at, author: c.author, role: c.role });
+    commentsBy.set(entryId, list);
+  }
+  const adjustBy = new Map(adjustRows.map((a) => [a.id, a.food_unread_at]));
+
+  const ids = [...new Set([...ratingsBy.keys(), ...commentsBy.keys(), ...adjustBy.keys()])];
+  if (!ids.length) return [];
+  // 再以擁有者條件取這些餐（留言的 target 只是字串、不是 FK：查不到餐＝孤兒，直接略過）
+  const entryRows: (EntryRow & { date: string })[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    entryRows.push(
+      ...(db
+        .prepare(`SELECT ${ENTRY_COLS}, date FROM entries WHERE user_id = ? AND id IN (${chunk.map(() => '?').join(',')})`)
+        .all(userId, ...chunk) as (EntryRow & { date: string })[])
+    );
+  }
+
+  const mealOrder = (meal: string) => {
+    const i = (MEAL_KEYS as readonly string[]).indexOf(meal);
+    return i < 0 ? MEAL_KEYS.length : i;
+  };
+  const items: ReviewItem[] = [];
+  for (const row of entryRows) {
+    const entry = entryToJson(row);
+    // 照片已不在這一餐的評分無從顯示（正常流程刪照片時評分會一併刪除，這裡只是防禦）
+    const ratings = Object.fromEntries(Object.entries(ratingsBy.get(row.id) ?? {}).filter(([url]) => entry.photos.includes(url)));
+    const comments = commentsBy.get(row.id) ?? [];
+    const foodUnreadAt = adjustBy.get(row.id) ?? 0;
+    if (!Object.keys(ratings).length && !comments.length && !foodUnreadAt) continue;
+    items.push({ date: row.date, entry, ratings, comments, foodUnreadAt });
+  }
+  items.sort(
+    (a, b) => a.date.localeCompare(b.date) || mealOrder(a.entry.meal) - mealOrder(b.entry.meal) || a.entry.id - b.entry.id
+  );
+  return items.slice(0, REVIEW_MAX_MEALS);
+}
+
+export interface ReviewsReadPayload {
+  ratings: { entryId: number; photo: string; rating: PhotoRating }[];
+  commentIds: number[];
+  adjustments: { entryId: number; foodUnreadAt: number }[];
+}
+
+// 會員看完必讀視窗：只把「實際顯示過的」標已讀。
+// - 每一筆都是條件式 UPDATE，擁有者條件寫在 WHERE 內（fail-closed）：別人的或不存在的 id＝0 筆變更、靜默略過
+// - 帶顯示當下的燈號／food_unread_at 比對：翻頁期間營養師換了燈號或又調整一次，不會被誤標已讀
+// - 重送冪等（server 已提交但回應遺失時 client 重試）：第二次全部 0 筆變更
+// - 同一餐同類型已無剩餘未讀時，對應的鈴鐺通知在同一交易標已讀（看完視窗鈴鐺不再亮著）
+// - 不動 entries.revision：已讀標記不是餐的內容，不該讓開著的編輯視窗撞 409
+export function markReviewsRead(userId: number, payload: ReviewsReadPayload) {
+  db.transaction(() => {
+    const touched = { rating: new Set<number>(), comment: new Set<number>(), food: new Set<number>() };
+
+    const markRating = db.prepare(
+      `UPDATE photo_ratings SET unread = 0
+       WHERE entry_id = ? AND photo = ? AND rating = ? AND unread = 1
+         AND entry_id IN (SELECT id FROM entries WHERE user_id = ?)`
+    );
+    for (const r of payload.ratings) {
+      if (markRating.run(r.entryId, r.photo, r.rating, userId).changes) touched.rating.add(r.entryId);
+    }
+
+    // 留言所屬的餐由資料列的 target 反查，不信任 client
+    const commentTarget = db.prepare(
+      `SELECT target FROM entry_comments WHERE id = ? AND user_id = ? AND unread = 1 AND target LIKE 'entry:%'`
+    );
+    const markComment = db.prepare('UPDATE entry_comments SET unread = 0 WHERE id = ? AND user_id = ? AND unread = 1');
+    for (const id of payload.commentIds) {
+      const row = commentTarget.get(id, userId) as { target: string } | undefined;
+      if (!row) continue;
+      markComment.run(id, userId);
+      touched.comment.add(Number(row.target.slice('entry:'.length)));
+    }
+
+    const markFood = db.prepare('UPDATE entries SET food_unread_at = 0 WHERE id = ? AND user_id = ? AND food_unread_at = ?');
+    for (const a of payload.adjustments) {
+      if (markFood.run(a.entryId, userId, a.foodUnreadAt).changes) touched.food.add(a.entryId);
+    }
+
+    const readNotification = db.prepare(
+      'UPDATE notifications SET read = 1 WHERE user_id = ? AND member_id = 0 AND type = ? AND target = ? AND read = 0'
+    );
+    const ratingLeft = db.prepare('SELECT 1 FROM photo_ratings WHERE entry_id = ? AND unread = 1 LIMIT 1');
+    const commentLeft = db.prepare('SELECT 1 FROM entry_comments WHERE user_id = ? AND target = ? AND unread = 1 LIMIT 1');
+    const foodLeft = db.prepare('SELECT 1 FROM entries WHERE id = ? AND food_unread_at > 0');
+    for (const id of touched.rating) {
+      if (!ratingLeft.get(id)) readNotification.run(userId, 'rating', `entry:${id}`);
+    }
+    for (const id of touched.comment) {
+      if (!commentLeft.get(userId, `entry:${id}`)) readNotification.run(userId, 'comment', `entry:${id}`);
+    }
+    for (const id of touched.food) {
+      if (!foodLeft.get(id)) readNotification.run(userId, 'food', `entry:${id}`);
+    }
+  })();
 }
 
 // ---- AI 評價（使用者對某則 AI 產出按讚/倒讚）----

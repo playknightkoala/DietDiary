@@ -394,6 +394,22 @@ if (!commentCols.includes('ai_model')) {
   db.exec(`ALTER TABLE entry_comments ADD COLUMN ai_model TEXT NOT NULL DEFAULT ''`);
 }
 
+// ---- 營養師回饋「逐餐必讀」視窗的未讀標記（評分／留言／份量調整）----
+// 未讀狀態放在資料列本身：清除評分、刪留言、刪照片、刪整餐時列消失，未讀也自然消失。
+// 預設 0（已讀）＝升級前的舊資料不會在改版後一次全部跳出來，不需要 backfill。
+// 每個欄位獨立檢查：中斷後重啟可補完。
+// 留言：1＝營養師／管理者在某一餐（entry:）的留言，會員尚未在必讀視窗看過
+if (!commentCols.includes('unread')) {
+  db.exec(`ALTER TABLE entry_comments ADD COLUMN unread INTEGER NOT NULL DEFAULT 0`);
+}
+db.exec(`CREATE INDEX IF NOT EXISTS idx_entry_comments_unread ON entry_comments(user_id) WHERE unread = 1`);
+// 照片評分：1＝會員尚未看過這個燈號（換燈號時重新標 1）
+const ratingCols = (db.pragma('table_info(photo_ratings)') as { name: string }[]).map((c) => c.name);
+if (!ratingCols.includes('unread')) {
+  db.exec(`ALTER TABLE photo_ratings ADD COLUMN unread INTEGER NOT NULL DEFAULT 0`);
+}
+db.exec(`CREATE INDEX IF NOT EXISTS idx_photo_ratings_unread ON photo_ratings(entry_id) WHERE unread = 1`);
+
 const captchaCols = (db.pragma('table_info(captchas)') as { name: string }[]).map((c) => c.name);
 if (!captchaCols.includes('verified')) {
   db.exec(`ALTER TABLE captchas ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`);
@@ -442,6 +458,13 @@ if (!entryCols.includes('orig_data')) {
   // 營養師第一次實際改動份數或自定義時寫入、之後的調整不再覆蓋；會員自行再改份數時清除
   db.exec(`ALTER TABLE entries ADD COLUMN orig_data TEXT NOT NULL DEFAULT ''`);
 }
+if (!entryCols.includes('food_unread_at')) {
+  // 營養師份量調整的未讀標記（必讀視窗用）：>0＝會員尚未看過的調整（值為調整時間、每次調整都不同，
+  // 已讀時以此值比對，避免把「翻頁期間又被調整」的新內容誤標已讀）；0＝沒有未讀調整。
+  // 不是餐的內容：已讀時清除不動 revision
+  db.exec(`ALTER TABLE entries ADD COLUMN food_unread_at INTEGER NOT NULL DEFAULT 0`);
+}
+db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_food_unread ON entries(user_id) WHERE food_unread_at > 0`);
 
 // v1 過渡資料一次性遷移：per-entry custom_items → 有照片搬到第一張的 photo_customs、
 // 無照片搬成單一 items 項（連同既有 food）。搬完清空 custom_items，重跑即 no-op。

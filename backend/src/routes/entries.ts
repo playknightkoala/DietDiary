@@ -197,7 +197,8 @@ entriesRouter.patch('/:id', (req, res) => {
     // 會員自行改動份數後，「營養師調整」標記即不再成立（份數沒變則保留；只改自定義項目不清除）。
     // 原始資料快照一併清除：目前內容已是會員自己的，「調整前 vs 調整後」的對照不再成立
     if (storedEff !== effFoods(nextPf, nextItems, null)) {
-      sets.push('food_edited_at = 0', `orig_data = ''`);
+      // 未讀的營養師調整也一併作廢：內容已是會員自己的，必讀視窗沒有「調整後」可顯示
+      sets.push('food_edited_at = 0', `orig_data = ''`, 'food_unread_at = 0');
     }
   } else if (photos !== undefined) {
     // 只刪照片：一併修剪該照片的份數與自定義項目，food 重算仍須包含 items 的份數。

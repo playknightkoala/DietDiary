@@ -6,6 +6,7 @@ import { AdminScreen } from './screens/AdminScreen';
 import { DietitianScreen } from './screens/DietitianScreen';
 import { GuideModal } from './components/modals/GuideModal';
 import { NicknameModal } from './components/modals/NicknameModal';
+import { ReviewModal } from './components/modals/ReviewModal';
 import { UpdateRequiredModal } from './components/modals/UpdateRequiredModal';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
   const updateRequired = useStore((s) => s.updateRequired);
   const checkVersion = useStore((s) => s.checkVersion);
   const modal = useStore((s) => s.modal);
+  const hasReviews = useStore((s) => s.reviewQueue.length > 0);
 
   useEffect(() => {
     if (token) void loadAll();
@@ -39,7 +41,11 @@ export default function App() {
     if (!token) return;
     const onVis = () => {
       const s = useStore.getState();
-      if (document.visibilityState === 'visible' && s.modal === null && s.view === 'diary') void s.refresh();
+      if (document.visibilityState === 'visible' && s.modal === null && s.view === 'diary') {
+        void s.refresh();
+        // 順便看營養師有沒有新回饋（評分／留言／份量調整）→ 有就跳必讀視窗
+        void s.loadReviews();
+      }
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
@@ -68,6 +74,9 @@ export default function App() {
       {guideOpen && <GuideModal />}
       {/* 尚未設定暱稱：強制先設定才能繼續使用（nickname === null 表示尚未載入，不觸發） */}
       {nickname === '' && <NicknameModal />}
+      {/* 營養師回饋必讀：一餐一頁，翻到最後一頁才能關閉。
+          編輯視窗或指南開著時不打斷（等關閉後才出現，同強制更新的作法）；暱稱設定優先 */}
+      {hasReviews && modal === null && view === 'diary' && !guideOpen && nickname !== '' && <ReviewModal />}
     </>
   );
 }

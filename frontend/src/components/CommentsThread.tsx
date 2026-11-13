@@ -5,7 +5,8 @@ import type { EntryComment } from '../types';
 // 觸控裝置的 Enter＝換行（用「送出」按鈕送出）；桌機 Enter＝送出、Shift+Enter＝換行
 const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-const ROLE_BADGES: Record<string, { name: string; color: string; bg: string } | undefined> = {
+// 留言作者的角色標籤（營養師回饋必讀視窗 ReviewModal 共用）
+export const ROLE_BADGES: Record<string, { name: string; color: string; bg: string } | undefined> = {
   dietitian: { name: '營養師', color: '#5B8DB8', bg: '#E5EBF1' },
   admin: { name: '管理者', color: '#C77B4A', bg: '#F3E7D8' },
 };
